@@ -28,7 +28,6 @@ const colors = {
   background: {
     default: '#121212', // Dark background
     paper: '#1E1E1E',   // Slightly lighter dark for cards/elements
-    gradient: 'linear-gradient(135deg, #6E2CF4 0%, #FF6B35 50%, #3EBD64 100%)', // Gradient from purple to orange to green
   },
   text: {
     primary: '#FFFFFF',  // White text
@@ -97,7 +96,8 @@ const modernTheme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          background: colors.background.gradient,
+          background: colors.primary.dark,
+          borderRadius: 0,
         },
       },
     },
