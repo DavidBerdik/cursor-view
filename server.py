@@ -13,6 +13,8 @@ import platform
 import sqlite3
 import argparse
 import pathlib
+import threading
+import webbrowser
 from collections import defaultdict
 from typing import Dict, Any, Iterable
 from pathlib import Path
@@ -1172,7 +1174,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run the Cursor Chat View server')
     parser.add_argument('--port', type=int, default=5000, help='Port to run the server on')
     parser.add_argument('--debug', action='store_true', help='Run in debug mode')
+    parser.add_argument('--no-browser', action='store_true',
+                        help='Do not open the browser automatically')
     args = parser.parse_args()
-    
+
     logger.info(f"Starting server on port {args.port}")
+
+    if not args.no_browser:
+        threading.Timer(1.5, webbrowser.open,
+                        args=[f'http://127.0.0.1:{args.port}']).start()
+
     app.run(host='127.0.0.1', port=args.port, debug=args.debug)
