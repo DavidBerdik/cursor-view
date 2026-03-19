@@ -837,7 +837,7 @@ def get_chat(session_id):
 
 @app.route('/api/chat/<session_id>/export', methods=['GET'])
 def export_chat(session_id):
-    """Export a specific chat session as standalone HTML or JSON."""
+    """Export a specific chat session as HTML, JSON, or Markdown."""
     try:
         logger.info(f"Received request to export chat {session_id} from {request.remote_addr}")
         export_format = request.args.get('format', 'html').lower()
@@ -859,6 +859,18 @@ def export_chat(session_id):
                                 "Cache-Control": "no-store",
                             },
                         )
+                    if export_format == 'markdown':
+                        md_content = generate_markdown(formatted_chat)
+                        md_bytes = md_content.encode("utf-8")
+                        return Response(
+                            md_content,
+                            mimetype="text/markdown; charset=utf-8",
+                            headers={
+                                "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.md"',
+                                "Content-Length": str(len(md_bytes)),
+                                "Cache-Control": "no-store",
+                            },
+                        )
                     else:
                         # Default to HTML export
                         html_content = generate_standalone_html(formatted_chat)
@@ -877,6 +889,52 @@ def export_chat(session_id):
     except Exception as e:
         logger.error(f"Error in export_chat: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+def generate_markdown(chat):
+    """Generate a Markdown representation of the chat."""
+    logger.info(f"Generating Markdown for session ID: {chat.get('session_id', 'N/A')}")
+    date_display = "Unknown date"
+    if chat.get("date"):
+        try:
+            date_obj = datetime.datetime.fromtimestamp(chat["date"])
+            date_display = date_obj.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            logger.warning(f"Error formatting date: {e}")
+
+    project_name = chat.get("project", {}).get("name", "Unknown Project")
+    project_path = chat.get("project", {}).get("rootPath", "Unknown Path")
+    session_display = chat.get("session_id", "Unknown")
+
+    lines = [
+        f"# Cursor Chat: {project_name}",
+        "",
+        f"- **Project:** {project_name}",
+        f"- **Path:** {project_path}",
+        f"- **Date:** {date_display}",
+        f"- **Session ID:** {session_display}",
+        "",
+        "---",
+        "",
+    ]
+
+    messages = chat.get("messages") or []
+    if not messages:
+        lines.append("*No messages found in this conversation.*")
+    else:
+        for i, msg in enumerate(messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            if not content or not isinstance(content, str):
+                logger.warning(f"Message {i + 1} has invalid content")
+                content = "Content unavailable"
+            heading = "## You" if role == "user" else "## Cursor Assistant"
+            lines.extend([heading, "", content.rstrip(), "", "---", ""])
+
+    lines.append("")
+    lines.append(
+        "*Exported from [Cursor View](https://github.com/saharmor/cursor-view)*"
+    )
+    return "\n".join(lines)
 
 def generate_standalone_html(chat):
     """Generate a standalone HTML representation of the chat."""

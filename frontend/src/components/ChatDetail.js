@@ -130,11 +130,17 @@ const ChatDetail = () => {
       }
 
       // Ensure the blob has the correct MIME type
-      const mimeType = format === 'json' ? 'application/json;charset=utf-8' : 'text/html;charset=utf-8';
+      const mimeType =
+        format === 'json'
+          ? 'application/json;charset=utf-8'
+          : format === 'markdown'
+            ? 'text/markdown;charset=utf-8'
+            : 'text/html;charset=utf-8';
       const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
 
       // Download Logic
-      const extension = format === 'json' ? 'json' : 'html';
+      const extension =
+        format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'html';
       const filename = `cursor-chat-${sessionId.slice(0, 8)}.${extension}`;
       const link = document.createElement('a');
       
@@ -229,6 +235,7 @@ const ChatDetail = () => {
             >
               <FormControlLabel value="html" control={<Radio />} label="HTML" />
               <FormControlLabel value="json" control={<Radio />} label="JSON" />
+              <FormControlLabel value="markdown" control={<Radio />} label="Markdown" />
             </RadioGroup>
           </FormControl>
         </DialogContent>

@@ -29,6 +29,9 @@ import {
   Checkbox,
   DialogContentText,
   Switch,
+  Radio,
+  RadioGroup,
+  FormControl,
 } from '@mui/material';
 import FolderIcon from '@mui/icons-material/Folder';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -52,6 +55,8 @@ const ChatList = () => {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [formatDialogOpen, setFormatDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState('html');
   const [dontShowExportWarning, setDontShowExportWarning] = useState(false);
   const [currentExportSession, setCurrentExportSession] = useState(null);
 
@@ -210,6 +215,20 @@ const ChatList = () => {
     setSearchQuery(event.target.value);
   };
 
+  const handleFormatDialogClose = (confirmed) => {
+    setFormatDialogOpen(false);
+    if (!confirmed) {
+      setCurrentExportSession(null);
+      return;
+    }
+    if (dontShowExportWarning && currentExportSession) {
+      proceedWithExport(currentExportSession, exportFormat);
+      setCurrentExportSession(null);
+    } else if (currentExportSession) {
+      setExportModalOpen(true);
+    }
+  };
+
   // Handle export warning confirmation
   const handleExportWarningClose = (confirmed) => {
     setExportModalOpen(false);
@@ -223,7 +242,7 @@ const ChatList = () => {
     
     // If confirmed, proceed with export
     if (confirmed && currentExportSession) {
-      proceedWithExport(currentExportSession);
+      proceedWithExport(currentExportSession, exportFormat);
     }
     
     // Reset current export session
@@ -232,43 +251,39 @@ const ChatList = () => {
 
   // Function to initiate export process
   const handleExport = (e, sessionId) => {
-    // Prevent navigation to chat detail
     e.preventDefault();
     e.stopPropagation();
-    
-    // Check if warning should be shown
-    if (dontShowExportWarning) {
-      proceedWithExport(sessionId);
-    } else {
-      setCurrentExportSession(sessionId);
-      setExportModalOpen(true);
-    }
+    setCurrentExportSession(sessionId);
+    setFormatDialogOpen(true);
   };
 
   // Function to actually perform the export
-  const proceedWithExport = async (sessionId) => {
+  const proceedWithExport = async (sessionId, format) => {
     try {
-      console.log("Starting HTML export for session:", sessionId);
-      console.log(`Making API request to: /api/chat/${sessionId}/export`);
-      
       const response = await axios.get(
-        `/api/chat/${sessionId}/export`,
+        `/api/chat/${sessionId}/export?format=${format}`,
         { responseType: 'blob' }
       );
 
       const blob = response.data;
-      console.log('Received blob size:', blob ? blob.size : 0);
 
       if (!blob || blob.size === 0) {
         throw new Error('Received empty or invalid content from server');
       }
 
       // Ensure the blob has the correct MIME type before saving
-      const typedBlob = blob.type ? blob : new Blob([blob], { type: 'text/html;charset=utf-8' });
-      console.log('Prepared typed blob, size:', typedBlob.size);
+      const mimeType =
+        format === 'json'
+          ? 'application/json;charset=utf-8'
+          : format === 'markdown'
+            ? 'text/markdown;charset=utf-8'
+            : 'text/html;charset=utf-8';
+      const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
 
       // --- Download Logic Start ---
-      const filename = `cursor-chat-${sessionId.slice(0, 8)}.html`;
+      const extension =
+        format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'html';
+      const filename = `cursor-chat-${sessionId.slice(0, 8)}.${extension}`;
       const link = document.createElement('a');
       
       // Create an object URL for the (possibly re-typed) blob
@@ -372,6 +387,42 @@ const ChatList = () => {
           </Button>
         </Box>
       </Box>
+
+      <Dialog
+        open={formatDialogOpen}
+        onClose={() => handleFormatDialogClose(false)}
+        aria-labelledby="chatlist-format-selection-dialog-title"
+      >
+        <DialogTitle id="chatlist-format-selection-dialog-title" sx={{ display: 'flex', alignItems: 'center' }}>
+          <FileDownloadIcon sx={{ color: colors.highlightColor, mr: 1 }} />
+          Export Format
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Please select the export format for your chat:
+          </DialogContentText>
+          <FormControl component="fieldset" sx={{ mt: 2 }}>
+            <RadioGroup
+              aria-label="export-format"
+              name="export-format"
+              value={exportFormat}
+              onChange={(e) => setExportFormat(e.target.value)}
+            >
+              <FormControlLabel value="html" control={<Radio />} label="HTML" />
+              <FormControlLabel value="json" control={<Radio />} label="JSON" />
+              <FormControlLabel value="markdown" control={<Radio />} label="Markdown" />
+            </RadioGroup>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => handleFormatDialogClose(false)} color="highlight">
+            Cancel
+          </Button>
+          <Button onClick={() => handleFormatDialogClose(true)} color="highlight" variant="contained">
+            Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       {/* Export Warning Modal */}
       <Dialog
@@ -702,7 +753,7 @@ const ChatList = () => {
                             )}
                           </CardContent>
                           <CardActions sx={{ mt: 'auto', pt: 0 }}>
-                            <Tooltip title="Export as HTML (Warning: Check for sensitive data)">
+                            <Tooltip title="Export chat (Warning: Check for sensitive data)">
                               <IconButton 
                                 size="small" 
                                 onClick={(e) => handleExport(e, chat.session_id)}
