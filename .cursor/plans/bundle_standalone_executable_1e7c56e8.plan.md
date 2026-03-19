@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: test-build
     content: Run the build and verify the standalone executable works
-    status: in_progress
+    status: completed
 isProject: false
 ---
 
