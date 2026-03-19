@@ -15,6 +15,7 @@ import pathlib
 from collections import defaultdict
 from typing import Dict, Any, Iterable
 from pathlib import Path
+from urllib.parse import unquote
 from flask import Flask, Response, jsonify, send_from_directory, request
 from flask_cors import CORS
 
@@ -306,7 +307,7 @@ def workspace_info(db: pathlib.Path):
         for e in ents:
             resource = e.get("editor", {}).get("resource", "")
             if resource and resource.startswith("file:///"):
-                paths.append(resource[len("file:///"):])
+                paths.append(unquote(resource[len("file:///"):]))
         
         # If we found file paths, extract the project name using the longest common prefix
         if paths:
@@ -334,7 +335,7 @@ def workspace_info(db: pathlib.Path):
             # Check debug.selectedroot as a fallback
             selected_root = j(cur, "ItemTable", "debug.selectedroot")
             if selected_root and isinstance(selected_root, str) and selected_root.startswith("file:///"):
-                path = selected_root[len("file:///"):]
+                path = unquote(selected_root[len("file:///"):])
                 if path:
                     root_path = "/" + path.strip("/")
                     logger.debug(f"Project root from debug.selectedroot: {root_path}")
@@ -661,7 +662,7 @@ def extract_project_from_git_repos(workspace_id, debug=False):
             # Look for git:Git:file:/// pattern
             if "git:Git:file:///" in repo:
                 # Extract the path part
-                path = repo.split("file:///")[-1]
+                path = unquote(repo.split("file:///")[-1])
                 path_parts = [p for p in path.split('/') if p]
                 
                 if path_parts:
