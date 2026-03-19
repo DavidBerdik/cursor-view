@@ -194,6 +194,11 @@ def workspaces(base: pathlib.Path):
         if db.exists():
             yield folder.name, db
 
+def _is_windows_drive_segment(part):
+    """True if part is a Windows drive letter segment like 'c:' or 'C:'."""
+    return len(part) == 2 and part[1] == ":" and part[0].isalpha()
+
+
 def extract_project_name_from_path(root_path, debug=False):
     """
     Extract a project name from a path, skipping user directories.
@@ -202,7 +207,13 @@ def extract_project_name_from_path(root_path, debug=False):
         return "Root"
         
     path_parts = [p for p in root_path.split('/') if p]
-    
+
+    # Windows file URIs yield paths like c:/Users/name/repos/project
+    if path_parts and _is_windows_drive_segment(path_parts[0]):
+        if len(path_parts) == 1:
+            return "Unknown Project"
+        path_parts = path_parts[1:]
+
     # Skip common user directory patterns
     project_name = None
     home_dir_patterns = ['Users', 'home']
@@ -321,12 +332,23 @@ def workspace_info(db: pathlib.Path):
             last_separator_index = common_prefix.rfind('/')
             if last_separator_index > 0:
                 project_root = common_prefix[:last_separator_index]
-                logger.debug(f"Project root from common prefix: {project_root}")
-                
-                # Extract the project name using the helper function
-                project_name = extract_project_name_from_path(project_root, debug=True)
-                
-                proj = {"name": project_name, "rootPath": "/" + project_root.lstrip('/')}
+                # Skip drive-letter-only root (e.g. common prefix "c:/" -> "c:")
+                if len(project_root) <= 2 and project_root.endswith(':'):
+                    logger.debug(
+                        "Skipping drive-letter-only project root from common prefix: %s",
+                        project_root,
+                    )
+                else:
+                    logger.debug(f"Project root from common prefix: {project_root}")
+
+                    project_name = extract_project_name_from_path(
+                        project_root, debug=True
+                    )
+
+                    proj = {
+                        "name": project_name,
+                        "rootPath": "/" + project_root.lstrip('/'),
+                    }
         
         # Try backup methods if we didn't get a project name
         if proj["name"] == "(unknown)":
@@ -798,8 +820,11 @@ def format_chat_for_frontend(chat):
                 elif project.get('rootPath') == '/' or project.get('rootPath') == '/Users':
                     project['rootPath'] = f"{project['rootPath']}/workspace/{workspace_id}"
         
-        # FALLBACK: If project name is still generic, try to extract it from git repositories
-        if project.get('name') in ['Home Directory', '(unknown)']:
+        # FALLBACK: If project name is still generic, try git repositories
+        pname = project.get('name') or ''
+        if pname in ['Home Directory', '(unknown)', 'Root'] or (
+            len(pname) <= 2 and pname.endswith(':')
+        ):
             git_project_name = extract_project_from_git_repos(workspace_id, debug=True)
             if git_project_name:
                 logger.debug(f"Improved project name from '{project.get('name')}' to '{git_project_name}' using git repo")
