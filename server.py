@@ -4,6 +4,7 @@ Simple API server to serve Cursor chat data for the web interface.
 """
 
 import json
+import sys
 import uuid
 import logging
 import datetime
@@ -24,7 +25,13 @@ logging.basicConfig(level=logging.INFO,
                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='frontend/build')
+def _get_base_path():
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS
+    return os.path.dirname(os.path.abspath(__file__))
+
+_BASE_PATH = _get_base_path()
+app = Flask(__name__, static_folder=os.path.join(_BASE_PATH, 'frontend', 'build'))
 CORS(app)
 
 ################################################################################
