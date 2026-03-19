@@ -1027,7 +1027,7 @@ def generate_markdown(chat):
 
     lines.append("")
     lines.append(
-        "*Exported from [Cursor View](https://github.com/saharmor/cursor-view)*"
+        "*Exported from [Cursor View](https://github.com/DavidBerdik/cursor-view)*"
     )
     return "\n".join(lines)
 
