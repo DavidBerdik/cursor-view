@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
@@ -36,9 +36,10 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
-import { colors } from '../App';
+import { ColorContext } from '../App';
 
 const ChatDetail = () => {
+  const colors = useContext(ColorContext);
   const { sessionId } = useParams();
   const [chat, setChat] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -289,10 +290,14 @@ const ChatDetail = () => {
           component={Link}
           to="/"
           startIcon={<ArrowBackIcon />}
-          variant="outlined"
-          sx={{ 
+          variant="contained"
+          color="highlight"
+          sx={{
             borderRadius: 2,
-            color: 'white'
+            color: 'white',
+            '&:hover': {
+              backgroundColor: alpha(colors.highlightColor, 0.8),
+            },
           }}
         >
           Back to all chats
@@ -305,6 +310,7 @@ const ChatDetail = () => {
           color="highlight"
           sx={{ 
             borderRadius: 2,
+            color: 'white',
             position: 'relative',
             '&:hover': {
               backgroundColor: alpha(colors.highlightColor, 0.8),
@@ -332,69 +338,62 @@ const ChatDetail = () => {
 
       <Paper 
         sx={{ 
-          p: 0, 
+          px: 3, 
+          py: 2, 
           mb: 3, 
           overflow: 'hidden',
           boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         }}
       >
-        <Box sx={{ 
-          background: `linear-gradient(90deg, ${colors.highlightColor} 0%, ${colors.highlightColor.light} 100%)`,
-          color: 'white',
-          px: 3,
-          py: 1.5,
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            <FolderIcon sx={{ mr: 1, fontSize: 22 }} />
-            <Typography variant="h6" fontWeight="600" sx={{ mr: 1.5 }}>
-              {projectName}
-            </Typography>
-            <Chip
-              icon={<CalendarTodayIcon />}
-              label={dateDisplay}
-              size="small"
-              sx={{ 
-                fontWeight: 500,
-                color: 'white',
-                '& .MuiChip-icon': { color: 'white' },
-                '& .MuiChip-label': { px: 1 }
-              }}
-            />
-          </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+          <FolderIcon sx={{ mr: 0.5, fontSize: 24, color: colors.highlightColor }} />
+          <Typography variant="h6" fontWeight="600" color="text.primary" sx={{ mr: 1 }}>
+            {projectName}
+          </Typography>
+          <Chip
+            icon={<CalendarTodayIcon />}
+            label={dateDisplay}
+            size="small"
+            sx={{
+              fontWeight: 500,
+              color: 'white',
+              backgroundColor: colors.highlightColor,
+              '& .MuiChip-icon': { color: 'white' },
+              '& .MuiChip-label': { px: 1 }
+            }}
+          />
         </Box>
-        
-        <Box sx={{ px: 3, py: 1.5 }}>
-          <Box sx={{ 
-            display: 'flex', 
-            flexWrap: 'wrap', 
-            gap: 2,
-            alignItems: 'center'
-          }}>
+
+        <Box sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 2,
+          alignItems: 'center'
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <AccountTreeIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
+            <Typography variant="body2" color="text.secondary">
+              <strong>Path:</strong> {chat.project?.rootPath || 'Unknown location'}
+            </Typography>
+          </Box>
+
+          {chat.workspace_id && (
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <AccountTreeIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
+              <StorageIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
               <Typography variant="body2" color="text.secondary">
-                <strong>Path:</strong> {chat.project?.rootPath || 'Unknown location'}
+                <strong>Workspace:</strong> {chat.workspace_id}
               </Typography>
             </Box>
-            
-            {chat.workspace_id && (
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <StorageIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
-                <Typography variant="body2" color="text.secondary">
-                  <strong>Workspace:</strong> {chat.workspace_id}
-                </Typography>
-              </Box>
-            )}
-            
-            {chat.db_path && (
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <DataObjectIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-                  <strong>DB:</strong> {chat.db_path.split('/').pop()}
-                </Typography>
-              </Box>
-            )}
-          </Box>
+          )}
+
+          {chat.db_path && (
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <DataObjectIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
+              <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
+                <strong>DB:</strong> {chat.db_path.split('/').pop()}
+              </Typography>
+            </Box>
+          )}
         </Box>
       </Paper>
 
@@ -447,7 +446,8 @@ const ChatDetail = () => {
                     overflowX: 'auto',
                     backgroundColor: message.role === 'user' 
                       ? alpha(colors.primary.main, 0.07) 
-                      : colors.highlightColor,
+                      : alpha(colors.highlightColor, 0.1),
+                    color: colors.text.primary,
                     borderRadius: 1,
                     p: 2
                   },
@@ -457,7 +457,8 @@ const ChatDetail = () => {
                     overflowX: 'auto',
                     backgroundColor: message.role === 'user' 
                       ? alpha(colors.primary.main, 0.07) 
-                      : colors.highlightColor,
+                      : alpha(colors.highlightColor, 0.1),
+                    color: colors.text.primary,
                     borderRadius: 0.5,
                     px: 0.8,
                     py: 0.2

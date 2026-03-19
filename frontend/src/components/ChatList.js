@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -44,9 +44,10 @@ import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
-import { colors } from '../App';
+import { ColorContext } from '../App';
 
 const ChatList = () => {
+  const colors = useContext(ColorContext);
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -371,15 +372,15 @@ const ChatList = () => {
             label="Show Demo Chats"
           />
           <Button
-            variant="outlined"
+            variant="contained"
+            color="highlight"
             startIcon={<RefreshIcon />}
             onClick={fetchChats}
-            sx={{ 
-              color: colors.highlightColor,
-              borderColor: alpha(colors.highlightColor, 0.5),
+            sx={{
+              borderRadius: 2,
+              color: 'white',
               '&:hover': {
-                borderColor: colors.highlightColor,
-                backgroundColor: alpha(colors.highlightColor, 0.1),
+                backgroundColor: alpha(colors.highlightColor, 0.8),
               }
             }}
           >
@@ -453,7 +454,6 @@ const ChatList = () => {
           <Button 
             onClick={() => handleExportWarningClose(false)} 
             color="primary"
-            sx={{ color: 'white' }}
           >
             Cancel
           </Button>
@@ -510,10 +510,7 @@ const ChatList = () => {
           <Button 
             startIcon={<RefreshIcon />}
             onClick={fetchChats}
-            sx={{ 
-              mt: 1,
-              color: 'white'
-            }}
+            sx={{ mt: 1 }}
             size="small"
             variant="outlined"
           >
@@ -616,7 +613,7 @@ const ChatList = () => {
                           ml: 2,
                           fontWeight: 500,
                           backgroundColor: colors.highlightColor,
-                          color: colors.text.primary,
+                          color: 'white',
                           '& .MuiChip-label': {
                             px: 1.5
                           }
@@ -627,7 +624,7 @@ const ChatList = () => {
                       aria-expanded={expandedProjects[projectName]}
                       aria-label="show more"
                       sx={{ 
-                        color: colors.text.primary,
+                        color: 'white',
                         bgcolor: colors.highlightColor,
                         '&:hover': {
                           bgcolor: alpha(colors.highlightColor, 0.8)

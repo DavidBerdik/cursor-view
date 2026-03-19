@@ -1,13 +1,18 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
-import { AppBar, Toolbar, Typography, Box, Container, Button } from '@mui/material';
+import { AppBar, Toolbar, Typography, Box, Container, Button, IconButton, Tooltip } from '@mui/material';
 import ChatIcon from '@mui/icons-material/Chat';
 import GitHubIcon from '@mui/icons-material/GitHub';
-import { colors } from '../App';
+import DarkModeIcon from '@mui/icons-material/DarkMode';
+import LightModeIcon from '@mui/icons-material/LightMode';
+import { ColorContext, ThemeModeContext } from '../App';
 
 const Header = () => {
+  const colors = useContext(ColorContext);
+  const { darkMode, toggleDarkMode } = useContext(ThemeModeContext);
+
   return (
-    <AppBar position="static" sx={{ mb: 4 }}>
+    <AppBar position="sticky" sx={{ mb: 4, color: 'white' }}>
       <Container>
         <Toolbar sx={{ p: { xs: 1, sm: 1.5 }, px: { xs: 1, sm: 0 } }}>
           <Box component={Link} to="/" sx={{ 
@@ -25,6 +30,16 @@ const Header = () => {
               Cursor View
             </Typography>
           </Box>
+
+          <Tooltip title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+            <IconButton
+              onClick={toggleDarkMode}
+              color="inherit"
+              sx={{ mr: 1 }}
+            >
+              {darkMode ? <LightModeIcon /> : <DarkModeIcon />}
+            </IconButton>
+          </Tooltip>
           
           <Button 
             component="a"
@@ -37,7 +52,6 @@ const Header = () => {
             size="small"
             sx={{ 
               borderColor: 'rgba(255,255,255,0.5)', 
-              color: 'white',
               '&:hover': { 
                 borderColor: 'rgba(255,255,255,0.8)',
                 backgroundColor: colors.highlightColor

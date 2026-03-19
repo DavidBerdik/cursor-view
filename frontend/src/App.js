@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo, createContext } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -7,167 +7,189 @@ import ChatList from './components/ChatList';
 import ChatDetail from './components/ChatDetail';
 import Header from './components/Header';
 
-// Define our color palette centrally - using rich, modern colors
-const colors = {
+const sharedColors = {
   primary: {
-    main: '#00bbff',    // Rich purple
-    light: '#66d6ff',   // Light purple
-    dark: '#005e80',    // Dark purple
+    main: '#00bbff',
+    light: '#66d6ff',
+    dark: '#005e80',
   },
   secondary: {
-    main: '#FF6B35',    // Vibrant orange
-    light: '#FF8F5E',   // Light orange
-    dark: '#E04F1D',    // Dark orange
+    main: '#FF6B35',
+    light: '#FF8F5E',
+    dark: '#E04F1D',
   },
   tertiary: {
-    main: '#3EBD64',    // Vibrant green
-    light: '#5FD583',   // Light green
-    dark: '#2A9E4A',    // Dark green
+    main: '#3EBD64',
+    light: '#5FD583',
+    dark: '#2A9E4A',
   },
-  highlightColor: '#0cbcff8f', // New bright blue with transparency
+  info:    { main: '#39C0F7' },
+  success: { main: '#3EBD64' },
+  warning: { main: '#FAAD14' },
+  error:   { main: '#F5222D' },
+};
+
+const darkColors = {
+  ...sharedColors,
+  highlightColor: '#0cbcff8f',
   background: {
-    default: '#121212', // Dark background
-    paper: '#1E1E1E',   // Slightly lighter dark for cards/elements
+    default: '#121212',
+    paper: '#1E1E1E',
   },
   text: {
-    primary: '#FFFFFF',  // White text
-    secondary: '#B3B3B3', // Lighter gray for secondary text
-  },
-  info: {
-    main: '#39C0F7',    // Bright blue
-  },
-  success: {
-    main: '#3EBD64',    // Green
-  },
-  warning: {
-    main: '#FAAD14',    // Amber
-  },
-  error: {
-    main: '#F5222D',    // Red
+    primary: '#FFFFFF',
+    secondary: '#B3B3B3',
   },
 };
 
-// Create a modern, sophisticated dark theme for the app
-const modernTheme = createTheme({
-  palette: {
-    mode: 'dark',
-    primary: colors.primary,
-    secondary: colors.secondary,
-    background: colors.background,
-    text: colors.text,
-    info: colors.info,
-    success: colors.success,
-    warning: colors.warning,
-    error: colors.error,
-    highlight: {
-      main: colors.highlightColor
-    }
+const lightColors = {
+  ...sharedColors,
+  highlightColor: '#0097cc',
+  background: {
+    default: '#f5f5f5',
+    paper: '#ffffff',
   },
-  typography: {
-    fontFamily: "'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif",
-    h4: {
-      fontWeight: 700,
+  text: {
+    primary: '#1a1a1a',
+    secondary: '#666666',
+  },
+};
+
+function readThemeCookie() {
+  const match = document.cookie
+    .split('; ')
+    .find((r) => r.startsWith('themeMode='));
+  return match ? match.split('=')[1] !== 'light' : true;
+}
+
+function writeThemeCookie(isDark) {
+  const expiry = new Date();
+  expiry.setFullYear(expiry.getFullYear() + 1);
+  document.cookie = `themeMode=${isDark ? 'dark' : 'light'}; expires=${expiry.toUTCString()}; path=/`;
+}
+
+function buildTheme(c, mode) {
+  return createTheme({
+    palette: {
+      mode,
+      primary: c.primary,
+      secondary: c.secondary,
+      background: c.background,
+      text: c.text,
+      info: c.info,
+      success: c.success,
+      warning: c.warning,
+      error: c.error,
+      highlight: { main: c.highlightColor },
     },
-    h5: {
-      fontWeight: 600,
+    typography: {
+      fontFamily: "'Inter', 'Roboto', 'Helvetica', 'Arial', sans-serif",
+      h4: { fontWeight: 700 },
+      h5: { fontWeight: 600 },
     },
-  },
-  shape: {
-    borderRadius: 10,
-  },
-  components: {
-    MuiCard: {
-      styleOverrides: {
-        root: {
-          borderRadius: 10,
-          boxShadow: `0 4px 10px ${colors.highlightColor}`,
-          backgroundColor: colors.background.paper,
+    shape: { borderRadius: 10 },
+    components: {
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            borderRadius: 10,
+            boxShadow: `0 4px 10px ${c.highlightColor}`,
+            backgroundColor: c.background.paper,
+          },
         },
       },
-    },
-    MuiPaper: {
-      styleOverrides: {
-        root: {
-          borderRadius: 10,
-          backgroundColor: colors.background.paper,
+      MuiPaper: {
+        styleOverrides: {
+          root: {
+            borderRadius: 10,
+            backgroundColor: c.background.paper,
+          },
         },
       },
-    },
-    MuiAppBar: {
-      styleOverrides: {
-        root: {
-          background: colors.primary.dark,
-          borderRadius: 0,
+      MuiAppBar: {
+        styleOverrides: {
+          root: {
+            background: c.primary.dark,
+            borderRadius: 0,
+          },
         },
       },
-    },
-    MuiTextField: {
-      styleOverrides: {
-        root: {
-          '& .MuiOutlinedInput-root': {
-            backgroundColor: 'transparent',
-            '&:hover': {
+      MuiTextField: {
+        styleOverrides: {
+          root: {
+            '& .MuiOutlinedInput-root': {
               backgroundColor: 'transparent',
+              '&:hover': { backgroundColor: 'transparent' },
+              '&.Mui-focused': { backgroundColor: 'transparent' },
             },
-            '&.Mui-focused': {
-              backgroundColor: 'transparent',
-            }
-          }
-        }
-      }
-    },
-    MuiButton: {
-      styleOverrides: {
-        root: {
-          textTransform: 'none',
-          borderRadius: 6,
-          fontWeight: 500,
-          color: 'white',
-        },
-        contained: {
-          boxShadow: `0 2px 4px ${colors.highlightColor}`,
-        },
-        outlined: {
-          color: 'white',
-          borderColor: colors.highlightColor,
-          '&:hover': {
-            borderColor: colors.highlightColor,
-          }
+          },
         },
       },
-    },
-    MuiChip: {
-      styleOverrides: {
-        root: {
-          borderRadius: 4,
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
+            borderRadius: 6,
+            fontWeight: 500,
+          },
+          contained: {
+            boxShadow: `0 2px 4px ${c.highlightColor}`,
+            color: 'white',
+          },
+          outlined: {
+            borderColor: c.highlightColor,
+            '&:hover': { borderColor: c.highlightColor },
+          },
         },
       },
+      MuiChip: {
+        styleOverrides: { root: { borderRadius: 4 } },
+      },
+      MuiCircularProgress: {
+        styleOverrides: { root: { color: c.highlightColor } },
+      },
     },
-    MuiCircularProgress: {
-      styleOverrides: {
-        root: {
-          color: colors.highlightColor
-        }
-      }
-    }
-  },
+  });
+}
+
+export const ColorContext = createContext(darkColors);
+export const ThemeModeContext = createContext({
+  darkMode: true,
+  toggleDarkMode: () => {},
 });
 
-// Export the colors so they can be used in other components
-export { colors };
-
 function App() {
+  const [darkMode, setDarkMode] = useState(readThemeCookie);
+
+  const toggleDarkMode = () => {
+    setDarkMode((prev) => {
+      const next = !prev;
+      writeThemeCookie(next);
+      return next;
+    });
+  };
+
+  const activeColors = darkMode ? darkColors : lightColors;
+  const theme = useMemo(
+    () => buildTheme(activeColors, darkMode ? 'dark' : 'light'),
+    [darkMode, activeColors],
+  );
+
   return (
-    <ThemeProvider theme={modernTheme}>
-      <CssBaseline />
-      <Router>
-        <Header />
-        <Routes>
-          <Route path="/" element={<ChatList />} />
-          <Route path="/chat/:sessionId" element={<ChatDetail />} />
-        </Routes>
-      </Router>
-    </ThemeProvider>
+    <ThemeModeContext.Provider value={{ darkMode, toggleDarkMode }}>
+      <ColorContext.Provider value={activeColors}>
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Router>
+            <Header />
+            <Routes>
+              <Route path="/" element={<ChatList />} />
+              <Route path="/chat/:sessionId" element={<ChatDetail />} />
+            </Routes>
+          </Router>
+        </ThemeProvider>
+      </ColorContext.Provider>
+    </ThemeModeContext.Provider>
   );
 }
 
