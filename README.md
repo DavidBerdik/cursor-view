@@ -6,7 +6,7 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
 
 **Privacy Note**: All data processing happens locally on your machine. No data is sent to any external servers.
 
-<img width="761" alt="Screenshot 2025-05-01 at 8 22 43 AM-min" src="https://github.com/user-attachments/assets/39dbfa63-8630-4287-903c-f87833a9b435" />
+<img width="500" alt="cursor-view Dark Mode" src=".github/readme-imgs/screenshot-dark-mode.png" /> <img width="500" alt="cursor-view Light Mode" src=".github/readme-imgs/screenshot-light-mode.png" />
 
 </div>
 
