@@ -846,6 +846,9 @@ def get_chats():
         for chat in chats:
             try:
                 formatted_chat = format_chat_for_frontend(chat)
+                formatted_chat["messages"] = coalesce_consecutive_messages_by_role(
+                    formatted_chat.get("messages", [])
+                )
                 formatted_chats.append(formatted_chat)
             except Exception as e:
                 logger.error(f"Error formatting individual chat: {e}")
