@@ -425,7 +425,7 @@ const ChatDetail = () => {
                   {message.role === 'user' ? <PersonIcon /> : <SmartToyIcon />}
                 </Avatar>
                 <Typography variant="subtitle1" fontWeight="600">
-                  {message.role === 'user' ? 'You' : 'Cursor Assistant'}
+                  {message.role === 'user' ? 'User' : 'Cursor'}
                 </Typography>
               </Box>
               

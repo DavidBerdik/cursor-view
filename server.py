@@ -714,6 +714,20 @@ def coalesce_consecutive_messages_by_role(messages):
             out.append({"role": role, "content": segment})
     return out
 
+def messages_for_json_export(messages):
+    """Return a copy of messages with assistant role renamed to cursor for JSON export."""
+    if not isinstance(messages, list):
+        return []
+    out = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        m = dict(msg)
+        if m.get("role") == "assistant":
+            m["role"] = "cursor"
+        out.append(m)
+    return out
+
 def format_chat_for_frontend(chat):
     """Format the chat data to match what the frontend expects."""
     try:
@@ -888,9 +902,14 @@ def export_chat(session_id):
                     }
 
                     if export_format == 'json':
-                        # Export as JSON
+                        json_payload = {
+                            **chat_for_export,
+                            "messages": messages_for_json_export(
+                                chat_for_export.get("messages", [])
+                            ),
+                        }
                         return Response(
-                            json.dumps(chat_for_export, indent=2),
+                            json.dumps(json_payload, indent=2),
                             mimetype="application/json; charset=utf-8",
                             headers={
                                 "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.json"',
@@ -965,7 +984,7 @@ def generate_markdown(chat):
             if not content or not isinstance(content, str):
                 logger.warning(f"Message {i + 1} has invalid content")
                 content = "Content unavailable"
-            heading = "## You" if role == "user" else "## Cursor Assistant"
+            heading = "**User**" if role == "user" else "**Cursor**"
             lines.extend([heading, "", content.rstrip(), "", "---", ""])
 
     lines.append("")
@@ -1040,7 +1059,7 @@ def generate_standalone_html(chat):
                     processed_content += "</code></pre>"
                 
                 avatar = "👤" if role == "user" else "🤖"
-                name = "You" if role == "user" else "Cursor Assistant"
+                name = "User" if role == "user" else "Cursor"
                 bg_color = "#f0f7ff" if role == "user" else "#f0fff7"
                 border_color = "#3f51b5" if role == "user" else "#00796b"
                 
