@@ -6,12 +6,6 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
 
 **Privacy Note**: All data processing happens locally on your machine. No data is sent to any external servers.
 
-<p>
-<a href="https://www.linkedin.com/in/sahar-mor/" target="_blank"><img src="https://img.shields.io/badge/LinkedIn-Connect-blue" alt="LinkedIn"></a>
-<a href="https://x.com/theaievangelist" target="_blank"><img src="https://img.shields.io/twitter/follow/:theaievangelist" alt="X"></a>
-<a href="http://aitidbits.ai/" target="_blank"><img src="https://github.com/saharmor/saharmor.github.io/blob/main/images/ai%20tidbits%20logo.png?raw=true" alt="Stay updated on AI" width="20" height="20" style="vertical-align: middle;"> Stay updated on AI</a>
-</p>
-
 <img width="761" alt="Screenshot 2025-05-01 at 8 22 43 AM-min" src="https://github.com/user-attachments/assets/39dbfa63-8630-4287-903c-f87833a9b435" />
 
 </div>
@@ -46,4 +40,4 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
 
 ## Connect
 
-Built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/) • Follow [@theaievangelist](https://x.com/theaievangelist) • [Stay updated on AI](http://aitidbits.ai/)
+Originally Built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/)
