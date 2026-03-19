@@ -685,6 +685,35 @@ def extract_project_from_git_repos(workspace_id, debug=False):
         
     return None
 
+def coalesce_consecutive_messages_by_role(messages):
+    """Merge consecutive messages from the same speaker (user vs assistant)."""
+    if not isinstance(messages, list) or not messages:
+        return []
+
+    def segment_content(msg):
+        c = msg.get("content", "") if isinstance(msg, dict) else ""
+        if isinstance(c, str) and c.strip():
+            return c.rstrip()
+        return "Content unavailable"
+
+    out = []
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        role = "user" if msg.get("role") == "user" else "assistant"
+        segment = segment_content(msg)
+        if out and out[-1]["role"] == role:
+            prev = out[-1]["content"]
+            if prev == "Content unavailable":
+                out[-1]["content"] = segment
+            elif segment == "Content unavailable":
+                pass
+            else:
+                out[-1]["content"] = prev + "\n\n" + segment
+        else:
+            out.append({"role": role, "content": segment})
+    return out
+
 def format_chat_for_frontend(chat):
     """Format the chat data to match what the frontend expects."""
     try:
@@ -827,6 +856,9 @@ def get_chat(session_id):
             if 'session' in chat and chat['session'] and isinstance(chat['session'], dict):
                 if chat['session'].get('composerId') == session_id:
                     formatted_chat = format_chat_for_frontend(chat)
+                    formatted_chat["messages"] = coalesce_consecutive_messages_by_role(
+                        formatted_chat.get("messages", [])
+                    )
                     return jsonify(formatted_chat)
         
         logger.warning(f"Chat with ID {session_id} not found")
@@ -848,11 +880,17 @@ def export_chat(session_id):
             if 'session' in chat and chat['session'] and isinstance(chat['session'], dict):
                 if chat['session'].get('composerId') == session_id:
                     formatted_chat = format_chat_for_frontend(chat)
-                    
+                    chat_for_export = {
+                        **formatted_chat,
+                        "messages": coalesce_consecutive_messages_by_role(
+                            formatted_chat.get("messages", [])
+                        ),
+                    }
+
                     if export_format == 'json':
                         # Export as JSON
                         return Response(
-                            json.dumps(formatted_chat, indent=2),
+                            json.dumps(chat_for_export, indent=2),
                             mimetype="application/json; charset=utf-8",
                             headers={
                                 "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.json"',
@@ -860,7 +898,7 @@ def export_chat(session_id):
                             },
                         )
                     if export_format == 'markdown':
-                        md_content = generate_markdown(formatted_chat)
+                        md_content = generate_markdown(chat_for_export)
                         md_bytes = md_content.encode("utf-8")
                         return Response(
                             md_content,
@@ -873,7 +911,7 @@ def export_chat(session_id):
                         )
                     else:
                         # Default to HTML export
-                        html_content = generate_standalone_html(formatted_chat)
+                        html_content = generate_standalone_html(chat_for_export)
                         return Response(
                             html_content,
                             mimetype="text/html; charset=utf-8",
