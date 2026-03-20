@@ -1113,6 +1113,15 @@ def generate_standalone_html(chat):
                     output_format='html5',
                 )
 
+                # Python-Markdown's tables extension keeps escaped pipes (\|) literal
+                # inside code spans, unlike remark-gfm which unescapes them. Fix by
+                # replacing \| with | only within <td>/<th> elements after rendering.
+                rendered_content = re.sub(
+                    r'(<t[dh]\b[^>]*>)(.*?)(</t[dh]>)',
+                    lambda m: m.group(1) + m.group(2).replace('\\|', '|') + m.group(3),
+                    rendered_content,
+                )
+
                 avatar = "👤" if role == "user" else "🤖"
                 name = "User" if role == "user" else "Cursor"
                 bg_color = "#f0f7ff" if role == "user" else "#f0fff7"
