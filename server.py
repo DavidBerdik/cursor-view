@@ -1109,7 +1109,7 @@ def generate_standalone_html(chat):
                 # Escape raw HTML first, then let the Markdown library convert markdown syntax.
                 rendered_content = markdown.markdown(
                     normalized_content,
-                    extensions=['fenced_code', 'sane_lists'],
+                    extensions=['fenced_code', 'sane_lists', 'tables'],
                     output_format='html5',
                 )
 
@@ -1158,6 +1158,10 @@ def generate_standalone_html(chat):
         .message-content a:hover {{ text-decoration: underline; }}
         .message-content img {{ max-width: 100%; height: auto; border-radius: 6px; }}
         .message-content blockquote {{ margin: 0.75rem 0; padding: 0.25rem 0 0.25rem 1rem; border-left: 4px solid #cfd8dc; color: #546e7a; }}
+        .message-content table {{ width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 0.9em; }}
+        .message-content th, .message-content td {{ border: 1px solid #ddd; padding: 8px 12px; text-align: left; }}
+        .message-content th {{ background-color: #f0f4f8; font-weight: 600; }}
+        .message-content tr:nth-child(even) {{ background-color: #f9f9f9; }}
     </style>
 </head>
 <body>

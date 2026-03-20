@@ -2,6 +2,7 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Container,
   Typography,
@@ -469,10 +470,30 @@ const ChatDetail = () => {
                     color: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
                     textDecoration: 'none',
                     '&:hover': { textDecoration: 'none' }
-                  }
+                  },
+                  '& table': {
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    my: 2,
+                    fontSize: '0.9em',
+                  },
+                  '& th, & td': {
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    px: 1.5,
+                    py: 1,
+                    textAlign: 'left',
+                  },
+                  '& th': {
+                    fontWeight: 600,
+                    backgroundColor: alpha(colors.highlightColor, 0.08),
+                  },
+                  '& tr:nth-of-type(even)': {
+                    backgroundColor: alpha(colors.highlightColor, 0.03),
+                  },
                 }}>
                   {typeof message.content === 'string' ? (
-                    <ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {message.content}
                     </ReactMarkdown>
                   ) : (
