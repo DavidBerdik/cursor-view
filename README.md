@@ -34,7 +34,7 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
 
 - Browse all Cursor chat sessions
 - Search through chat history
-- Export chats as JSON or standalone HTML
+- Export chats as HTML, JSON, or Markdown
 - Organize chats by project
 - View timestamps of conversations
 
