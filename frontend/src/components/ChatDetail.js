@@ -453,16 +453,22 @@ const ChatDetail = () => {
                     p: 2
                   },
                   '& code': { 
-                    display: 'inline-block', 
-                    maxWidth: '100%', 
-                    overflowX: 'auto',
+                    display: 'inline', 
+                    fontSize: '0.85em',
                     backgroundColor: message.role === 'user' 
                       ? alpha(colors.primary.main, 0.07) 
                       : alpha(colors.highlightColor, 0.1),
                     color: colors.text.primary,
                     borderRadius: 0.5,
                     px: 0.8,
-                    py: 0.2
+                    py: 0.2,
+                    verticalAlign: 'baseline',
+                  },
+                  '& pre code': {
+                    display: 'block',
+                    fontSize: 'inherit',
+                    backgroundColor: 'transparent',
+                    p: 0,
                   },
                   '& img': { maxWidth: '100%' },
                   '& ul, & ol': { pl: 3 },
