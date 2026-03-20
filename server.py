@@ -1108,7 +1108,7 @@ def generate_standalone_html(chat):
 
                 # Escape raw HTML first, then let the Markdown library convert markdown syntax.
                 rendered_content = markdown.markdown(
-                    html.escape(normalized_content),
+                    normalized_content,
                     extensions=['fenced_code', 'sane_lists'],
                     output_format='html5',
                 )
