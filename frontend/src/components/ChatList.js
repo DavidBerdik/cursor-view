@@ -12,7 +12,6 @@ import {
   CircularProgress,
   Divider,
   Paper,
-  Alert,
   Button,
   Collapse,
   IconButton,
@@ -28,7 +27,6 @@ import {
   FormControlLabel,
   Checkbox,
   DialogContentText,
-  Switch,
   Radio,
   RadioGroup,
   FormControl,
@@ -51,8 +49,6 @@ const ChatList = () => {
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isDemo, setIsDemo] = useState(false);
-  const [showDemoChats, setShowDemoChats] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -65,66 +61,15 @@ const ChatList = () => {
     setLoading(true);
     try {
       const response = await axios.get('/api/chats');
-      const chatData = response.data;
-      
-      // Check if these are sample chats (demo data)
-      const isSampleData = chatData.length > 0 && chatData[0].session_id?.startsWith('sample');
-      setIsDemo(isSampleData);
-      
-      // FOR DEMO: Add two extra projects with multiple sessions
-      const createDemoSessions = (projectName, projectPath, workspaceId, numSessions) => {
-        const sessions = [];
-        for (let i = 1; i <= numSessions; i++) {
-          const numMessages = Math.floor(Math.random() * 25) + 5; // 5 to 30 messages
-          const messages = Array.from({ length: numMessages }, (_, index) => ({
-            content: `Demo Message ${index + 1} in session ${i} for ${projectName}. Lorem ipsum dolor sit amet, consectetur adipiscing elit.`,
-            timestamp: Date.now() / 1000 - (index * Math.random() * 7200 + 60), // Simulate messages over time with randomness
-          }));
-          
-          sessions.push({
-            project: { name: projectName, rootPath: projectPath, workspace_id: workspaceId },
-            messages: messages,
-            date: Date.now() / 1000 - (i * 86400 * Math.random()), // Vary session dates slightly
-            session_id: `demo-session-${projectName.toLowerCase().replace(/\s+/g, '-')}-${i}`,
-            workspace_id: workspaceId,
-            db_path: `demo/db/path/${projectName}` // Simplified demo path
-          });
-        }
-        return sessions;
-      };
-
-      let demoProjects = [];
-      if (showDemoChats) {
-        demoProjects = [
-          ...createDemoSessions("dolores-voice-eval", "/Users/saharm/Documents/codebase/dolores-voice-eval", "demo-voice-eval", 3),
-          ...createDemoSessions("dolores-agent", "/Users/saharm/Documents/codebase/dolores-agent", "demo-agent", 4)
-        ];
-      }
-
-      const combinedData = [...demoProjects, ...chatData];
-      
-      setChats(combinedData);
+      setChats(response.data);
       setLoading(false);
     } catch (err) {
       setError(err.message);
       setLoading(false);
     }
-  }, [showDemoChats]);
-
-  // Toggle demo chats visibility
-  const toggleDemoChats = () => {
-    const newValue = !showDemoChats;
-    setShowDemoChats(newValue);
-    // Save preference to localStorage
-    localStorage.setItem('showDemoChats', newValue ? 'true' : 'false');
-    fetchChats();
-  };
+  }, []);
 
   useEffect(() => {
-    // Load demo chats preference from localStorage (default to false)
-    const savedShowDemoChats = localStorage.getItem('showDemoChats') === 'true';
-    setShowDemoChats(savedShowDemoChats);
-    
     // Check if user has previously chosen to not show the export warning
     const warningPreference = document.cookie
       .split('; ')
@@ -135,10 +80,9 @@ const ChatList = () => {
     }
   }, []);
 
-  // Fetch chats on mount and whenever showDemoChats changes
   useEffect(() => {
     fetchChats();
-  }, [showDemoChats, fetchChats]);
+  }, [fetchChats]);
 
   const toggleProjectExpand = (projectName) => {
     setExpandedProjects(prev => ({
@@ -359,16 +303,6 @@ const ChatList = () => {
           Cursor Chat History
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <FormControlLabel
-            control={
-              <Switch 
-                checked={showDemoChats}
-                onChange={toggleDemoChats}
-                color="primary"
-              />
-            }
-            label="Show Demo Chats"
-          />
           <Button
             variant="contained"
             color="highlight"
@@ -492,30 +426,6 @@ const ChatList = () => {
         }}
       />
       
-      {isDemo && (
-        <Alert severity="info" sx={{ mb: 3, borderRadius: 3 }}>
-          <Typography variant="body1" sx={{ mb: 1 }}>
-            Currently showing demo data. No actual Cursor View data was found on your system.
-          </Typography>
-          <Typography variant="body2">
-            Cursor chat databases are typically stored in:
-            <Box component="ul" sx={{ mt: 1, ml: 2 }}>
-              <li>Mac: ~/Library/Application Support/Cursor/User/globalStorage/cursor.cursor</li>
-              <li>Windows: %APPDATA%\Cursor\User\globalStorage\cursor.cursor</li>
-              <li>Linux: ~/.config/Cursor/User/globalStorage/cursor.cursor</li>
-            </Box>
-          </Typography>
-          <Button 
-            startIcon={<RefreshIcon />}
-            onClick={fetchChats}
-            sx={{ mt: 1 }}
-            size="small"
-            variant="outlined"
-          >
-            Refresh
-          </Button>
-        </Alert>
-      )}
       
       {Object.keys(chatsByProject).length === 0 ? (
         <Paper 
