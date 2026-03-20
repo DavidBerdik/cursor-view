@@ -663,7 +663,7 @@ const ChatList = () => {
                     }
 
                     return (
-                      <Grid item xs={12} sm={6} md={4} key={chat.session_id || `chat-${index}`}>
+                      <Grid size={{ xs: 12, sm: 6, md: 4 }} key={chat.session_id || `chat-${index}`}>
                         <Card 
                           component={Link} 
                           to={`/chat/${chat.session_id}`}
