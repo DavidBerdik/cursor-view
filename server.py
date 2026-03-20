@@ -20,6 +20,7 @@ import webbrowser
 from collections import defaultdict
 from typing import Dict, Any, Iterable
 from pathlib import Path
+from pygments.lexers import find_lexer_class_for_filename
 from urllib.parse import unquote
 from flask import Flask, Response, jsonify, send_from_directory, request
 from flask_cors import CORS
@@ -1034,9 +1035,23 @@ def generate_markdown(chat):
     )
     return "\n".join(lines)
 
+def infer_language_from_filename(filename: str) -> str | None:
+    """Infer a fenced-code language tag from a filename."""
+    if not filename:
+        return None
+
+    lexer_class = find_lexer_class_for_filename(filename)
+    if lexer_class is None:
+        return None
+
+    if lexer_class.aliases:
+        return lexer_class.aliases[0]
+    return None
+
 def normalize_markdown_for_html_export(content: str) -> str:
     """Normalize malformed markdown patterns seen in chat exports."""
     normalized_lines = []
+    cursor_metadata_pattern = re.compile(r"^(\d+):(\d+):(.+)$")
 
     for line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         stripped = line.lstrip()
@@ -1046,18 +1061,18 @@ def normalize_markdown_for_html_export(content: str) -> str:
             fence_tail = stripped[3:]
 
             if fence_tail:
+                cursor_metadata = cursor_metadata_pattern.match(fence_tail)
+                if cursor_metadata:
+                    filename = cursor_metadata.group(3)
+                    language = infer_language_from_filename(filename)
+                    normalized_lines.append(f"{indent}```{language or ''}")
+                    continue
+
                 language_and_content = re.match(r"^([A-Za-z0-9_+-]+)\s+(.+)$", fence_tail)
                 if language_and_content:
                     language, inline_code = language_and_content.groups()
                     normalized_lines.append(f"{indent}```{language}")
                     normalized_lines.append(f"{indent}{inline_code}")
-                    continue
-
-                # If the fence tail is not a simple language tag, treat it as code
-                # that was incorrectly placed on the opening fence line.
-                if not re.fullmatch(r"[A-Za-z0-9_+-]+", fence_tail):
-                    normalized_lines.append(f"{indent}```")
-                    normalized_lines.append(f"{indent}{fence_tail}")
                     continue
 
         normalized_lines.append(line)
@@ -1109,7 +1124,14 @@ def generate_standalone_html(chat):
                 # Escape raw HTML first, then let the Markdown library convert markdown syntax.
                 rendered_content = markdown.markdown(
                     normalized_content,
-                    extensions=['fenced_code', 'sane_lists', 'tables'],
+                    extensions=['fenced_code', 'codehilite', 'sane_lists', 'tables'],
+                    extension_configs={
+                        'codehilite': {
+                            'guess_lang': False,
+                            'noclasses': True,
+                            'pygments_style': 'default',
+                        }
+                    },
                     tab_length=2,
                     output_format='html5',
                 )
