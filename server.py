@@ -1110,6 +1110,7 @@ def generate_standalone_html(chat):
                 rendered_content = markdown.markdown(
                     normalized_content,
                     extensions=['fenced_code', 'sane_lists', 'tables'],
+                    tab_length=2,
                     output_format='html5',
                 )
 
