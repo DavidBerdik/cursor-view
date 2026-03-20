@@ -38,6 +38,4 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
 - Organize chats by project
 - View timestamps of conversations
 
-## Connect
-
-Originally Built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/)
+_Originally built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/)._
