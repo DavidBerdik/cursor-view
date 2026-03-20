@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -61,7 +61,7 @@ const ChatList = () => {
   const [dontShowExportWarning, setDontShowExportWarning] = useState(false);
   const [currentExportSession, setCurrentExportSession] = useState(null);
 
-  const fetchChats = async () => {
+  const fetchChats = useCallback(async () => {
     setLoading(true);
     try {
       const response = await axios.get('/api/chats');
@@ -109,7 +109,7 @@ const ChatList = () => {
       setError(err.message);
       setLoading(false);
     }
-  };
+  }, [showDemoChats]);
 
   // Toggle demo chats visibility
   const toggleDemoChats = () => {
@@ -125,8 +125,6 @@ const ChatList = () => {
     const savedShowDemoChats = localStorage.getItem('showDemoChats') === 'true';
     setShowDemoChats(savedShowDemoChats);
     
-    fetchChats();
-    
     // Check if user has previously chosen to not show the export warning
     const warningPreference = document.cookie
       .split('; ')
@@ -137,10 +135,10 @@ const ChatList = () => {
     }
   }, []);
 
-  // Watch for changes to showDemoChats and refetch when it changes
+  // Fetch chats on mount and whenever showDemoChats changes
   useEffect(() => {
     fetchChats();
-  }, [showDemoChats]);
+  }, [showDemoChats, fetchChats]);
 
   const toggleProjectExpand = (projectName) => {
     setExpandedProjects(prev => ({
