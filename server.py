@@ -8,8 +8,10 @@ import sys
 import uuid
 import logging
 import datetime
+import html
 import os
 import platform
+import re
 import sqlite3
 import argparse
 import pathlib
@@ -21,6 +23,7 @@ from pathlib import Path
 from urllib.parse import unquote
 from flask import Flask, Response, jsonify, send_from_directory, request
 from flask_cors import CORS
+import markdown
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
@@ -1031,6 +1034,36 @@ def generate_markdown(chat):
     )
     return "\n".join(lines)
 
+def normalize_markdown_for_html_export(content: str) -> str:
+    """Normalize malformed markdown patterns seen in chat exports."""
+    normalized_lines = []
+
+    for line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        stripped = line.lstrip()
+        indent = line[: len(line) - len(stripped)]
+
+        if stripped.startswith("```"):
+            fence_tail = stripped[3:]
+
+            if fence_tail:
+                language_and_content = re.match(r"^([A-Za-z0-9_+-]+)\s+(.+)$", fence_tail)
+                if language_and_content:
+                    language, inline_code = language_and_content.groups()
+                    normalized_lines.append(f"{indent}```{language}")
+                    normalized_lines.append(f"{indent}{inline_code}")
+                    continue
+
+                # If the fence tail is not a simple language tag, treat it as code
+                # that was incorrectly placed on the opening fence line.
+                if not re.fullmatch(r"[A-Za-z0-9_+-]+", fence_tail):
+                    normalized_lines.append(f"{indent}```")
+                    normalized_lines.append(f"{indent}{fence_tail}")
+                    continue
+
+        normalized_lines.append(line)
+
+    return "\n".join(normalized_lines)
+
 def generate_standalone_html(chat):
     """Generate a standalone HTML representation of the chat."""
     logger.info(f"Generating HTML for session ID: {chat.get('session_id', 'N/A')}")
@@ -1047,6 +1080,10 @@ def generate_standalone_html(chat):
         # Get project info
         project_name = chat.get('project', {}).get('name', 'Unknown Project')
         project_path = chat.get('project', {}).get('rootPath', 'Unknown Path')
+        safe_project_name = html.escape(project_name)
+        safe_project_path = html.escape(project_path)
+        safe_date_display = html.escape(date_display)
+        safe_session_id = html.escape(chat.get('session_id', 'Unknown'))
         logger.info(f"Project: {project_name}, Path: {project_path}, Date: {date_display}")
         
         # Build the HTML content
@@ -1066,36 +1103,16 @@ def generate_standalone_html(chat):
                 if not content or not isinstance(content, str):
                     logger.warning(f"Message {i+1} has invalid content: {content}")
                     content = "Content unavailable"
-                
-                # Simple HTML escaping
-                escaped_content = content.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                
-                # Convert markdown code blocks (handle potential nesting issues simply)
-                processed_content = ""
-                in_code_block = False
-                for line in escaped_content.split('\n'):
-                    if line.strip().startswith("```"):
-                        if not in_code_block:
-                            processed_content += "<pre><code>"
-                            in_code_block = True
-                            # Remove the first ``` marker
-                            line = line.strip()[3:] 
-                        else:
-                            processed_content += "</code></pre>\n"
-                            in_code_block = False
-                            line = "" # Skip the closing ``` line
-                    
-                    if in_code_block:
-                         # Inside code block, preserve spacing and add line breaks
-                        processed_content += line + "\n" 
-                    else:
-                        # Outside code block, use <br> for newlines
-                        processed_content += line + "<br>"
-                
-                # Close any unclosed code block at the end
-                if in_code_block:
-                    processed_content += "</code></pre>"
-                
+
+                normalized_content = normalize_markdown_for_html_export(content)
+
+                # Escape raw HTML first, then let the Markdown library convert markdown syntax.
+                rendered_content = markdown.markdown(
+                    html.escape(normalized_content),
+                    extensions=['fenced_code', 'sane_lists'],
+                    output_format='html5',
+                )
+
                 avatar = "👤" if role == "user" else "🤖"
                 name = "User" if role == "user" else "Cursor"
                 bg_color = "#f0f7ff" if role == "user" else "#f0fff7"
@@ -1110,40 +1127,48 @@ def generate_standalone_html(chat):
                         <div class="sender" style="font-weight: bold;">{name}</div>
                     </div>
                     <div class="message-content" style="padding: 15px; border-radius: 8px; background-color: {bg_color}; border-left: 4px solid {border_color}; margin-left: {0 if role == 'user' else '40px'}; margin-right: {0 if role == 'assistant' else '40px'};">
-                        {processed_content} 
+                        {rendered_content}
                     </div>
                 </div>
                 """
 
         # Create the complete HTML document
-        html = f"""<!DOCTYPE html>
+        html_document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursor Chat - {project_name}</title>
+    <title>Cursor Chat - {safe_project_name}</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 20px auto; padding: 20px; border: 1px solid #eee; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }}
         h1, h2, h3 {{ color: #2c3e50; }}
-        .header {{ background: linear-gradient(90deg, #f0f7ff 0%, #f0fff7 100%); color: white; padding: 15px 20px; border-radius: 8px 8px 0 0; margin: -20px -20px 20px -20px; }}
+        .header {{ background: linear-gradient(90deg, #f0f7ff 0%, #f0fff7 100%); color: #2c3e50; padding: 15px 20px; border-radius: 8px 8px 0 0; margin: -20px -20px 20px -20px; }}
         .chat-info {{ display: flex; flex-wrap: wrap; gap: 10px 20px; margin-bottom: 20px; background-color: #f9f9f9; padding: 12px 15px; border-radius: 8px; font-size: 0.9em; }}
         .info-item {{ display: flex; align-items: center; }}
         .info-label {{ font-weight: bold; margin-right: 5px; color: #555; }}
-        pre {{ background-color: #eef; padding: 15px; border-radius: 5px; overflow-x: auto; border: 1px solid #ddd; font-family: 'Courier New', Courier, monospace; font-size: 0.9em; white-space: pre-wrap; word-wrap: break-word; }}
-        code {{ background-color: transparent; padding: 0; border-radius: 0; font-family: inherit; }}
+        pre {{ background-color: #eef; padding: 15px; border-radius: 5px; overflow-x: auto; border: 1px solid #ddd; font-family: 'Courier New', Courier, monospace; font-size: 0.9em; white-space: pre; }}
+        code {{ background-color: rgba(63, 81, 181, 0.08); padding: 0.1em 0.35em; border-radius: 4px; font-family: 'Courier New', Courier, monospace; font-size: 0.95em; }}
         .message-content pre code {{ background-color: transparent; }}
         .message-content {{ word-wrap: break-word; overflow-wrap: break-word; }}
+        .message-content p:first-child {{ margin-top: 0; }}
+        .message-content p:last-child {{ margin-bottom: 0; }}
+        .message-content ul, .message-content ol {{ padding-left: 1.5rem; margin: 0.75rem 0; }}
+        .message-content li + li {{ margin-top: 0.25rem; }}
+        .message-content a {{ color: #1565c0; text-decoration: none; }}
+        .message-content a:hover {{ text-decoration: underline; }}
+        .message-content img {{ max-width: 100%; height: auto; border-radius: 6px; }}
+        .message-content blockquote {{ margin: 0.75rem 0; padding: 0.25rem 0 0.25rem 1rem; border-left: 4px solid #cfd8dc; color: #546e7a; }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Cursor Chat: {project_name}</h1>
+        <h1>Cursor Chat: {safe_project_name}</h1>
     </div>
     <div class="chat-info">
-        <div class="info-item"><span class="info-label">Project:</span> <span>{project_name}</span></div>
-        <div class="info-item"><span class="info-label">Path:</span> <span>{project_path}</span></div>
-        <div class="info-item"><span class="info-label">Date:</span> <span>{date_display}</span></div>
-        <div class="info-item"><span class="info-label">Session ID:</span> <span>{chat.get('session_id', 'Unknown')}</span></div>
+        <div class="info-item"><span class="info-label">Project:</span> <span>{safe_project_name}</span></div>
+        <div class="info-item"><span class="info-label">Path:</span> <span>{safe_project_path}</span></div>
+        <div class="info-item"><span class="info-label">Date:</span> <span>{safe_date_display}</span></div>
+        <div class="info-item"><span class="info-label">Session ID:</span> <span>{safe_session_id}</span></div>
     </div>
     <h2>Conversation History</h2>
     <div class="messages">
@@ -1155,8 +1180,8 @@ def generate_standalone_html(chat):
 </body>
 </html>"""
         
-        logger.info(f"Finished generating HTML. Total length: {len(html)}")
-        return html
+        logger.info(f"Finished generating HTML. Total length: {len(html_document)}")
+        return html_document
     except Exception as e:
         logger.error(f"Error generating HTML for session {chat.get('session_id', 'N/A')}: {e}", exc_info=True)
         # Return an HTML formatted error message
