@@ -42,10 +42,11 @@ import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
-import { ColorContext } from '../App';
+import { ColorContext, ThemeModeContext } from '../App';
 
 const ChatList = () => {
   const colors = useContext(ColorContext);
+  const { darkMode } = useContext(ThemeModeContext);
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -203,8 +204,12 @@ const ChatList = () => {
   // Function to actually perform the export
   const proceedWithExport = async (sessionId, format) => {
     try {
+      const params = new URLSearchParams({
+        format,
+        theme: darkMode ? 'dark' : 'light',
+      });
       const response = await axios.get(
-        `/api/chat/${sessionId}/export?format=${format}`,
+        `/api/chat/${sessionId}/export?${params.toString()}`,
         { responseType: 'blob' }
       );
 

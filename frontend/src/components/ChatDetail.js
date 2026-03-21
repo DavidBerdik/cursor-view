@@ -32,12 +32,13 @@ import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import DataObjectIcon from '@mui/icons-material/DataObject';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
-import { ColorContext } from '../App';
+import { ColorContext, ThemeModeContext } from '../App';
 import MessageMarkdown from './MessageMarkdown';
 import { prepareMarkdownHtml } from '../markdown/prepareMarkdownHtml';
 
 const ChatDetail = () => {
   const colors = useContext(ColorContext);
+  const { darkMode } = useContext(ThemeModeContext);
   const { sessionId } = useParams();
   const [chat, setChat] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -145,9 +146,13 @@ const ChatDetail = () => {
   // Function to actually perform the export
   const proceedWithExport = async (format) => {
     try {
+      const params = new URLSearchParams({
+        format,
+        theme: darkMode ? 'dark' : 'light',
+      });
       // Request the exported chat as a raw Blob so we can download it directly
       const response = await axios.get(
-        `/api/chat/${sessionId}/export?format=${format}`,
+        `/api/chat/${sessionId}/export?${params.toString()}`,
         { responseType: 'blob' }
       );
 
