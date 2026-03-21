@@ -11,12 +11,15 @@
     "@wooorm/starry-night": "^3.9.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-markdown": "^10.1.0",
     "rehype-starry-night": "^2.2.0",
+    "rehype-stringify": "^10.0.1",
     "react-router-dom": "^7.13.1",
     "react-scripts": "5.0.1",
     "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
     "styled-components": "^6.3.12",
+    "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0"
   },
   "scripts": {

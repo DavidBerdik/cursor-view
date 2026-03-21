@@ -34,6 +34,7 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
 import { ColorContext } from '../App';
 import MessageMarkdown from './MessageMarkdown';
+import { prepareMarkdownHtml } from '../markdown/prepareMarkdownHtml';
 
 const ChatDetail = () => {
   const colors = useContext(ColorContext);
@@ -47,14 +48,40 @@ const ChatDetail = () => {
   const [dontShowExportWarning, setDontShowExportWarning] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchChat = async () => {
       try {
+        setLoading(true);
+        setError(null);
         const response = await axios.get(`/api/chat/${sessionId}`);
-        setChat(response.data);
-        setLoading(false);
+        const fetchedChat = response.data;
+        const messages = Array.isArray(fetchedChat.messages) ? fetchedChat.messages : [];
+        const preparedMessages = await Promise.all(
+          messages.map(async (message) => {
+            if (typeof message.content !== 'string') {
+              return message;
+            }
+
+            return {
+              ...message,
+              renderedContent: await prepareMarkdownHtml(message.content),
+            };
+          })
+        );
+
+        if (!cancelled) {
+          setChat({
+            ...fetchedChat,
+            messages: preparedMessages,
+          });
+          setLoading(false);
+        }
       } catch (err) {
-        setError(err.message);
-        setLoading(false);
+        if (!cancelled) {
+          setError(err.message);
+          setLoading(false);
+        }
       }
     };
 
@@ -68,6 +95,10 @@ const ChatDetail = () => {
     if (warningPreference) {
       setDontShowExportWarning(warningPreference.split('=')[1] === 'true');
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   // Handle format dialog selection
@@ -466,9 +497,9 @@ const ChatDetail = () => {
                     backgroundColor: alpha(colors.highlightColor, 0.03),
                   },
                 }}>
-                  {typeof message.content === 'string' ? (
+                  {typeof message.renderedContent === 'string' ? (
                     <MessageMarkdown
-                      content={message.content}
+                      html={message.renderedContent}
                       colors={colors}
                       role={message.role}
                     />

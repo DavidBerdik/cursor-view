@@ -1,10 +1,6 @@
 import React, { useContext } from 'react';
-import ReactMarkdown, { MarkdownHooks } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeStarryNight from 'rehype-starry-night';
 import { Box, alpha } from '@mui/material';
 import { ThemeModeContext } from '../App';
-import remarkCursorFenceMeta from '../markdown/remarkCursorFenceMeta';
 
 function getCodeBlockBackground(colors, role, darkMode) {
   if (role === 'user') {
@@ -14,28 +10,7 @@ function getCodeBlockBackground(colors, role, darkMode) {
   return alpha(colors.highlightColor, darkMode ? 0.2 : 0.1);
 }
 
-function renderInlineCode(children, colors, role, darkMode, props) {
-  return (
-    <Box
-      component="code"
-      sx={{
-        display: 'inline',
-        fontSize: '0.85em',
-        backgroundColor: getCodeBlockBackground(colors, role, darkMode),
-        color: colors.text.primary,
-        borderRadius: 0.5,
-        px: 0.8,
-        py: 0.2,
-        verticalAlign: 'baseline',
-      }}
-      {...props}
-    >
-      {children}
-    </Box>
-  );
-}
-
-export default function MessageMarkdown({ content, colors, role }) {
+export default function MessageMarkdown({ html, colors, role }) {
   const { darkMode } = useContext(ThemeModeContext);
   const codeBlockBackground = getCodeBlockBackground(colors, role, darkMode);
 
@@ -65,30 +40,21 @@ export default function MessageMarkdown({ content, colors, role }) {
         },
       }}
     >
-      <MarkdownHooks
-        fallback={
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {content}
-          </ReactMarkdown>
-        }
-        remarkPlugins={[remarkGfm, remarkCursorFenceMeta]}
-        rehypePlugins={[[rehypeStarryNight, { allowMissingScopes: true }]]}
-        components={{
-          code({ className, children, ...props }) {
-            if (className) {
-              return (
-                <code className={className} {...props}>
-                  {children}
-                </code>
-              );
-            }
-
-            return renderInlineCode(children, colors, role, darkMode, props);
+      <Box
+        dangerouslySetInnerHTML={{ __html: html || '' }}
+        sx={{
+          '& :not(pre) > code': {
+            display: 'inline',
+            fontSize: '0.85em',
+            backgroundColor: getCodeBlockBackground(colors, role, darkMode),
+            color: colors.text.primary,
+            borderRadius: 0.5,
+            px: 0.8,
+            py: 0.2,
+            verticalAlign: 'baseline',
           },
         }}
-      >
-        {content}
-      </MarkdownHooks>
+      />
     </Box>
   );
 }
