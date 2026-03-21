@@ -8,13 +8,16 @@
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
     "axios": "^1.13.6",
+    "@wooorm/starry-night": "^3.9.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
+    "rehype-starry-night": "^2.2.0",
     "react-router-dom": "^7.13.1",
     "react-scripts": "5.0.1",
     "remark-gfm": "^4.0.1",
-    "styled-components": "^6.3.12"
+    "styled-components": "^6.3.12",
+    "unist-util-visit": "^5.1.0"
   },
   "scripts": {
     "start": "cross-env NODE_OPTIONS=--disable-warning=DEP0176 react-scripts start",

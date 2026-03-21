@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   Container,
   Typography,
@@ -35,6 +33,7 @@ import DataObjectIcon from '@mui/icons-material/DataObject';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
 import { ColorContext } from '../App';
+import MessageMarkdown from './MessageMarkdown';
 
 const ChatDetail = () => {
   const colors = useContext(ColorContext);
@@ -439,34 +438,6 @@ const ChatDetail = () => {
                 }}
               >
                 <Box sx={{ 
-                  '& pre': { 
-                    maxWidth: '100%', 
-                    overflowX: 'auto',
-                    backgroundColor: message.role === 'user' 
-                      ? alpha(colors.primary.main, 0.07) 
-                      : alpha(colors.highlightColor, 0.1),
-                    color: colors.text.primary,
-                    borderRadius: 1,
-                    p: 2
-                  },
-                  '& code': { 
-                    display: 'inline', 
-                    fontSize: '0.85em',
-                    backgroundColor: message.role === 'user' 
-                      ? alpha(colors.primary.main, 0.07) 
-                      : alpha(colors.highlightColor, 0.1),
-                    color: colors.text.primary,
-                    borderRadius: 0.5,
-                    px: 0.8,
-                    py: 0.2,
-                    verticalAlign: 'baseline',
-                  },
-                  '& pre code': {
-                    display: 'block',
-                    fontSize: 'inherit',
-                    backgroundColor: 'transparent',
-                    p: 0,
-                  },
                   '& img': { maxWidth: '100%' },
                   '& ul, & ol': { pl: 3 },
                   '& a': { 
@@ -496,9 +467,11 @@ const ChatDetail = () => {
                   },
                 }}>
                   {typeof message.content === 'string' ? (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {message.content}
-                    </ReactMarkdown>
+                    <MessageMarkdown
+                      content={message.content}
+                      colors={colors}
+                      role={message.role}
+                    />
                   ) : (
                     <Typography>Content unavailable</Typography>
                   )}
