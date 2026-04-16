@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "${env:WORKON_HOME}/cursor-view/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true
+}

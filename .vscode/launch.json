@@ -16,7 +16,7 @@
             "FLASK_ENV": "development"
         },
         "console": "integratedTerminal", // Show output in integrated terminal
-        "python": "${workspaceFolder}/venv/bin/python",
+        "python": "${command:python.interpreterPath}",
         "envFile": "${workspaceFolder}/.env"
     }
     ]
