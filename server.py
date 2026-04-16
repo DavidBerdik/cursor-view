@@ -18,7 +18,7 @@ import pathlib
 import threading
 import webbrowser
 from collections import defaultdict
-from typing import Dict, Any, Iterable
+from typing import Any, Dict, Iterable
 from pathlib import Path
 from pygments.lexers import find_lexer_class_for_filename
 from urllib.parse import unquote
@@ -69,6 +69,92 @@ def j(cur: sqlite3.Cursor, table: str, key: str):
         if isinstance(raw, str) and raw:
             return raw
         return None
+
+
+def parse_cursor_timestamp_to_ms(value: Any) -> int | None:
+    """Parse Cursor's stored time (ms epoch, s epoch, or ISO string) to Unix ms."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        n = float(value)
+        if n != n:  # NaN
+            return None
+        # Heuristic: ms since epoch is ~1.7e12; seconds ~1.7e9
+        if abs(n) > 1e11:
+            return int(n)
+        return int(n * 1000)
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        if re.match(r"^-?\d+(\.\d+)?$", s):
+            try:
+                return parse_cursor_timestamp_to_ms(float(s))
+            except (ValueError, OverflowError):
+                return None
+        return _parse_iso_timestamp_to_ms(s)
+    return None
+
+
+def _parse_iso_timestamp_to_ms(s: str) -> int | None:
+    t = s.strip()
+    if t.endswith("Z"):
+        t = t[:-1] + "+00:00"
+    try:
+        dt = datetime.datetime.fromisoformat(t)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return int(dt.timestamp() * 1000)
+
+
+def session_sort_key_ms(session: dict) -> int:
+    """Recency sort: lastUpdatedAt, then createdAt (same fields as display fallback order)."""
+    if not isinstance(session, dict):
+        return 0
+    lu = parse_cursor_timestamp_to_ms(session.get("lastUpdatedAt"))
+    if lu is not None:
+        return lu
+    cr = parse_cursor_timestamp_to_ms(session.get("createdAt"))
+    return cr if cr is not None else 0
+
+
+def session_display_date_seconds(session: dict) -> int | None:
+    """Unix seconds for UI: prefer createdAt, then lastUpdatedAt."""
+    if not isinstance(session, dict):
+        return None
+    for key in ("createdAt", "lastUpdatedAt"):
+        ms = parse_cursor_timestamp_to_ms(session.get(key))
+        if ms is not None:
+            return ms // 1000
+    return None
+
+
+def _merge_global_composer_into_meta(meta: dict, cid: str, data: dict) -> None:
+    """Fill missing title/timestamps from global composerData; preserve workspace meta when set."""
+    if not isinstance(data, dict):
+        return
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        cur = (meta.get("title") or "").strip()
+        if (
+            cur.startswith("Chat ")
+            or cur.startswith("Global Chat ")
+            or cur in ("(untitled)", "")
+        ):
+            meta["title"] = name.strip()
+    created_at = data.get("createdAt")
+    last_updated = data.get("lastUpdatedAt")
+    if last_updated is None:
+        last_updated = created_at
+    if meta.get("createdAt") is None and created_at is not None:
+        meta["createdAt"] = created_at
+    if meta.get("lastUpdatedAt") is None and last_updated is not None:
+        meta["lastUpdatedAt"] = last_updated
+
 
 def _uri_from_bubble_context_entry(entry) -> str | None:
     """Extract a URI string from a ``bubble.context.fileSelections`` entry.
@@ -1069,14 +1155,25 @@ def extract_chats() -> list[Dict[str,Any]]:
                 if isinstance(pcid, str) and pcid and pcid != cid:
                     subagent_parent[cid] = pcid
 
+            created_at = data.get("createdAt")
+            last_updated = data.get("lastUpdatedAt")
+            if last_updated is None:
+                last_updated = created_at
+            name = data.get("name")
+            if isinstance(name, str) and name.strip():
+                use_title = name.strip()
+            else:
+                use_title = f"Chat {cid[:8]}"
+
             if cid not in comp_meta:
-                created_at = data.get("createdAt")
                 comp_meta[cid] = {
-                    "title": f"Chat {cid[:8]}",
+                    "title": use_title,
                     "createdAt": created_at,
-                    "lastUpdatedAt": created_at
+                    "lastUpdatedAt": last_updated,
                 }
                 comp2ws[cid] = "(global)"
+            else:
+                _merge_global_composer_into_meta(comp_meta[cid], cid, data)
             
             # Record the database path
             if "db_path" not in sessions[cid]:
@@ -1236,8 +1333,8 @@ def extract_chats() -> list[Dict[str,Any]]:
             
         out.append(chat_data)
     
-    # Sort by last updated time if available
-    out.sort(key=lambda s: s["session"].get("lastUpdatedAt") or 0, reverse=True)
+    # Sort by recency (parsed ms) so ordering matches timestamp semantics
+    out.sort(key=lambda s: session_sort_key_ms(s.get("session", {})), reverse=True)
     logger.debug(f"Total chat sessions extracted: {len(out)}")
     return out
 
@@ -1369,13 +1466,10 @@ def format_chat_for_frontend(chat):
         if 'session' in chat and chat['session'] and isinstance(chat['session'], dict):
             session_id = chat['session'].get('composerId', session_id)
         
-        # Format date from createdAt timestamp or use current date
-        date = int(datetime.datetime.now().timestamp())
+        # Prefer createdAt, then lastUpdatedAt; omit date if unknown (UI shows "Unknown date")
+        date = None
         if 'session' in chat and chat['session'] and isinstance(chat['session'], dict):
-            created_at = chat['session'].get('createdAt')
-            if created_at and isinstance(created_at, (int, float)):
-                # Convert from milliseconds to seconds
-                date = created_at / 1000
+            date = session_display_date_seconds(chat['session'])
         
         # Ensure project has expected fields
         project = chat.get('project', {})
@@ -1463,7 +1557,7 @@ def format_chat_for_frontend(chat):
         return {
             'project': {'name': 'Error', 'rootPath': '/'},
             'messages': [],
-            'date': int(datetime.datetime.now().timestamp()),
+            'date': None,
             'session_id': str(uuid.uuid4()),
             'workspace_id': 'error',
             'db_path': 'Error retrieving database path'
