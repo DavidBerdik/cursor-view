@@ -1,0 +1,39 @@
+---
+description: Cursor View repository layout and dead-code hygiene
+alwaysApply: true
+---
+
+# Repository layout
+
+- New Python code lives inside the `cursor_view/` package. The repo
+  root only holds **thin shims** (`terminal.py`, `desktop.py`,
+  `cursor_view_main.py`) that import and call `main()` from their
+  package counterpart. The old `server.py` was a full implementation
+  at the root; that is exactly what this rule exists to prevent.
+- Organize by concern using subpackages, not by file type. Canonical
+  subpackages (extend, don't replace): `cursor_view/extraction/`,
+  `cursor_view/export/`, `cursor_view/projects/`, `cursor_view/sources/`,
+  `cursor_view/desktop/`.
+- Do not create a new top-level Python file unless it is a shim for an
+  existing package entry point. Ad-hoc utilities (e.g. the deleted
+  `vscdb_to_sqlite.py`) belong inside a subpackage with a real caller,
+  or nowhere.
+- Frontend source lives under `frontend/src/` with this fixed structure:
+  `theme/`, `contexts/`, `hooks/`, `utils/`, `markdown/`,
+  `components/<feature>/`.
+
+# Dead code and build artifacts
+
+- Files with no caller anywhere in the active codebase (Python imports,
+  spec files, workflow files, frontend imports) must be removed in the
+  same change that orphans them. Git history is the archive.
+- Compiled or generated artifacts (`__pycache__/`, `dist/`, `build/`,
+  `frontend/node_modules/`, `frontend/build/`) must stay gitignored.
+  Do not commit them to "fix" a build.
+- Static HTML prototypes and UI mockups do not belong in the repo
+  (motivating example: the deleted `cursor_chat_viewer/index.html`).
+
+# Documentation sync
+
+- Any change that alters the repository layout must update the
+  "Project layout" section of `README.md` in the same change.

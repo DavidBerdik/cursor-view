@@ -1,0 +1,57 @@
+---
+description: React component decomposition, shared logic, and theme ownership
+globs: frontend/src/**/*.{js,jsx}
+alwaysApply: false
+---
+
+# Component size and layout
+
+- One React component per file. Components that exceed ~250 lines must
+  be decomposed into feature-folder siblings. Motivating example:
+  `ChatList.js` was 670 lines and now lives in `components/chat-list/`
+  split into `ChatList`, `SearchBar`, `EmptyState`, `ProjectGroup`,
+  `ChatCard`.
+- Duplicated UI across pages (dialogs, toolbars, cards) is extracted
+  into `components/<shared-area>/`. The export format + warning
+  dialogs lived twice in the codebase before the refactor and must
+  never again.
+
+# Shared logic and helpers
+
+- Duplicated logic across pages (fetch + cancel effects, cookie
+  read/write, event state machines) lives in `src/hooks/`. Current
+  examples: `useChatSummaries`, `useExportFlow`,
+  `useExportWarningPreference`.
+- Pure helpers (`formatDate`, `dbPathLabel`, cookie parsing) live in
+  `src/utils/`. A helper may not be copied into two components;
+  promote it on sight.
+
+```jsx
+// Wrong: duplicated at the top of ChatCard and ChatMetaPanel
+function formatDate(date) { /* ... */ }
+
+// Right
+import { formatDate } from '../../utils/formatDate';
+```
+
+# Theme ownership
+
+- MUI theme tokens (`palette`, `sx`) own the visual language. CSS
+  files in `src/` must **not** hard-code colors the theme already
+  controls. Keep global CSS limited to font stacks, CSS-variable-
+  driven scrollbars, and purely structural concerns. Motivating
+  example: `frontend/src/index.css` previously hard-coded `#2D2D2D`
+  for `pre` and `code` even in light mode.
+- Contexts (`ColorContext`, `ThemeModeContext`) are defined in
+  `src/contexts/`, one per file. Do not re-export contexts from
+  `App.js`; import them from their defining file.
+
+# Effects and export flow
+
+- Use a cancellation flag
+  (`let cancelled = false; ... return () => { cancelled = true; };`)
+  for every `useEffect` that awaits a network request, and respect it
+  after every `await` boundary.
+- Reuse the `useExportFlow` hook for any new "export to file" UI
+  rather than copying the format-dialog -> warning-dialog ->
+  `exportChat()` state machine again.

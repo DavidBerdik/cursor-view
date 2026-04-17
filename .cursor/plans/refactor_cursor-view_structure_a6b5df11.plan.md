@@ -43,7 +43,7 @@ todos:
     status: completed
   - id: create_standards_rules
     content: Author six focused Cursor rules under .cursor/rules/ (project-layout, python-standards, sqlite-cursor-db, known-bugs, react-components, comments-style) capturing the standards established by this refactor
-    status: pending
+    status: completed
 isProject: false
 ---
 

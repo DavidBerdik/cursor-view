@@ -1,0 +1,31 @@
+---
+description: Handling suspected bugs during refactors without fixing them
+alwaysApply: true
+---
+
+# Do not silently delete suspicious code
+
+Never silently delete code paths that appear dead or wrong. If a path
+looks buggy, add a `# TODO(bug):` comment describing the symptom and
+suspected cause, and leave the behavior unchanged unless explicitly
+asked to fix the bug.
+
+Motivating example: `cursor_view/chat_format.py` hard-codes a
+developer's username in a project-name fallback; it is annotated with
+`# TODO(bug):` but not removed.
+
+# Hardcoded user-specific values
+
+User-specific hardcoded paths, usernames, or project lists are
+**always** a bug. If you must add one temporarily, flag it with
+`# TODO(bug):` and include the reasoning.
+
+# `TODO(bug):` vs plain `TODO:`
+
+- `TODO(bug):` is reserved for **known-broken behavior** we have
+  chosen not to fix yet. It says "this is wrong, don't rely on it".
+- Plain `TODO:` is for cleanups, future enhancements, and generic
+  "revisit later" notes. It says "this works, but could be nicer".
+
+Do not use `TODO(bug):` for generic cleanups; the distinction is what
+lets a future contributor grep for real defects.

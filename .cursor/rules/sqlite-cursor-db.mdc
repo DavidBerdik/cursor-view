@@ -1,0 +1,49 @@
+---
+description: SQLite resource handling and Cursor-DB access conventions
+globs: **/*.py
+alwaysApply: false
+---
+
+# Connection cleanup
+
+Acquire SQLite connections inside `try/finally` or a
+`with contextlib.closing(...)` block. Never write
+`if "con" in locals(): con.close()`. If you need conditional cleanup,
+initialize `con = None` up front and check that.
+
+Motivating example: the pre-refactor `iter_chat_from_item_table` and
+`workspace_info` used the `locals()` check and were both candidates to
+leak connections under error paths.
+
+```python
+# Wrong
+def iter_rows(db):
+    try:
+        con = sqlite3.connect(...)
+        ...
+    finally:
+        if "con" in locals():
+            con.close()
+
+# Right
+def iter_rows(db):
+    con = None
+    try:
+        con = sqlite3.connect(...)
+        ...
+    finally:
+        if con is not None:
+            con.close()
+```
+
+# Opening Cursor DBs
+
+When opening an existing Cursor database for reads, always use the
+read-only URI form:
+
+```python
+sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+```
+
+The Cursor IDE is an active writer against these files; opening in
+writable mode can corrupt them or contend with running sessions.

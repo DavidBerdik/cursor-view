@@ -1,0 +1,40 @@
+---
+description: Comment intent rules for all languages in the repo
+alwaysApply: true
+---
+
+# Comments explain intent, not mechanics
+
+Comments explain intent, trade-offs, invariants, or non-obvious
+platform behavior. Do not write comments that re-narrate what the
+code literally says.
+
+```python
+# Wrong
+# Increment the counter
+counter += 1
+
+# Right
+# Bubbles without text still carry URIs we need for project inference,
+# so we count them separately from message-carrying bubbles.
+counter += 1
+```
+
+Same rule applies to JavaScript / JSX:
+
+```jsx
+// Wrong
+// Set loading to true
+setLoading(true);
+
+// Right
+// Reset the empty-state flash so the spinner is visible again while
+// the refresh request is in flight.
+setLoading(true);
+```
+
+# Rule drift
+
+When a refactor materially changes a convention captured in any rule
+under `.cursor/rules/`, update that rule in the same PR. Rules must
+not drift from reality; a stale rule is worse than no rule.

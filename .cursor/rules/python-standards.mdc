@@ -1,0 +1,38 @@
+---
+description: Python module size, docstrings, typing, and logging conventions
+globs: **/*.py
+alwaysApply: false
+---
+
+# Module and function size
+
+- Soft limit: any single Python module over ~400 lines must be split
+  into a subpackage. Motivating examples: the original 377-line
+  `cursor_view/extraction.py` and 547-line `cursor_view/export_html.py`,
+  both of which became subpackages with a slim `__init__.py` re-export.
+- Soft limit: no function longer than ~100 lines. Break long functions
+  into private `_named_helper` functions that describe the pass they
+  perform, and keep the top-level function as a short recipe. See
+  `extract_chats` in `cursor_view/extraction/core.py`.
+
+# Docstrings and typing
+
+- Every module starts with a one-line docstring describing its role.
+- Every public function has a docstring that explains **why** it
+  exists or what invariant it preserves, not what each statement does.
+- Prefer typed signatures (`dict[str, Any]`, `list[str]`,
+  `pathlib.Path`) over bare `dict` / `list`. `Any` is acceptable for
+  heterogeneous JSON pass-through.
+
+# Logging
+
+Use lazy `%`-style logging, not f-strings, inside
+`logger.debug/info/warning/error`. f-strings are evaluated even when
+the log level is disabled; lazy formatting defers the work.
+
+```python
+# Wrong
+logger.info(f"Loaded {count} chats")
+# Right
+logger.info("Loaded %s chats", count)
+```
