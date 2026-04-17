@@ -122,7 +122,7 @@ def iter_bubbles_from_disk_kv(
 
     db_path_str = str(db)
 
-    for k, v in cur.fetchall():
+    for k, v in cur:
         try:
             if v is None:
                 continue
@@ -191,7 +191,7 @@ def iter_chat_from_item_table(db: pathlib.Path) -> Iterable[tuple[str, str, str,
         for key_prefix in ["aiService.prompts", "aiService.generations"]:
             try:
                 cur.execute("SELECT key, value FROM ItemTable WHERE key LIKE ?", (f"{key_prefix}%",))
-                for k, v in cur.fetchall():
+                for k, v in cur:
                     try:
                         data = json.loads(v)
                         if isinstance(data, list):
@@ -230,7 +230,7 @@ def iter_composer_data(db: pathlib.Path) -> Iterable[tuple[str, dict, str]]:
 
     db_path_str = str(db)
 
-    for k, v in cur.fetchall():
+    for k, v in cur:
         try:
             if v is None:
                 continue

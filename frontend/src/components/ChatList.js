@@ -1,53 +1,95 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
+import React, {
+  startTransition,
+  useContext,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
-  Container,
-  Typography,
+  alpha,
   Box,
+  Button,
   Card,
+  CardActions,
   CardContent,
-  Grid,
+  Checkbox,
   Chip,
   CircularProgress,
-  Divider,
-  Paper,
-  Button,
   Collapse,
-  IconButton,
-  alpha,
-  TextField,
-  InputAdornment,
-  CardActions,
-  Tooltip,
+  Container,
   Dialog,
-  DialogTitle,
-  DialogContent,
   DialogActions,
-  FormControlLabel,
-  Checkbox,
+  DialogContent,
   DialogContentText,
+  DialogTitle,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  Grid,
+  IconButton,
+  InputAdornment,
+  Paper,
   Radio,
   RadioGroup,
-  FormControl,
+  TextField,
+  Tooltip,
+  Typography,
 } from '@mui/material';
-import FolderIcon from '@mui/icons-material/Folder';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import MessageIcon from '@mui/icons-material/Message';
-import InfoIcon from '@mui/icons-material/Info';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon from '@mui/icons-material/ExpandLess';
-import SearchIcon from '@mui/icons-material/Search';
 import ClearIcon from '@mui/icons-material/Clear';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import FolderIcon from '@mui/icons-material/Folder';
+import InfoIcon from '@mui/icons-material/Info';
+import MessageIcon from '@mui/icons-material/Message';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import SearchIcon from '@mui/icons-material/Search';
 import WarningIcon from '@mui/icons-material/Warning';
 import { ColorContext, ThemeModeContext } from '../App';
+
+function getDbPathLabel(dbPath) {
+  if (typeof dbPath !== 'string' || !dbPath) {
+    return 'Unknown database';
+  }
+  return dbPath.split(/[\\/]/).slice(-2).join('/');
+}
+
+function formatDate(date) {
+  try {
+    if (!date) {
+      return 'Unknown date';
+    }
+    const dateObject = new Date(date * 1000);
+    if (Number.isNaN(dateObject.getTime())) {
+      return 'Unknown date';
+    }
+    return dateObject.toLocaleString();
+  } catch {
+    return 'Unknown date';
+  }
+}
+
+async function fetchChatSummaries(query, refresh = false) {
+  const params = new URLSearchParams();
+  if (query) {
+    params.set('q', query);
+  }
+  if (refresh) {
+    params.set('refresh', '1');
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const response = await axios.get(`/api/chats${suffix}`);
+  return response.data;
+}
 
 const ChatList = () => {
   const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
-  const [chats, setChats] = useState([]);
+  const [chatData, setChatData] = useState({ items: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedProjects, setExpandedProjects] = useState({});
@@ -57,106 +99,108 @@ const ChatList = () => {
   const [exportFormat, setExportFormat] = useState('html');
   const [dontShowExportWarning, setDontShowExportWarning] = useState(false);
   const [currentExportSession, setCurrentExportSession] = useState(null);
-
-  const fetchChats = useCallback(async () => {
-    setLoading(true);
-    try {
-      const response = await axios.get('/api/chats');
-      setChats(response.data);
-      setLoading(false);
-    } catch (err) {
-      setError(err.message);
-      setLoading(false);
-    }
-  }, []);
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
 
   useEffect(() => {
-    // Check if user has previously chosen to not show the export warning
+    let cancelled = false;
+
+    setLoading(true);
+    setError(null);
+
+    fetchChatSummaries(deferredSearchQuery)
+      .then((payload) => {
+        if (cancelled) {
+          return;
+        }
+        // Keep setLoading(false) inside the same transition as setChatData so React
+        // never commits loading=false while items are still empty (avoids empty-state flash).
+        startTransition(() => {
+          setChatData({
+            items: Array.isArray(payload.items) ? payload.items : [],
+            total: Number.isFinite(payload.total) ? payload.total : 0,
+          });
+          setLoading(false);
+        });
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
+        }
+        setError(err.message);
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deferredSearchQuery]);
+
+  useEffect(() => {
     const warningPreference = document.cookie
       .split('; ')
-      .find(row => row.startsWith('dontShowExportWarning='));
-    
+      .find((row) => row.startsWith('dontShowExportWarning='));
+
     if (warningPreference) {
       setDontShowExportWarning(warningPreference.split('=')[1] === 'true');
     }
   }, []);
 
-  useEffect(() => {
-    fetchChats();
-  }, [fetchChats]);
+  const groupedProjects = useMemo(() => {
+    const projectMap = new Map();
 
-  const toggleProjectExpand = (projectName) => {
-    setExpandedProjects(prev => ({
-      ...prev,
-      [projectName]: !prev[projectName]
+    chatData.items.forEach((chat) => {
+      const projectName = chat.project?.name || 'Unknown Project';
+      const projectPath = chat.project?.rootPath || 'Unknown';
+      const projectKey = `${projectName}::${projectPath}`;
+      const existing = projectMap.get(projectKey);
+
+      if (existing) {
+        existing.chats.push(chat);
+        return;
+      }
+
+      projectMap.set(projectKey, {
+        key: projectKey,
+        name: projectName,
+        path: projectPath,
+        chats: [chat],
+      });
+    });
+
+    return Array.from(projectMap.values());
+  }, [chatData.items]);
+
+  const toggleProjectExpand = (projectKey) => {
+    setExpandedProjects((previous) => ({
+      ...previous,
+      [projectKey]: !previous[projectKey],
     }));
   };
 
-  // Filter chats based on search query
-  const filteredChatsByProject = () => {
-    if (!searchQuery.trim()) {
-      return chats.reduce((acc, chat) => {
-        const projectName = chat.project?.name || 'Unknown Project';
-        
-        if (!acc[projectName]) {
-          acc[projectName] = {
-            name: projectName,
-            path: chat.project?.rootPath || 'Unknown',
-            chats: []
-          };
-        }
-        
-        if (chat.project?.rootPath && 
-            acc[projectName].path === 'Unknown') {
-          acc[projectName].path = chat.project.rootPath;
-        }
-        
-        acc[projectName].chats.push(chat);
-        return acc;
-      }, {});
-    }
-
-    const query = searchQuery.toLowerCase();
-    return chats.reduce((acc, chat) => {
-      const projectName = chat.project?.name || 'Unknown Project';
-      
-      // Check if project name matches
-      const projectMatches = projectName.toLowerCase().includes(query);
-      
-      // Check if any message content matches
-      const contentMatches = Array.isArray(chat.messages) && chat.messages.some(msg => 
-        typeof msg.content === 'string' && msg.content.toLowerCase().includes(query)
-      );
-      
-      if (projectMatches || contentMatches) {
-        if (!acc[projectName]) {
-          acc[projectName] = {
-            name: projectName,
-            path: chat.project?.rootPath || 'Unknown',
-            chats: []
-          };
-        }
-        
-        if (chat.project?.rootPath && 
-            acc[projectName].path === 'Unknown') {
-          acc[projectName].path = chat.project.rootPath;
-        }
-        
-        acc[projectName].chats.push(chat);
-      }
-      
-      return acc;
-    }, {});
-  };
-
-  // Clear search query
   const clearSearch = () => {
     setSearchQuery('');
   };
 
-  // Handle search input change
   const handleSearchChange = (event) => {
     setSearchQuery(event.target.value);
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = await fetchChatSummaries(deferredSearchQuery, true);
+      startTransition(() => {
+        setChatData({
+          items: Array.isArray(payload.items) ? payload.items : [],
+          total: Number.isFinite(payload.total) ? payload.total : 0,
+        });
+        setLoading(false);
+      });
+    } catch (err) {
+      setError(err.message);
+      setLoading(false);
+    }
   };
 
   const handleFormatDialogClose = (confirmed) => {
@@ -173,35 +217,29 @@ const ChatList = () => {
     }
   };
 
-  // Handle export warning confirmation
   const handleExportWarningClose = (confirmed) => {
     setExportModalOpen(false);
-    
-    // Save preference in cookies if "Don't show again" is checked
+
     if (dontShowExportWarning) {
       const expiryDate = new Date();
-      expiryDate.setFullYear(expiryDate.getFullYear() + 1); // Cookie lasts 1 year
+      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
       document.cookie = `dontShowExportWarning=true; expires=${expiryDate.toUTCString()}; path=/`;
     }
-    
-    // If confirmed, proceed with export
+
     if (confirmed && currentExportSession) {
       proceedWithExport(currentExportSession, exportFormat);
     }
-    
-    // Reset current export session
+
     setCurrentExportSession(null);
   };
 
-  // Function to initiate export process
-  const handleExport = (e, sessionId) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const handleExport = (event, sessionId) => {
+    event.preventDefault();
+    event.stopPropagation();
     setCurrentExportSession(sessionId);
     setFormatDialogOpen(true);
   };
 
-  // Function to actually perform the export
   const proceedWithExport = async (sessionId, format) => {
     try {
       const params = new URLSearchParams({
@@ -210,7 +248,7 @@ const ChatList = () => {
       });
       const response = await axios.get(
         `/api/chat/${sessionId}/export?${params.toString()}`,
-        { responseType: 'blob' }
+        { responseType: 'blob' },
       );
 
       const blob = response.data;
@@ -219,7 +257,6 @@ const ChatList = () => {
         throw new Error('Received empty or invalid content from server');
       }
 
-      // Ensure the blob has the correct MIME type before saving
       const mimeType =
         format === 'json'
           ? 'application/json;charset=utf-8'
@@ -227,59 +264,29 @@ const ChatList = () => {
             ? 'text/markdown;charset=utf-8'
             : 'text/html;charset=utf-8';
       const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
-
-      // --- Download Logic Start ---
       const extension =
         format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'html';
       const filename = `cursor-chat-${sessionId.slice(0, 8)}.${extension}`;
       const link = document.createElement('a');
-      
-      // Create an object URL for the (possibly re-typed) blob
       const url = URL.createObjectURL(typedBlob);
+
       link.href = url;
       link.download = filename;
-      
-      // Append link to the body (required for Firefox)
       document.body.appendChild(link);
-      
-      // Programmatically click the link to trigger the download
       link.click();
-      
-      // Clean up: remove the link and revoke the object URL
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      console.log("Download initiated and cleanup complete");
-      // --- Download Logic End ---
-      
-    } catch (error) {
-      // ADDED: More detailed error logging
-      console.error('Detailed export error:', error);
-      if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        console.error('Error Response Data:', error.response.data);
-        console.error('Error Response Status:', error.response.status);
-        console.error('Error Response Headers:', error.response.headers);
-      } else if (error.request) {
-        // The request was made but no response was received
-        // `error.request` is an instance of XMLHttpRequest in the browser
-        console.error('Error Request:', error.request);
-      } else {
-        // Something happened in setting up the request that triggered an Error
-        console.error('Error Message:', error.message);
-      }
-      console.error('Error Config:', error.config);
-      
-      const errorMessage = error.response ? 
-        `Server error: ${error.response.status}` : 
-        error.request ? 
-        'No response received from server' : 
-        error.message || 'Unknown error setting up request';
+    } catch (exportError) {
+      const errorMessage = exportError.response
+        ? `Server error: ${exportError.response.status}`
+        : exportError.request
+          ? 'No response received from server'
+          : exportError.message || 'Unknown error setting up request';
       alert(`Failed to export chat: ${errorMessage}`);
     }
   };
 
-  if (loading) {
+  if (loading && chatData.items.length === 0) {
     return (
       <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
         <CircularProgress sx={{ color: colors.highlightColor }} />
@@ -287,7 +294,7 @@ const ChatList = () => {
     );
   }
 
-  if (error) {
+  if (error && chatData.items.length === 0) {
     return (
       <Container>
         <Typography variant="h5" color="error">
@@ -297,33 +304,35 @@ const ChatList = () => {
     );
   }
 
-  const chatsByProject = filteredChatsByProject();
-
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      {/* No need to show error again since we have the conditional return above */}
-      
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ color: colors.textColor }}>
-          Cursor Chat History
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <Button
-            variant="contained"
-            color="highlight"
-            startIcon={<RefreshIcon />}
-            onClick={fetchChats}
-            sx={{
-              borderRadius: 2,
-              color: 'white',
-              '&:hover': {
-                backgroundColor: alpha(colors.highlightColor, 0.8),
-              }
-            }}
-          >
-            Refresh
-          </Button>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, mb: 3 }}>
+        <Box>
+          <Typography variant="h4" component="h1" sx={{ color: colors.text.primary }}>
+            Cursor Chat History
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+            {deferredSearchQuery
+              ? `${chatData.total} matching chats`
+              : `${chatData.total} chats indexed`}
+          </Typography>
         </Box>
+        <Button
+          variant="contained"
+          color="highlight"
+          startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+          onClick={handleRefresh}
+          disabled={loading}
+          sx={{
+            borderRadius: 2,
+            color: 'white',
+            '&:hover': {
+              backgroundColor: alpha(colors.highlightColor, 0.8),
+            },
+          }}
+        >
+          Refresh
+        </Button>
       </Box>
 
       <Dialog
@@ -344,7 +353,7 @@ const ChatList = () => {
               aria-label="export-format"
               name="export-format"
               value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
+              onChange={(event) => setExportFormat(event.target.value)}
             >
               <FormControlLabel value="html" control={<Radio />} label="HTML" />
               <FormControlLabel value="json" control={<Radio />} label="JSON" />
@@ -361,8 +370,7 @@ const ChatList = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      
-      {/* Export Warning Modal */}
+
       <Dialog
         open={exportModalOpen}
         onClose={() => handleExportWarningClose(false)}
@@ -374,24 +382,21 @@ const ChatList = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Please make sure your exported chat doesn't include sensitive data such as API keys and customer information.
+            Please make sure your exported chat doesn&apos;t include sensitive data such as API keys and customer information.
           </DialogContentText>
           <FormControlLabel
-            control={
+            control={(
               <Checkbox
                 checked={dontShowExportWarning}
-                onChange={(e) => setDontShowExportWarning(e.target.checked)}
+                onChange={(event) => setDontShowExportWarning(event.target.checked)}
               />
-            }
+            )}
             label="Don't show this warning again"
             sx={{ mt: 2 }}
           />
         </DialogContent>
         <DialogActions>
-          <Button 
-            onClick={() => handleExportWarningClose(false)} 
-            color="primary"
-          >
+          <Button onClick={() => handleExportWarningClose(false)} color="primary">
             Cancel
           </Button>
           <Button onClick={() => handleExportWarningClose(true)} color="highlight" variant="contained">
@@ -399,8 +404,7 @@ const ChatList = () => {
           </Button>
         </DialogActions>
       </Dialog>
-      
-      {/* Search Bar */}
+
       <TextField
         fullWidth
         variant="outlined"
@@ -427,40 +431,45 @@ const ChatList = () => {
               </IconButton>
             </InputAdornment>
           ),
-          sx: { borderRadius: 2 }
+          sx: { borderRadius: 2 },
         }}
       />
-      
-      
-      {Object.keys(chatsByProject).length === 0 ? (
-        <Paper 
-          sx={{ 
-            p: 4, 
-            textAlign: 'center', 
+
+      {error && (
+        <Typography variant="body2" color="error" sx={{ mb: 2 }}>
+          Error refreshing chats: {error}
+        </Typography>
+      )}
+
+      {groupedProjects.length === 0 ? (
+        <Paper
+          sx={{
+            p: 4,
+            textAlign: 'center',
             borderRadius: 4,
-            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
           }}
         >
           <InfoIcon sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
           <Typography variant="h5" gutterBottom fontWeight="600">
-            {searchQuery ? 'No Results Found' : 'No Chat History Found'}
+            {deferredSearchQuery ? 'No Results Found' : 'No Chat History Found'}
           </Typography>
           <Typography variant="body1" sx={{ mb: 2 }}>
-            {searchQuery 
-              ? `We couldn't find any chats matching "${searchQuery}".`
+            {deferredSearchQuery
+              ? `We couldn't find any chats matching "${deferredSearchQuery}".`
               : "We couldn't find any Cursor chat data on your system. This could be because:"}
           </Typography>
-          {!searchQuery && (
+          {!deferredSearchQuery && (
             <Box sx={{ textAlign: 'left', maxWidth: '600px', mx: 'auto' }}>
               <Typography component="ul" variant="body2" sx={{ mb: 2 }}>
-                <li>You haven't used Cursor's AI Assistant yet</li>
+                <li>You haven&apos;t used Cursor&apos;s AI Assistant yet</li>
                 <li>Your Cursor databases are stored in a non-standard location</li>
                 <li>There might be permission issues accessing the database files</li>
               </Typography>
             </Box>
           )}
-          {searchQuery ? (
-            <Button 
+          {deferredSearchQuery ? (
+            <Button
               startIcon={<ClearIcon />}
               onClick={clearSearch}
               variant="contained"
@@ -471,9 +480,9 @@ const ChatList = () => {
               Clear Search
             </Button>
           ) : (
-            <Button 
+            <Button
               startIcon={<RefreshIcon />}
-              onClick={fetchChats}
+              onClick={handleRefresh}
               variant="contained"
               color="primary"
               size="large"
@@ -484,23 +493,24 @@ const ChatList = () => {
           )}
         </Paper>
       ) : (
-        Object.entries(chatsByProject).map(([projectName, projectData]) => {
+        groupedProjects.map((project) => {
+          const isExpanded = !!expandedProjects[project.key];
           return (
-            <Box key={projectName} sx={{ mb: 4 }}>
-              <Paper 
-                sx={{ 
-                  p: 0, 
-                  mb: 2, 
+            <Box key={project.key} sx={{ mb: 4 }}>
+              <Paper
+                sx={{
+                  p: 0,
+                  mb: 2,
                   overflow: 'hidden',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
                   transition: 'all 0.3s ease-in-out',
                   '&:hover': {
                     boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-                  }
+                  },
                 }}
               >
-                <Box 
-                  sx={{ 
+                <Box
+                  sx={{
                     background: colors.background.paper,
                     borderBottom: '1px solid',
                     borderColor: alpha(colors.text.secondary, 0.1),
@@ -508,81 +518,67 @@ const ChatList = () => {
                     p: 2,
                     cursor: 'pointer',
                     '&:hover': {
-                      backgroundColor: alpha(colors.highlightColor, 0.02)
-                    }
+                      backgroundColor: alpha(colors.highlightColor, 0.02),
+                    },
                   }}
-                  onClick={() => toggleProjectExpand(projectName)}
+                  onClick={() => toggleProjectExpand(project.key)}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center' }}>
                       <FolderIcon sx={{ mr: 1.5, fontSize: 28, color: colors.text.secondary }} />
                       <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                        {projectData.name}
+                        {project.name}
                       </Typography>
-                      <Chip 
-                        label={`${projectData.chats.length} ${projectData.chats.length === 1 ? 'chat' : 'chats'}`} 
-                        size="small" 
-                        sx={{ 
+                      <Chip
+                        label={`${project.chats.length} ${project.chats.length === 1 ? 'chat' : 'chats'}`}
+                        size="small"
+                        sx={{
                           ml: 2,
                           fontWeight: 500,
                           backgroundColor: colors.highlightColor,
                           color: 'white',
                           '& .MuiChip-label': {
-                            px: 1.5
-                          }
-                        }} 
+                            px: 1.5,
+                          },
+                        }}
                       />
                     </Box>
-                    <IconButton 
-                      aria-expanded={expandedProjects[projectName]}
+                    <IconButton
+                      aria-expanded={isExpanded}
                       aria-label="show more"
-                      sx={{ 
+                      sx={{
                         color: 'white',
                         bgcolor: colors.highlightColor,
                         '&:hover': {
-                          bgcolor: alpha(colors.highlightColor, 0.8)
-                        }
+                          bgcolor: alpha(colors.highlightColor, 0.8),
+                        },
                       }}
-                      onClick={(e) => {
-                        // Prevent the click from reaching the parent Box
-                        e.stopPropagation();
-                        toggleProjectExpand(projectName);
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleProjectExpand(project.key);
                       }}
                     >
-                      {expandedProjects[projectName] ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
                     </IconButton>
                   </Box>
                   <Typography variant="body2" sx={{ color: colors.text.secondary, mt: 0.5 }}>
-                    {projectData.path}
+                    {project.path}
                   </Typography>
                 </Box>
               </Paper>
-              
-              <Collapse in={expandedProjects[projectName] || false}>
-                <Grid container spacing={3}>
-                  {projectData.chats.map((chat, index) => {
-                    // Format the date safely
-                    let dateDisplay = 'Unknown date';
-                    try {
-                      if (chat.date) {
-                        const dateObj = new Date(chat.date * 1000);
-                        // Check if date is valid
-                        if (!isNaN(dateObj.getTime())) {
-                          dateDisplay = dateObj.toLocaleString();
-                        }
-                      }
-                    } catch (err) {
-                      console.error('Error formatting date:', err);
-                    }
 
+              <Collapse in={isExpanded}>
+                <Grid container spacing={3}>
+                  {project.chats.map((chat, index) => {
+                    const dateDisplay = formatDate(chat.date);
                     return (
                       <Grid size={{ xs: 12, sm: 6, md: 4 }} key={chat.session_id || `chat-${index}`}>
-                        <Card 
-                          component={Link} 
+                        <Card
+                          component={Link}
                           to={`/chat/${chat.session_id}`}
-                          sx={{ 
-                            height: '100%', 
-                            display: 'flex', 
+                          sx={{
+                            height: '100%',
+                            display: 'flex',
                             flexDirection: 'column',
                             transition: 'all 0.3s cubic-bezier(.17,.67,.83,.67)',
                             textDecoration: 'none',
@@ -591,16 +587,18 @@ const ChatList = () => {
                             '&:hover': {
                               transform: 'translateY(-8px)',
                               boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
-                            }
+                            },
                           }}
                         >
                           <CardContent>
-                            <Box sx={{ 
-                              display: 'flex', 
-                              alignItems: 'center', 
-                              mb: 1.5,
-                              justifyContent: 'space-between'
-                            }}>
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                mb: 1.5,
+                                justifyContent: 'space-between',
+                              }}
+                            >
                               <Box sx={{ display: 'flex', alignItems: 'center' }}>
                                 <CalendarTodayIcon fontSize="small" sx={{ mr: 1, color: 'text.secondary' }} />
                                 <Typography variant="body2" color="text.secondary">
@@ -608,78 +606,78 @@ const ChatList = () => {
                                 </Typography>
                               </Box>
                             </Box>
-                            
+
                             <Divider sx={{ my: 1.5 }} />
-                            
+
                             <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
                               <MessageIcon fontSize="small" sx={{ mr: 1, color: colors.text.secondary }} />
                               <Typography variant="body2" fontWeight="500">
-                                {Array.isArray(chat.messages) ? chat.messages.length : 0} messages
+                                {chat.message_count || 0} messages
                               </Typography>
                             </Box>
-                            
+
                             {chat.db_path && (
-                              <Typography 
-                                variant="caption" 
+                              <Typography
+                                variant="caption"
                                 color="text.secondary"
-                                sx={{ 
+                                sx={{
                                   display: 'block',
                                   mb: 1.5,
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap'
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
-                                DB: {chat.db_path.split('/').slice(-2).join('/')}
+                                DB: {getDbPathLabel(chat.db_path)}
                               </Typography>
                             )}
-                            
-                            {Array.isArray(chat.messages) && chat.messages[0] && chat.messages[0].content && (
-                              <Box sx={{ 
-                                mt: 2, 
-                                p: 1.5, 
+
+                            <Box
+                              sx={{
+                                mt: 2,
+                                p: 1.5,
                                 backgroundColor: alpha(colors.highlightColor, 0.1),
                                 borderRadius: 2,
                                 border: '1px solid',
-                                borderColor: alpha(colors.text.secondary, 0.05)
-                              }}>
-                                <Typography 
-                                  variant="body2" 
-                                  sx={{ 
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    display: '-webkit-box',
-                                    WebkitLineClamp: 2,
-                                    WebkitBoxOrient: 'vertical',
-                                    color: 'text.primary',
-                                    fontWeight: 400
-                                  }}
-                                >
-                                  {typeof chat.messages[0].content === 'string' 
-                                    ? chat.messages[0].content.substring(0, 100) + (chat.messages[0].content.length > 100 ? '...' : '')
-                                    : 'Content unavailable'}
-                                </Typography>
-                              </Box>
-                            )}
+                                borderColor: alpha(colors.text.secondary, 0.05),
+                              }}
+                            >
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  display: '-webkit-box',
+                                  WebkitLineClamp: 2,
+                                  WebkitBoxOrient: 'vertical',
+                                  color: 'text.primary',
+                                  fontWeight: 400,
+                                }}
+                              >
+                                {chat.preview || 'Content unavailable'}
+                              </Typography>
+                            </Box>
                           </CardContent>
                           <CardActions sx={{ mt: 'auto', pt: 0 }}>
                             <Tooltip title="Export chat (Warning: Check for sensitive data)">
-                              <IconButton 
-                                size="small" 
-                                onClick={(e) => handleExport(e, chat.session_id)}
-                                sx={{ 
+                              <IconButton
+                                size="small"
+                                onClick={(event) => handleExport(event, chat.session_id)}
+                                sx={{
                                   ml: 'auto',
                                   position: 'relative',
-                                  '&::after': dontShowExportWarning ? null : {
-                                    content: '""',
-                                    position: 'absolute',
-                                    width: '6px',
-                                    height: '6px',
-                                    backgroundColor: 'warning.main',
-                                    borderRadius: '50%',
-                                    top: '2px',
-                                    right: '2px'
-                                  }
+                                  '&::after': dontShowExportWarning
+                                    ? null
+                                    : {
+                                        content: '""',
+                                        position: 'absolute',
+                                        width: '6px',
+                                        height: '6px',
+                                        backgroundColor: 'warning.main',
+                                        borderRadius: '50%',
+                                        top: '2px',
+                                        right: '2px',
+                                      },
                                 }}
                               >
                                 <FileDownloadIcon fontSize="small" />
@@ -700,4 +698,4 @@ const ChatList = () => {
   );
 };
 
-export default ChatList; 
+export default ChatList;

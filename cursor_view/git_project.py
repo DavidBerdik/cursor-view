@@ -1,5 +1,6 @@
 """Fallback project name from SCM git repository metadata."""
 
+from functools import lru_cache
 import logging
 import sqlite3
 from urllib.parse import unquote
@@ -10,6 +11,7 @@ from cursor_view.sqlite_data import j
 logger = logging.getLogger(__name__)
 
 
+@lru_cache(maxsize=512)
 def extract_project_from_git_repos(workspace_id, debug=False):
     """
     Extract project name from the git repositories in a workspace.

@@ -58,3 +58,23 @@ def global_storage_path(base: pathlib.Path) -> pathlib.Path | None:
                 return file
 
     return None
+
+
+def cursor_view_cache_dir() -> pathlib.Path:
+    """Return the OS-specific directory used for Cursor View cache files."""
+    home = pathlib.Path.home()
+    system = platform.system()
+    if system == "Darwin":
+        base = home / "Library" / "Caches"
+    elif system == "Windows":
+        base = pathlib.Path(os.environ.get("LOCALAPPDATA", home / "AppData" / "Local"))
+    else:
+        base = pathlib.Path(os.environ.get("XDG_CACHE_HOME", home / ".cache"))
+    cache_dir = base / "cursor-view"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return cache_dir
+    except PermissionError:
+        fallback = pathlib.Path(BASE_PATH) / ".cursor-view-cache"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback

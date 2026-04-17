@@ -1,40 +1,62 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { startTransition, useContext, useEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import {
-  Container,
-  Typography,
-  Box,
-  Paper,
-  CircularProgress,
-  Chip,
-  Button,
-  Avatar,
   alpha,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  FormControlLabel,
+  Avatar,
+  Box,
+  Button,
   Checkbox,
+  Chip,
+  CircularProgress,
+  Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
   DialogContentText,
+  DialogTitle,
+  FormControl,
+  FormControlLabel,
+  Paper,
   Radio,
   RadioGroup,
-  FormControl,
+  Typography,
 } from '@mui/material';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import FolderIcon from '@mui/icons-material/Folder';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import DataObjectIcon from '@mui/icons-material/DataObject';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import FolderIcon from '@mui/icons-material/Folder';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import StorageIcon from '@mui/icons-material/Storage';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import DataObjectIcon from '@mui/icons-material/DataObject';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import WarningIcon from '@mui/icons-material/Warning';
-import { ColorContext, ThemeModeContext } from '../App';
 import MessageMarkdown from './MessageMarkdown';
 import { prepareMarkdownHtml } from '../markdown/prepareMarkdownHtml';
+import { ColorContext, ThemeModeContext } from '../App';
+
+function formatDate(date) {
+  try {
+    if (!date) {
+      return 'Unknown date';
+    }
+    const dateObject = new Date(date * 1000);
+    if (Number.isNaN(dateObject.getTime())) {
+      return 'Unknown date';
+    }
+    return dateObject.toLocaleString();
+  } catch {
+    return 'Unknown date';
+  }
+}
+
+function getDbPathLabel(dbPath) {
+  if (typeof dbPath !== 'string' || !dbPath) {
+    return 'Unknown database';
+  }
+  return dbPath.split(/[\\/]/).pop();
+}
 
 const ChatDetail = () => {
   const colors = useContext(ColorContext);
@@ -51,48 +73,51 @@ const ChatDetail = () => {
   useEffect(() => {
     let cancelled = false;
 
-    const fetchChat = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await axios.get(`/api/chat/${sessionId}`);
+    setLoading(true);
+    setError(null);
+
+    axios
+      .get(`/api/chat/${sessionId}`)
+      .then(async (response) => {
+        if (cancelled) {
+          return;
+        }
         const fetchedChat = response.data;
-        const messages = Array.isArray(fetchedChat.messages) ? fetchedChat.messages : [];
+        const rawMessages = Array.isArray(fetchedChat.messages) ? fetchedChat.messages : [];
         const preparedMessages = await Promise.all(
-          messages.map(async (message) => {
+          rawMessages.map(async (message) => {
             if (typeof message.content !== 'string') {
               return message;
             }
-
             return {
               ...message,
               renderedContent: await prepareMarkdownHtml(message.content),
             };
-          })
+          }),
         );
-
-        if (!cancelled) {
+        if (cancelled) {
+          return;
+        }
+        startTransition(() => {
           setChat({
             ...fetchedChat,
             messages: preparedMessages,
           });
           setLoading(false);
+        });
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return;
         }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message);
-          setLoading(false);
-        }
-      }
-    };
+        setError(err.message);
+        setLoading(false);
+      });
 
-    fetchChat();
-    
-    // Check if user has previously chosen to not show the export warning
     const warningPreference = document.cookie
       .split('; ')
-      .find(row => row.startsWith('dontShowExportWarning='));
-    
+      .find((row) => row.startsWith('dontShowExportWarning='));
+
     if (warningPreference) {
       setDontShowExportWarning(warningPreference.split('=')[1] === 'true');
     }
@@ -102,68 +127,59 @@ const ChatDetail = () => {
     };
   }, [sessionId]);
 
-  // Handle format dialog selection
   const handleFormatDialogOpen = () => {
     setFormatDialogOpen(true);
   };
 
   const handleFormatDialogClose = (confirmed) => {
     setFormatDialogOpen(false);
-    
-    if (confirmed) {
-      // After format selection, show warning dialog or proceed directly
-      if (dontShowExportWarning) {
-        proceedWithExport(exportFormat);
-      } else {
-        setExportModalOpen(true);
-      }
+
+    if (!confirmed) {
+      return;
+    }
+
+    if (dontShowExportWarning) {
+      proceedWithExport(exportFormat);
+    } else {
+      setExportModalOpen(true);
     }
   };
 
-  // Handle export warning confirmation
   const handleExportWarningClose = (confirmed) => {
     setExportModalOpen(false);
-    
-    // Save preference in cookies if "Don't show again" is checked
+
     if (dontShowExportWarning) {
       const expiryDate = new Date();
-      expiryDate.setFullYear(expiryDate.getFullYear() + 1); // Cookie lasts 1 year
+      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
       document.cookie = `dontShowExportWarning=true; expires=${expiryDate.toUTCString()}; path=/`;
     }
-    
-    // If confirmed, proceed with export
+
     if (confirmed) {
       proceedWithExport(exportFormat);
     }
   };
 
-  // Function to initiate export process
   const handleExport = () => {
-    // First open format selection dialog
     handleFormatDialogOpen();
   };
 
-  // Function to actually perform the export
   const proceedWithExport = async (format) => {
     try {
       const params = new URLSearchParams({
         format,
         theme: darkMode ? 'dark' : 'light',
       });
-      // Request the exported chat as a raw Blob so we can download it directly
       const response = await axios.get(
         `/api/chat/${sessionId}/export?${params.toString()}`,
-        { responseType: 'blob' }
+        { responseType: 'blob' },
       );
 
       const blob = response.data;
 
-      // Guard-check to avoid downloading an empty file
       if (!blob || blob.size === 0) {
         throw new Error('Received empty or invalid content from server');
       }
 
-      // Ensure the blob has the correct MIME type
       const mimeType =
         format === 'json'
           ? 'application/json;charset=utf-8'
@@ -171,32 +187,27 @@ const ChatDetail = () => {
             ? 'text/markdown;charset=utf-8'
             : 'text/html;charset=utf-8';
       const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
-
-      // Download Logic
       const extension =
         format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'html';
       const filename = `cursor-chat-${sessionId.slice(0, 8)}.${extension}`;
       const link = document.createElement('a');
-      
-      // Create an object URL for the (possibly re-typed) blob
       const url = URL.createObjectURL(typedBlob);
+
       link.href = url;
       link.download = filename;
-      
-      // Append link to the body (required for Firefox)
       document.body.appendChild(link);
-      
-      // Programmatically click the link to trigger the download
       link.click();
-      
-      // Clean up: remove the link and revoke the object URL
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Export failed:', err);
-      alert('Failed to export chat – check console for details');
+    } catch (exportError) {
+      alert(`Failed to export chat: ${exportError.message || 'Unknown error'}`);
     }
   };
+
+  const messages = useMemo(
+    () => (Array.isArray(chat?.messages) ? chat.messages : []),
+    [chat?.messages],
+  );
 
   if (loading) {
     return (
@@ -226,27 +237,11 @@ const ChatDetail = () => {
     );
   }
 
-  // Format the date safely
-  let dateDisplay = 'Unknown date';
-  try {
-    if (chat.date) {
-      const dateObj = new Date(chat.date * 1000);
-      // Check if date is valid
-      if (!isNaN(dateObj.getTime())) {
-        dateDisplay = dateObj.toLocaleString();
-      }
-    }
-  } catch (err) {
-    console.error('Error formatting date:', err);
-  }
-
-  // Ensure messages exist
-  const messages = Array.isArray(chat.messages) ? chat.messages : [];
+  const dateDisplay = formatDate(chat.date);
   const projectName = chat.project?.name || 'Unknown Project';
 
   return (
     <Container sx={{ mb: 6 }}>
-      {/* Format Selection Dialog */}
       <Dialog
         open={formatDialogOpen}
         onClose={() => handleFormatDialogClose(false)}
@@ -265,7 +260,7 @@ const ChatDetail = () => {
               aria-label="export-format"
               name="export-format"
               value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
+              onChange={(event) => setExportFormat(event.target.value)}
             >
               <FormControlLabel value="html" control={<Radio />} label="HTML" />
               <FormControlLabel value="json" control={<Radio />} label="JSON" />
@@ -283,7 +278,6 @@ const ChatDetail = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Export Warning Modal */}
       <Dialog
         open={exportModalOpen}
         onClose={() => handleExportWarningClose(false)}
@@ -295,15 +289,15 @@ const ChatDetail = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Please make sure your exported chat doesn't include sensitive data such as API keys and customer information.
+            Please make sure your exported chat doesn&apos;t include sensitive data such as API keys and customer information.
           </DialogContentText>
           <FormControlLabel
-            control={
+            control={(
               <Checkbox
                 checked={dontShowExportWarning}
-                onChange={(e) => setDontShowExportWarning(e.target.checked)}
+                onChange={(event) => setDontShowExportWarning(event.target.checked)}
               />
-            }
+            )}
             label="Don't show this warning again"
             sx={{ mt: 2 }}
           />
@@ -318,7 +312,7 @@ const ChatDetail = () => {
         </DialogActions>
       </Dialog>
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, mt: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, mt: 2, gap: 2 }}>
         <Button
           component={Link}
           to="/"
@@ -335,45 +329,29 @@ const ChatDetail = () => {
         >
           Back to all chats
         </Button>
-        
+
         <Button
           onClick={handleExport}
           startIcon={<FileDownloadIcon />}
           variant="contained"
           color="highlight"
-          sx={{ 
+          sx={{
             borderRadius: 2,
             color: 'white',
-            position: 'relative',
             '&:hover': {
               backgroundColor: alpha(colors.highlightColor, 0.8),
             },
-            '&::after': dontShowExportWarning ? null : {
-              content: '""',
-              position: 'absolute',
-              borderRadius: '50%',
-              top: '4px',
-              right: '4px',
-              width: '8px', // Adjusted size for button
-              height: '8px' // Adjusted size for button
-            },
-            // Conditionally add the background color if the warning should be shown
-            ...( !dontShowExportWarning && {
-              '&::after': { 
-                backgroundColor: 'warning.main'
-              }
-            })
           }}
         >
           Export
         </Button>
       </Box>
 
-      <Paper 
-        sx={{ 
-          px: 3, 
-          py: 2, 
-          mb: 3, 
+      <Paper
+        sx={{
+          px: 3,
+          py: 2,
+          mb: 3,
           overflow: 'hidden',
           boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         }}
@@ -392,17 +370,19 @@ const ChatDetail = () => {
               color: 'white',
               backgroundColor: colors.highlightColor,
               '& .MuiChip-icon': { color: 'white' },
-              '& .MuiChip-label': { px: 1 }
+              '& .MuiChip-label': { px: 1 },
             }}
           />
         </Box>
 
-        <Box sx={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 2,
-          alignItems: 'center'
-        }}>
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 2,
+            alignItems: 'center',
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <AccountTreeIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
             <Typography variant="body2" color="text.secondary">
@@ -423,7 +403,7 @@ const ChatDetail = () => {
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <DataObjectIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
               <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-                <strong>DB:</strong> {chat.db_path.split('/').pop()}
+                <strong>DB:</strong> {getDbPathLabel(chat.db_path)}
               </Typography>
             </Box>
           )}
@@ -451,7 +431,7 @@ const ChatDetail = () => {
                     width: 32,
                     height: 32,
                     mr: 1.5,
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
                   }}
                 >
                   {message.role === 'user' ? <PersonIcon /> : <SmartToyIcon />}
@@ -460,48 +440,50 @@ const ChatDetail = () => {
                   {message.role === 'user' ? 'User' : 'Cursor'}
                 </Typography>
               </Box>
-              
-              <Paper 
+
+              <Paper
                 elevation={1}
-                sx={{ 
-                  p: 2.5, 
+                sx={{
+                  p: 2.5,
                   ml: message.role === 'user' ? 0 : 5,
                   mr: message.role === 'assistant' ? 0 : 5,
-                  backgroundColor:alpha(colors.highlightColor, 0.04),
+                  backgroundColor: alpha(colors.highlightColor, 0.04),
                   borderLeft: '4px solid',
                   borderColor: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
-                  borderRadius: 2
+                  borderRadius: 2,
                 }}
               >
-                <Box sx={{ 
-                  '& img': { maxWidth: '100%' },
-                  '& ul, & ol': { pl: 3 },
-                  '& a': { 
-                    color: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
-                    textDecoration: 'none',
-                    '&:hover': { textDecoration: 'none' }
-                  },
-                  '& table': {
-                    width: '100%',
-                    borderCollapse: 'collapse',
-                    my: 2,
-                    fontSize: '0.9em',
-                  },
-                  '& th, & td': {
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    px: 1.5,
-                    py: 1,
-                    textAlign: 'left',
-                  },
-                  '& th': {
-                    fontWeight: 600,
-                    backgroundColor: alpha(colors.highlightColor, 0.08),
-                  },
-                  '& tr:nth-of-type(even)': {
-                    backgroundColor: alpha(colors.highlightColor, 0.03),
-                  },
-                }}>
+                <Box
+                  sx={{
+                    '& img': { maxWidth: '100%' },
+                    '& ul, & ol': { pl: 3 },
+                    '& a': {
+                      color: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
+                      textDecoration: 'none',
+                      '&:hover': { textDecoration: 'none' },
+                    },
+                    '& table': {
+                      width: '100%',
+                      borderCollapse: 'collapse',
+                      my: 2,
+                      fontSize: '0.9em',
+                    },
+                    '& th, & td': {
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      px: 1.5,
+                      py: 1,
+                      textAlign: 'left',
+                    },
+                    '& th': {
+                      fontWeight: 600,
+                      backgroundColor: alpha(colors.highlightColor, 0.08),
+                    },
+                    '& tr:nth-of-type(even)': {
+                      backgroundColor: alpha(colors.highlightColor, 0.03),
+                    },
+                  }}
+                >
                   {typeof message.renderedContent === 'string' ? (
                     <MessageMarkdown
                       html={message.renderedContent}
@@ -521,4 +503,4 @@ const ChatDetail = () => {
   );
 };
 
-export default ChatDetail; 
+export default ChatDetail;

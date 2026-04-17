@@ -6,12 +6,8 @@ from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request, send_from_directory
 
-from cursor_view.chat_format import (
-    coalesce_consecutive_messages_by_role,
-    format_chat_for_frontend,
-    messages_for_json_export,
-)
-from cursor_view.extraction import extract_chats
+from cursor_view.chat_format import messages_for_json_export
+from cursor_view.chat_index import get_chat_index
 from cursor_view.export_html import (
     generate_markdown,
     generate_standalone_html,
@@ -23,30 +19,43 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("main", __name__)
 
 
+def _parse_positive_int(value: str | None) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return max(parsed, 0)
+
+
+def _should_force_refresh() -> bool:
+    return request.args.get("refresh", "").lower() in {"1", "true", "yes"}
+
+
 @bp.route("/api/chats", methods=["GET"])
 def get_chats():
-    """Get all chat sessions."""
+    """Get chat summaries, optionally filtered by a search query."""
     try:
-        logger.info(f"Received request for chats from {request.remote_addr}")
-        chats = extract_chats()
-        logger.info(f"Retrieved {len(chats)} chats")
-
-        formatted_chats = []
-        for chat in chats:
-            try:
-                formatted_chat = format_chat_for_frontend(chat)
-                formatted_chat["messages"] = coalesce_consecutive_messages_by_role(
-                    formatted_chat.get("messages", [])
-                )
-                formatted_chats.append(formatted_chat)
-            except Exception as e:
-                logger.error(f"Error formatting individual chat: {e}")
-                continue
-
-        logger.info(f"Returning {len(formatted_chats)} formatted chats")
-        return jsonify(formatted_chats)
+        logger.info("Received request for chats from %s", request.remote_addr)
+        query = (request.args.get("q") or "").strip()
+        limit = _parse_positive_int(request.args.get("limit"))
+        offset = _parse_positive_int(request.args.get("offset")) or 0
+        payload = get_chat_index().list_summaries(
+            query=query,
+            limit=limit,
+            offset=offset,
+            force_refresh=_should_force_refresh(),
+        )
+        logger.info(
+            "Returning %s chat summaries (query=%r total=%s)",
+            len(payload["items"]),
+            query,
+            payload["total"],
+        )
+        return jsonify(payload)
     except Exception as e:
-        logger.error(f"Error in get_chats: {e}", exc_info=True)
+        logger.error("Error in get_chats: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -54,22 +63,17 @@ def get_chats():
 def get_chat(session_id):
     """Get a specific chat session by ID."""
     try:
-        logger.info(f"Received request for chat {session_id} from {request.remote_addr}")
-        chats = extract_chats()
-
-        for chat in chats:
-            if "session" in chat and chat["session"] and isinstance(chat["session"], dict):
-                if chat["session"].get("composerId") == session_id:
-                    formatted_chat = format_chat_for_frontend(chat)
-                    formatted_chat["messages"] = coalesce_consecutive_messages_by_role(
-                        formatted_chat.get("messages", [])
-                    )
-                    return jsonify(formatted_chat)
-
-        logger.warning(f"Chat with ID {session_id} not found")
+        logger.info("Received request for chat %s from %s", session_id, request.remote_addr)
+        chat = get_chat_index().get_chat(
+            session_id,
+            force_refresh=_should_force_refresh(),
+        )
+        if chat is not None:
+            return jsonify(chat)
+        logger.warning("Chat with ID %s not found", session_id)
         return jsonify({"error": "Chat not found"}), 404
     except Exception as e:
-        logger.error(f"Error in get_chat: {e}", exc_info=True)
+        logger.error("Error in get_chat: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
@@ -77,67 +81,65 @@ def get_chat(session_id):
 def export_chat(session_id):
     """Export a specific chat session as HTML, JSON, or Markdown."""
     try:
-        logger.info(f"Received request to export chat {session_id} from {request.remote_addr}")
+        logger.info(
+            "Received request to export chat %s from %s",
+            session_id,
+            request.remote_addr,
+        )
         export_format = request.args.get("format", "html").lower()
-        chats = extract_chats()
+        chat_for_export = get_chat_index().get_chat(
+            session_id,
+            force_refresh=_should_force_refresh(),
+        )
+        if chat_for_export is None:
+            logger.warning("Chat with ID %s not found for export", session_id)
+            return jsonify({"error": "Chat not found"}), 404
 
-        for chat in chats:
-            if "session" in chat and chat["session"] and isinstance(chat["session"], dict):
-                if chat["session"].get("composerId") == session_id:
-                    formatted_chat = format_chat_for_frontend(chat)
-                    chat_for_export = {
-                        **formatted_chat,
-                        "messages": coalesce_consecutive_messages_by_role(
-                            formatted_chat.get("messages", [])
-                        ),
-                    }
+        if export_format == "json":
+            json_payload = {
+                **chat_for_export,
+                "messages": messages_for_json_export(
+                    chat_for_export.get("messages", [])
+                ),
+            }
+            return Response(
+                json.dumps(json_payload, indent=2),
+                mimetype="application/json; charset=utf-8",
+                headers={
+                    "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.json"',
+                    "Cache-Control": "no-store",
+                },
+            )
 
-                    if export_format == "json":
-                        json_payload = {
-                            **chat_for_export,
-                            "messages": messages_for_json_export(
-                                chat_for_export.get("messages", [])
-                            ),
-                        }
-                        return Response(
-                            json.dumps(json_payload, indent=2),
-                            mimetype="application/json; charset=utf-8",
-                            headers={
-                                "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.json"',
-                                "Cache-Control": "no-store",
-                            },
-                        )
-                    if export_format == "markdown":
-                        md_content = generate_markdown(chat_for_export)
-                        md_bytes = md_content.encode("utf-8")
-                        return Response(
-                            md_content,
-                            mimetype="text/markdown; charset=utf-8",
-                            headers={
-                                "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.md"',
-                                "Content-Length": str(len(md_bytes)),
-                                "Cache-Control": "no-store",
-                            },
-                        )
-                    export_theme = resolve_export_theme(
-                        request.args.get("theme"),
-                        request.cookies.get("themeMode"),
-                    )
-                    html_content = generate_standalone_html(chat_for_export, export_theme)
-                    return Response(
-                        html_content,
-                        mimetype="text/html; charset=utf-8",
-                        headers={
-                            "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.html"',
-                            "Content-Length": str(len(html_content)),
-                            "Cache-Control": "no-store",
-                        },
-                    )
+        if export_format == "markdown":
+            md_content = generate_markdown(chat_for_export)
+            md_bytes = md_content.encode("utf-8")
+            return Response(
+                md_content,
+                mimetype="text/markdown; charset=utf-8",
+                headers={
+                    "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.md"',
+                    "Content-Length": str(len(md_bytes)),
+                    "Cache-Control": "no-store",
+                },
+            )
 
-        logger.warning(f"Chat with ID {session_id} not found for export")
-        return jsonify({"error": "Chat not found"}), 404
+        export_theme = resolve_export_theme(
+            request.args.get("theme"),
+            request.cookies.get("themeMode"),
+        )
+        html_content = generate_standalone_html(chat_for_export, export_theme)
+        return Response(
+            html_content,
+            mimetype="text/html; charset=utf-8",
+            headers={
+                "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.html"',
+                "Content-Length": str(len(html_content)),
+                "Cache-Control": "no-store",
+            },
+        )
     except Exception as e:
-        logger.error(f"Error in export_chat: {e}", exc_info=True)
+        logger.error("Error in export_chat: %s", e, exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 
