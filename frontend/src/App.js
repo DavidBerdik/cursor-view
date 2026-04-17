@@ -1,4 +1,4 @@
-import React, { useState, useMemo, createContext } from 'react';
+import React, { useState, useMemo, useEffect, createContext } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -160,6 +160,10 @@ export const ThemeModeContext = createContext({
 
 function App() {
   const [darkMode, setDarkMode] = useState(readThemeCookie);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
+  }, [darkMode]);
 
   const toggleDarkMode = () => {
     setDarkMode((prev) => {

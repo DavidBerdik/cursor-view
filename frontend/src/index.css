@@ -33,21 +33,43 @@ a:hover {
   text-decoration: none;
 }
 
-/* Custom scrollbar */
+/* Theme-aware scrollbar */
+:root {
+  color-scheme: dark;
+  --scrollbar-track: #202020;
+  --scrollbar-thumb: #4a4a4a;
+  --scrollbar-thumb-hover: #5f5f5f;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --scrollbar-track: #f1f1f1;
+  --scrollbar-thumb: #c1c1c1;
+  --scrollbar-thumb-hover: #a8a8a8;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  transition: scrollbar-color 200ms ease;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #202020;
+  background: var(--scrollbar-track);
+  transition: background-color 200ms ease;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4A4A4A;
+  background: var(--scrollbar-thumb);
   border-radius: 5px;
+  transition: background-color 200ms ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #5F5F5F;
-} 
+  background: var(--scrollbar-thumb-hover);
+}
