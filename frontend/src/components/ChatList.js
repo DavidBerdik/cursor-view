@@ -50,6 +50,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import WarningIcon from '@mui/icons-material/Warning';
 import { ColorContext, ThemeModeContext } from '../App';
+import { exportChat } from '../utils/exportChat';
 
 function getDbPathLabel(dbPath) {
   if (typeof dbPath !== 'string' || !dbPath) {
@@ -241,49 +242,17 @@ const ChatList = () => {
   };
 
   const proceedWithExport = async (sessionId, format) => {
-    try {
-      const params = new URLSearchParams({
-        format,
-        theme: darkMode ? 'dark' : 'light',
-      });
-      const response = await axios.get(
-        `/api/chat/${sessionId}/export?${params.toString()}`,
-        { responseType: 'blob' },
-      );
-
-      const blob = response.data;
-
-      if (!blob || blob.size === 0) {
-        throw new Error('Received empty or invalid content from server');
+    const result = await exportChat({ sessionId, format, darkMode });
+    if (result.saved) {
+      if (result.path) {
+        alert(`Saved to ${result.path}`);
       }
-
-      const mimeType =
-        format === 'json'
-          ? 'application/json;charset=utf-8'
-          : format === 'markdown'
-            ? 'text/markdown;charset=utf-8'
-            : 'text/html;charset=utf-8';
-      const typedBlob = blob.type ? blob : new Blob([blob], { type: mimeType });
-      const extension =
-        format === 'json' ? 'json' : format === 'markdown' ? 'md' : 'html';
-      const filename = `cursor-chat-${sessionId.slice(0, 8)}.${extension}`;
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(typedBlob);
-
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (exportError) {
-      const errorMessage = exportError.response
-        ? `Server error: ${exportError.response.status}`
-        : exportError.request
-          ? 'No response received from server'
-          : exportError.message || 'Unknown error setting up request';
-      alert(`Failed to export chat: ${errorMessage}`);
+      return;
     }
+    if (result.cancelled) {
+      return;
+    }
+    alert(`Failed to export chat: ${result.error || 'Unknown error'}`);
   };
 
   if (loading && chatData.items.length === 0) {
