@@ -6,6 +6,7 @@ thread and displays it inside a native OS webview window via pywebview,
 giving the app the appearance of a standalone desktop application.
 """
 
+import json
 import logging
 import pathlib
 import socket
@@ -26,6 +27,11 @@ _EXTENSIONS: dict[str, str] = {
     "json": "json",
     "markdown": "md",
 }
+
+_DEFAULT_WIDTH = 1200
+_DEFAULT_HEIGHT = 800
+_MIN_WIDTH = 900
+_MIN_HEIGHT = 600
 
 
 def _free_port() -> int:
@@ -63,6 +69,70 @@ def _centered_position(width: int, height: int) -> tuple[int | None, int | None]
     x = screen.x + max(0, (screen.width - width) // 2)
     y = screen.y + max(0, (screen.height - height) // 2)
     return x, y
+
+
+def _window_state_path() -> pathlib.Path:
+    """Return the path to the persisted window state file."""
+    return cursor_view_cache_dir() / "window-state.json"
+
+
+def _load_window_state() -> dict | None:
+    """Load the persisted window state, validating it against current screens.
+
+    Returns None if no usable state exists, the file is malformed, the
+    geometry violates the minimum size, or the window center would land
+    outside every currently-connected display (e.g. user unplugged the
+    monitor it was last shown on).
+    """
+    path = _window_state_path()
+    if not path.exists():
+        return None
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        logger.warning("Failed to read window state from %s", path, exc_info=True)
+        return None
+
+    try:
+        x = int(data["x"])
+        y = int(data["y"])
+        width = int(data["width"])
+        height = int(data["height"])
+        maximized = bool(data.get("maximized", False))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    if width < _MIN_WIDTH or height < _MIN_HEIGHT:
+        return None
+
+    screens = list(webview.screens) or []
+    center_x = x + width // 2
+    center_y = y + height // 2
+    on_screen = any(
+        s.x <= center_x < s.x + s.width and s.y <= center_y < s.y + s.height
+        for s in screens
+    )
+    if screens and not on_screen:
+        return None
+
+    return {
+        "x": x,
+        "y": y,
+        "width": width,
+        "height": height,
+        "maximized": maximized,
+    }
+
+
+def _save_window_state(state: dict) -> None:
+    """Persist window state to disk; failures are logged but non-fatal."""
+    path = _window_state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state), encoding="utf-8")
+    except OSError:
+        logger.warning("Failed to save window state to %s", path, exc_info=True)
 
 
 class DesktopApi:
@@ -149,20 +219,67 @@ def main() -> None:
     )
     server_thread.start()
 
-    WIDTH, HEIGHT = 1200, 800
-    x, y = _centered_position(WIDTH, HEIGHT)
+    saved = _load_window_state()
+    if saved is not None:
+        width = saved["width"]
+        height = saved["height"]
+        x = saved["x"]
+        y = saved["y"]
+        start_maximized = saved["maximized"]
+    else:
+        width, height = _DEFAULT_WIDTH, _DEFAULT_HEIGHT
+        x, y = _centered_position(width, height)
+        start_maximized = False
 
-    webview.create_window(
+    window = webview.create_window(
         title="Cursor View",
         url=f"http://127.0.0.1:{port}/",
         js_api=DesktopApi(port),
-        width=WIDTH,
-        height=HEIGHT,
+        width=width,
+        height=height,
         x=x,
         y=y,
-        min_size=(900, 600),
+        min_size=(_MIN_WIDTH, _MIN_HEIGHT),
         text_select=True,
+        maximized=start_maximized,
     )
+
+    # Tracks the latest non-maximized geometry plus the maximized flag.
+    # We only update geometry when the window isn't maximized so that on
+    # restore we snap back to the user's prior size, mirroring how Discord
+    # and similar apps remember window state across launches.
+    state = {
+        "x": x if x is not None else 0,
+        "y": y if y is not None else 0,
+        "width": width,
+        "height": height,
+        "maximized": start_maximized,
+    }
+
+    def _on_moved(new_x: int, new_y: int) -> None:
+        if not state["maximized"]:
+            state["x"] = int(new_x)
+            state["y"] = int(new_y)
+
+    def _on_resized(new_w: int, new_h: int) -> None:
+        if not state["maximized"]:
+            state["width"] = int(new_w)
+            state["height"] = int(new_h)
+
+    def _on_maximized() -> None:
+        state["maximized"] = True
+
+    def _on_restored() -> None:
+        state["maximized"] = False
+
+    def _on_closing() -> None:
+        _save_window_state(state)
+
+    window.events.moved += _on_moved
+    window.events.resized += _on_resized
+    window.events.maximized += _on_maximized
+    window.events.restored += _on_restored
+    window.events.closing += _on_closing
 
     try:
         webview.start(
