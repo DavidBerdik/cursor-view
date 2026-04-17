@@ -3,11 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import {
   alpha,
-  Avatar,
   Box,
   Button,
   Checkbox,
-  Chip,
   CircularProgress,
   Container,
   Dialog,
@@ -17,48 +15,19 @@ import {
   DialogTitle,
   FormControl,
   FormControlLabel,
-  Paper,
   Radio,
   RadioGroup,
   Typography,
 } from '@mui/material';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
-import DataObjectIcon from '@mui/icons-material/DataObject';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
-import FolderIcon from '@mui/icons-material/Folder';
-import PersonIcon from '@mui/icons-material/Person';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
-import StorageIcon from '@mui/icons-material/Storage';
 import WarningIcon from '@mui/icons-material/Warning';
-import MessageMarkdown from './MessageMarkdown';
-import { prepareMarkdownHtml } from '../markdown/prepareMarkdownHtml';
-import { ColorContext } from '../contexts/ColorContext';
-import { ThemeModeContext } from '../contexts/ThemeModeContext';
-import { exportChat } from '../utils/exportChat';
-
-function formatDate(date) {
-  try {
-    if (!date) {
-      return 'Unknown date';
-    }
-    const dateObject = new Date(date * 1000);
-    if (Number.isNaN(dateObject.getTime())) {
-      return 'Unknown date';
-    }
-    return dateObject.toLocaleString();
-  } catch {
-    return 'Unknown date';
-  }
-}
-
-function getDbPathLabel(dbPath) {
-  if (typeof dbPath !== 'string' || !dbPath) {
-    return 'Unknown database';
-  }
-  return dbPath.split(/[\\/]/).pop();
-}
+import { prepareMarkdownHtml } from '../../markdown/prepareMarkdownHtml';
+import { ColorContext } from '../../contexts/ColorContext';
+import { ThemeModeContext } from '../../contexts/ThemeModeContext';
+import { exportChat } from '../../utils/exportChat';
+import ChatMetaPanel from './ChatMetaPanel';
+import MessageList from './MessageList';
 
 const ChatDetail = () => {
   const colors = useContext(ColorContext);
@@ -217,9 +186,6 @@ const ChatDetail = () => {
     );
   }
 
-  const dateDisplay = formatDate(chat.date);
-  const projectName = chat.project?.name || 'Unknown Project';
-
   return (
     <Container sx={{ mb: 6 }}>
       <Dialog
@@ -327,158 +293,13 @@ const ChatDetail = () => {
         </Button>
       </Box>
 
-      <Paper
-        sx={{
-          px: 3,
-          py: 2,
-          mb: 3,
-          overflow: 'hidden',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-        }}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
-          <FolderIcon sx={{ mr: 0.5, fontSize: 24, color: colors.highlightColor }} />
-          <Typography variant="h6" fontWeight="600" color="text.primary" sx={{ mr: 1 }}>
-            {projectName}
-          </Typography>
-          <Chip
-            icon={<CalendarTodayIcon />}
-            label={dateDisplay}
-            size="small"
-            sx={{
-              fontWeight: 500,
-              color: 'white',
-              backgroundColor: colors.highlightColor,
-              '& .MuiChip-icon': { color: 'white' },
-              '& .MuiChip-label': { px: 1 },
-            }}
-          />
-        </Box>
-
-        <Box
-          sx={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 2,
-            alignItems: 'center',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <AccountTreeIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
-            <Typography variant="body2" color="text.secondary">
-              <strong>Path:</strong> {chat.project?.rootPath || 'Unknown location'}
-            </Typography>
-          </Box>
-
-          {chat.workspace_id && (
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <StorageIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
-              <Typography variant="body2" color="text.secondary">
-                <strong>Workspace:</strong> {chat.workspace_id}
-              </Typography>
-            </Box>
-          )}
-
-          {chat.db_path && (
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <DataObjectIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
-              <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-                <strong>DB:</strong> {getDbPathLabel(chat.db_path)}
-              </Typography>
-            </Box>
-          )}
-        </Box>
-      </Paper>
+      <ChatMetaPanel chat={chat} />
 
       <Typography variant="h5" gutterBottom fontWeight="600" sx={{ mt: 4, mb: 3 }}>
         Conversation History
       </Typography>
 
-      {messages.length === 0 ? (
-        <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 3 }}>
-          <Typography variant="body1">
-            No messages found in this conversation.
-          </Typography>
-        </Paper>
-      ) : (
-        <Box sx={{ mb: 4 }}>
-          {messages.map((message, index) => (
-            <Box key={index} sx={{ mb: 3.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-                <Avatar
-                  sx={{
-                    bgcolor: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
-                    width: 32,
-                    height: 32,
-                    mr: 1.5,
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                  }}
-                >
-                  {message.role === 'user' ? <PersonIcon /> : <SmartToyIcon />}
-                </Avatar>
-                <Typography variant="subtitle1" fontWeight="600">
-                  {message.role === 'user' ? 'User' : 'Cursor'}
-                </Typography>
-              </Box>
-
-              <Paper
-                elevation={1}
-                sx={{
-                  p: 2.5,
-                  ml: message.role === 'user' ? 0 : 5,
-                  mr: message.role === 'assistant' ? 0 : 5,
-                  backgroundColor: alpha(colors.highlightColor, 0.04),
-                  borderLeft: '4px solid',
-                  borderColor: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
-                  borderRadius: 2,
-                }}
-              >
-                <Box
-                  sx={{
-                    '& img': { maxWidth: '100%' },
-                    '& ul, & ol': { pl: 3 },
-                    '& a': {
-                      color: message.role === 'user' ? colors.highlightColor : colors.secondary.main,
-                      textDecoration: 'none',
-                      '&:hover': { textDecoration: 'none' },
-                    },
-                    '& table': {
-                      width: '100%',
-                      borderCollapse: 'collapse',
-                      my: 2,
-                      fontSize: '0.9em',
-                    },
-                    '& th, & td': {
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      px: 1.5,
-                      py: 1,
-                      textAlign: 'left',
-                    },
-                    '& th': {
-                      fontWeight: 600,
-                      backgroundColor: alpha(colors.highlightColor, 0.08),
-                    },
-                    '& tr:nth-of-type(even)': {
-                      backgroundColor: alpha(colors.highlightColor, 0.03),
-                    },
-                  }}
-                >
-                  {typeof message.renderedContent === 'string' ? (
-                    <MessageMarkdown
-                      html={message.renderedContent}
-                      colors={colors}
-                      role={message.role}
-                    />
-                  ) : (
-                    <Typography>Content unavailable</Typography>
-                  )}
-                </Box>
-              </Paper>
-            </Box>
-          ))}
-        </Box>
-      )}
+      <MessageList messages={messages} />
     </Container>
   );
 };

@@ -4,7 +4,7 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
 import ChatList from './components/chat-list/ChatList';
-import ChatDetail from './components/ChatDetail';
+import ChatDetail from './components/chat-detail/ChatDetail';
 import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
 import { ColorContext } from './contexts/ColorContext';

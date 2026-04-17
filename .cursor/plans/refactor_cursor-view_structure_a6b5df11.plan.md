@@ -28,7 +28,7 @@ todos:
     status: completed
   - id: fe_split_chatdetail
     content: Decompose ChatDetail.js into chat-detail/{ChatDetail,ChatMetaPanel,MessageList,MessageBubble}.js
-    status: pending
+    status: completed
   - id: fe_dedupe_export
     content: Extract ExportFormatDialog and ExportWarningDialog and centralize the format -> warning -> export pipeline in hooks/useExportFlow.js + hooks/useExportWarningPreference.js
     status: pending
