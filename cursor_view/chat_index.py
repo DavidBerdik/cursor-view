@@ -91,8 +91,11 @@ class ChatIndex:
 
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or (cursor_view_cache_dir() / "chat-index.sqlite3")
-        # Serialize rebuild attempts; stale refresh uses try_acquire so readers are not blocked.
+        # Serialize rebuild attempts (sync force, first build, corrupt recovery, background worker).
         self._rebuild_build_lock = threading.Lock()
+        # Single-flight background rebuild after stale-while-revalidate scheduling.
+        self._bg_schedule_lock = threading.Lock()
+        self._bg_rebuild_thread: threading.Thread | None = None
         # Coordinate swap (replace) vs readers of self.db_path (Windows cannot replace an open file).
         self._swap_cv = threading.Condition(threading.Lock())
         self._active_readers = 0
@@ -184,16 +187,35 @@ class ChatIndex:
                 self._rebuild(source_fingerprint, sources)
             return
 
-        # Stale index on disk: another thread may be rebuilding; do not block readers.
-        acquired = self._rebuild_build_lock.acquire(blocking=False)
-        if not acquired:
-            return
-        try:
-            if self._cached_index_up_to_date(source_fingerprint):
+        # Stale but readable index: serve current snapshot; refresh in background.
+        self._schedule_background_rebuild()
+        return
+
+    def _schedule_background_rebuild(self) -> None:
+        """Start at most one daemon thread to rebuild the index (stale-while-revalidate)."""
+        with self._bg_schedule_lock:
+            if self._bg_rebuild_thread is not None and self._bg_rebuild_thread.is_alive():
                 return
-            self._rebuild(source_fingerprint, sources)
+            logger.info("Scheduling background chat index rebuild")
+            self._bg_rebuild_thread = threading.Thread(
+                target=self._background_rebuild_worker,
+                name="chat-index-rebuild",
+                daemon=True,
+            )
+            self._bg_rebuild_thread.start()
+
+    def _background_rebuild_worker(self) -> None:
+        try:
+            with self._rebuild_build_lock:
+                fp, sources = self._current_source_fingerprint()
+                if self._cached_index_up_to_date(fp):
+                    return
+                self._rebuild(fp, sources)
+        except Exception:
+            logger.exception("Background chat index rebuild failed")
         finally:
-            self._rebuild_build_lock.release()
+            with self._bg_schedule_lock:
+                self._bg_rebuild_thread = None
 
     def _cached_index_up_to_date(self, source_fingerprint: str) -> bool:
         if not self.db_path.exists():
