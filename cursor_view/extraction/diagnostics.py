@@ -26,18 +26,25 @@ def dump_workspace_diagnostics(root: pathlib.Path) -> None:
     are or aren't showing up. Wrapped in a blanket ``try/except`` at debug
     level so a failure here never blocks the real extraction pipeline.
     """
+    # TODO(bug): The two ``sqlite3.connect`` calls below are not protected
+    # by ``try/finally`` or ``contextlib.closing``, so if any ``cur.execute``
+    # in the loops raises, the connection leaks. The outer ``except
+    # Exception`` also swallows real errors at ``logger.debug`` level,
+    # which hides misconfiguration when users are actively trying to
+    # investigate why their chats don't show up (the whole point of this
+    # probe). Fix both in a follow-up.
     try:
         first_ws = next(workspaces(root), None)
         if first_ws:
             ws_id, db = first_ws
-            logger.debug(f"\n--- DIAGNOSTICS for workspace {ws_id} ---")
+            logger.debug("\n--- DIAGNOSTICS for workspace %s ---", ws_id)
             con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
             cur = con.cursor()
 
             # List all tables
             cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cur.fetchall()]
-            logger.debug(f"Tables in workspace DB: {tables}")
+            logger.debug("Tables in workspace DB: %s", tables)
 
             # Search for AI-related keys
             if "ItemTable" in tables:
@@ -45,7 +52,7 @@ def dump_workspace_diagnostics(root: pathlib.Path) -> None:
                     cur.execute("SELECT key FROM ItemTable WHERE key LIKE ?", (pattern,))
                     keys = [row[0] for row in cur.fetchall()]
                     if keys:
-                        logger.debug(f"Keys matching '{pattern}': {keys}")
+                        logger.debug("Keys matching '%s': %s", pattern, keys)
 
             con.close()
 
@@ -59,7 +66,7 @@ def dump_workspace_diagnostics(root: pathlib.Path) -> None:
             # List all tables
             cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [row[0] for row in cur.fetchall()]
-            logger.debug(f"Tables in global DB: {tables}")
+            logger.debug("Tables in global DB: %s", tables)
 
             # Search for AI-related keys in ItemTable
             if "ItemTable" in tables:
@@ -67,16 +74,16 @@ def dump_workspace_diagnostics(root: pathlib.Path) -> None:
                     cur.execute("SELECT key FROM ItemTable WHERE key LIKE ?", (pattern,))
                     keys = [row[0] for row in cur.fetchall()]
                     if keys:
-                        logger.debug(f"Keys matching '{pattern}': {keys}")
+                        logger.debug("Keys matching '%s': %s", pattern, keys)
 
             # Check for keys in cursorDiskKV
             if "cursorDiskKV" in tables:
                 cur.execute("SELECT DISTINCT substr(key, 1, instr(key, ':') - 1) FROM cursorDiskKV")
                 prefixes = [row[0] for row in cur.fetchall()]
-                logger.debug(f"Key prefixes in cursorDiskKV: {prefixes}")
+                logger.debug("Key prefixes in cursorDiskKV: %s", prefixes)
 
             con.close()
 
         logger.debug("\n--- END DIAGNOSTICS ---\n")
     except Exception as e:
-        logger.debug(f"Error in diagnostics: {e}")
+        logger.debug("Error in diagnostics: %s", e)

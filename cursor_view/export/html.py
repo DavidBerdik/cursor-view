@@ -265,7 +265,7 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
                 date_obj = datetime.datetime.fromtimestamp(chat['date'])
                 date_display = date_obj.strftime("%Y-%m-%d %H:%M:%S")
             except Exception as e:
-                logger.warning(f"Error formatting date: {e}")
+                logger.warning("Error formatting date: %s", e)
 
         # Get project info
         project_name = chat.get('project', {}).get('name', 'Unknown Project')
@@ -274,12 +274,12 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
         safe_project_path = html.escape(project_path)
         safe_date_display = html.escape(date_display)
         safe_session_id = html.escape(chat.get('session_id', 'Unknown'))
-        logger.info(f"Project: {project_name}, Path: {project_path}, Date: {date_display}")
+        logger.info("Project: %s, Path: %s, Date: %s", project_name, project_path, date_display)
 
         # Build the HTML content
         messages_html = ""
         messages = chat.get('messages', [])
-        logger.info(f"Found {len(messages)} messages for the chat.")
+        logger.info("Found %s messages for the chat.", len(messages))
 
         if not messages:
             logger.warning("No messages found in the chat object to generate HTML.")
@@ -288,10 +288,16 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
             for i, msg in enumerate(messages):
                 role = msg.get('role', 'unknown')
                 content = msg.get('content', '')
-                logger.debug(f"Processing message {i+1}/{len(messages)} - Role: {role}, Content length: {len(content)}")
+                logger.debug(
+                    "Processing message %s/%s - Role: %s, Content length: %s",
+                    i + 1,
+                    len(messages),
+                    role,
+                    len(content),
+                )
 
                 if not content or not isinstance(content, str):
-                    logger.warning(f"Message {i+1} has invalid content: {content}")
+                    logger.warning("Message %s has invalid content: %s", i + 1, content)
                     content = "Content unavailable"
 
                 normalized_content = normalize_markdown_for_html_export(content)
@@ -378,9 +384,14 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
 </body>
 </html>"""
 
-        logger.info(f"Finished generating HTML. Total length: {len(html_document)}")
+        logger.info("Finished generating HTML. Total length: %s", len(html_document))
         return html_document
     except Exception as e:
-        logger.error(f"Error generating HTML for session {chat.get('session_id', 'N/A')}: {e}", exc_info=True)
+        logger.error(
+            "Error generating HTML for session %s: %s",
+            chat.get('session_id', 'N/A'),
+            e,
+            exc_info=True,
+        )
         # Return an HTML formatted error message
         return f"<html><body><h1>Error generating chat export</h1><p>Error: {e}</p></body></html>"

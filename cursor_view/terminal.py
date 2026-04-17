@@ -24,7 +24,7 @@ app = create_app()
 
 def run_server(port: int = 5000, debug: bool = False, no_browser: bool = False) -> None:
     """Start the Flask development server, optionally auto-opening the browser."""
-    logger.info(f"Starting server on port {port}")
+    logger.info("Starting server on port %s", port)
 
     if not no_browser:
         threading.Timer(1.5, webbrowser.open, args=[f"http://127.0.0.1:{port}"]).start()

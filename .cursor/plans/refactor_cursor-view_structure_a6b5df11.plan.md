@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: py_style
     content: Standardize logging on lazy %-formatting, replace 'if con in locals()' cleanup with try/finally, add missing docstrings on ChatIndex helpers, add TODO(bug) markers for documented issues
-    status: pending
+    status: completed
   - id: fe_split_app
     content: Split frontend/src/App.js into theme/{colors,buildTheme,themeCookie}.js + contexts/{ColorContext,ThemeModeContext}.js, leaving App.js as composition only
     status: pending

@@ -8,14 +8,14 @@ logger = logging.getLogger(__name__)
 
 def generate_markdown(chat):
     """Generate a Markdown representation of the chat."""
-    logger.info(f"Generating Markdown for session ID: {chat.get('session_id', 'N/A')}")
+    logger.info("Generating Markdown for session ID: %s", chat.get('session_id', 'N/A'))
     date_display = "Unknown date"
     if chat.get("date"):
         try:
             date_obj = datetime.datetime.fromtimestamp(chat["date"])
             date_display = date_obj.strftime("%Y-%m-%d %H:%M:%S")
         except Exception as e:
-            logger.warning(f"Error formatting date: {e}")
+            logger.warning("Error formatting date: %s", e)
 
     project_name = chat.get("project", {}).get("name", "Unknown Project")
     project_path = chat.get("project", {}).get("rootPath", "Unknown Path")
@@ -41,7 +41,7 @@ def generate_markdown(chat):
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             if not content or not isinstance(content, str):
-                logger.warning(f"Message {i + 1} has invalid content")
+                logger.warning("Message %s has invalid content", i + 1)
                 content = "Content unavailable"
             heading = "**User**" if role == "user" else "**Cursor**"
             lines.extend([heading, "", content.rstrip(), "", "---", ""])

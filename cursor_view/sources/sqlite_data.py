@@ -90,7 +90,7 @@ def j(cur: sqlite3.Cursor, table: str, key: str):
     try:
         return json.loads(raw)
     except Exception as e:
-        logger.debug(f"Failed to parse JSON for {key}: {e}")
+        logger.debug("Failed to parse JSON for %s: %s", key, e)
         # Some Cursor/VSCode keys (e.g. debug.selectedroot) store a raw string
         # without JSON quoting. Preserve it so downstream fallbacks can use it.
         if isinstance(raw, str) and raw:
@@ -106,6 +106,12 @@ def iter_bubbles_from_disk_kv(
     ``file_uris`` and ``folder_uris`` are kept separate so project inference
     can trim filenames from files while treating folders as candidate roots.
     """
+    # TODO(bug): If ``sqlite3.connect`` succeeds but one of the ``cur.execute``
+    # calls below raises ``sqlite3.DatabaseError``, the connection is never
+    # closed because ``con`` was created inside the same ``try`` block we
+    # return from. Either hoist ``con = sqlite3.connect(...)`` outside the
+    # ``try`` or wrap everything in a ``with contextlib.closing(...)``. Leave
+    # as-is for now to keep this refactor behavior-preserving.
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         cur = con.cursor()
@@ -117,7 +123,7 @@ def iter_bubbles_from_disk_kv(
 
         cur.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'")
     except sqlite3.DatabaseError as e:
-        logger.debug(f"Database error with {db}: {e}")
+        logger.debug("Database error with %s: %s", db, e)
         return
 
     db_path_str = str(db)
@@ -129,7 +135,7 @@ def iter_bubbles_from_disk_kv(
 
             b = json.loads(v)
         except Exception as e:
-            logger.debug(f"Failed to parse bubble JSON for key {k}: {e}")
+            logger.debug("Failed to parse bubble JSON for key %s: %s", k, e)
             continue
 
         if isinstance(b, dict):
@@ -150,6 +156,10 @@ def iter_bubbles_from_disk_kv(
 
 def iter_chat_from_item_table(db: pathlib.Path) -> Iterable[tuple[str, str, str, str]]:
     """Yield (composerId, role, text, db_path) from ItemTable."""
+    # Initialize con to None up-front so the finally block can close it
+    # regardless of where in the try the failure happens. Avoids the
+    # fragile ``if "con" in locals()`` check this function used to have.
+    con = None
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         cur = con.cursor()
@@ -205,15 +215,19 @@ def iter_chat_from_item_table(db: pathlib.Path) -> Iterable[tuple[str, str, str,
                 continue
 
     except sqlite3.DatabaseError as e:
-        logger.debug(f"Database error in ItemTable with {db}: {e}")
+        logger.debug("Database error in ItemTable with %s: %s", db, e)
         return
     finally:
-        if "con" in locals():
+        if con is not None:
             con.close()
 
 
 def iter_composer_data(db: pathlib.Path) -> Iterable[tuple[str, dict, str]]:
     """Yield (composerId, composerData, db_path) from cursorDiskKV table."""
+    # TODO(bug): Same connection-leak shape as ``iter_bubbles_from_disk_kv``:
+    # if ``cur.execute`` raises after ``sqlite3.connect`` succeeds, the
+    # connection is never closed. Hoist ``con`` or use
+    # ``contextlib.closing`` in a follow-up fix.
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         cur = con.cursor()
@@ -225,7 +239,7 @@ def iter_composer_data(db: pathlib.Path) -> Iterable[tuple[str, dict, str]]:
 
         cur.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
     except sqlite3.DatabaseError as e:
-        logger.debug(f"Database error with {db}: {e}")
+        logger.debug("Database error with %s: %s", db, e)
         return
 
     db_path_str = str(db)
@@ -240,7 +254,7 @@ def iter_composer_data(db: pathlib.Path) -> Iterable[tuple[str, dict, str]]:
             yield composer_id, composer_data, db_path_str
 
         except Exception as e:
-            logger.debug(f"Failed to parse composer data for key {k}: {e}")
+            logger.debug("Failed to parse composer data for key %s: %s", k, e)
             continue
 
     con.close()

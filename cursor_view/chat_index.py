@@ -205,6 +205,13 @@ class ChatIndex:
             self._bg_rebuild_thread.start()
 
     def _background_rebuild_worker(self) -> None:
+        """Run a stale-while-revalidate rebuild, releasing the schedule slot on exit.
+
+        Acquires ``_rebuild_build_lock`` so this doesn't race against a
+        synchronous force-refresh or first-build. Re-checks ``is this
+        index already up-to-date`` after taking the lock because another
+        thread may have finished the rebuild while we were waiting.
+        """
         try:
             with self._rebuild_build_lock:
                 fp, sources = self._current_source_fingerprint()
@@ -218,6 +225,7 @@ class ChatIndex:
                 self._bg_rebuild_thread = None
 
     def _cached_index_up_to_date(self, source_fingerprint: str) -> bool:
+        """True iff the on-disk index matches the current source fingerprint and schema version."""
         if not self.db_path.exists():
             return False
         cached_fingerprint = self._read_meta_value("source_fingerprint")
@@ -262,6 +270,7 @@ class ChatIndex:
                 con.close()
 
     def _configure_connection(self, con: sqlite3.Connection) -> None:
+        """Apply the connection-level PRAGMAs we want on writable connections."""
         cur = con.cursor()
         cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA synchronous=NORMAL")
@@ -269,6 +278,7 @@ class ChatIndex:
         cur.close()
 
     def _read_meta_value(self, key: str) -> str | None:
+        """Return the ``value`` column for a row in the ``meta`` table, or None."""
         with self._connect(read_only=True) as con:
             cur = con.cursor()
             cur.execute("SELECT value FROM meta WHERE key=?", (key,))
@@ -276,6 +286,12 @@ class ChatIndex:
         return row[0] if row else None
 
     def _current_source_fingerprint(self) -> tuple[str, list[dict[str, Any]]]:
+        """Build a stable fingerprint of the source DBs, plus the list they were derived from.
+
+        The fingerprint is a SHA-256 over ``(schema_version, [source_entries])``.
+        Returning the source list alongside the fingerprint avoids scanning
+        the directory twice when we go on to rebuild.
+        """
         root = cursor_root()
         sources: list[dict[str, Any]] = []
         global_db = global_storage_path(root)
@@ -295,6 +311,7 @@ class ChatIndex:
         return hashlib.sha256(raw).hexdigest(), sources
 
     def _source_entry(self, workspace_id: str, path: Path) -> dict[str, Any]:
+        """Build a single source-DB fingerprint entry (path + mtime + size + WAL metadata)."""
         stat = path.stat()
         entry: dict[str, Any] = {
             "workspace_id": workspace_id,
@@ -482,6 +499,19 @@ class ChatIndex:
             )
 
     def _count_summaries(self, con: sqlite3.Connection, query: str) -> int:
+        """Count chat summaries matching ``query`` (or all rows if ``query`` is empty).
+
+        Branches based on whether SQLite was compiled with FTS5:
+
+        - When ``chat_search_fts`` is available and the tokenized query is
+          non-empty, run a MATCH against the FTS virtual table.
+        - Otherwise (older / minimal sqlite builds, or a query that
+          tokenized to nothing), fall back to a case-insensitive ``LIKE
+          '%query%'`` against the plain ``chat_search_text`` table.
+
+        Both branches join back to ``chat_summary`` to scope the count to
+        real sessions.
+        """
         cur = con.cursor()
         if not query:
             cur.execute("SELECT COUNT(*) FROM chat_summary")
@@ -522,6 +552,21 @@ class ChatIndex:
         limit: int | None,
         offset: int,
     ) -> list[sqlite3.Row]:
+        """Fetch chat summary rows, optionally filtered, sorted, and paginated.
+
+        Sort order:
+
+        - Empty query: most recent first (``sort_key_ms DESC``), ties
+          broken by ``session_id ASC``.
+        - FTS match: ``bm25(chat_search_fts)`` relevance first, then
+          recency, then session id.
+        - LIKE fallback: recency, then session id.
+
+        Pagination: ``LIMIT/OFFSET`` when ``limit`` is provided, and
+        ``LIMIT -1 OFFSET ?`` (SQLite's idiom for offsetting without a
+        cap) when only an offset is provided. Mirrors the branching in
+        :meth:`_count_summaries` so total counts and result rows agree.
+        """
         cur = con.cursor()
         params: list[Any] = []
         if not query:
@@ -558,6 +603,13 @@ class ChatIndex:
         return cur.fetchall()
 
     def _database_has_fts(self, con: sqlite3.Connection) -> bool:
+        """True iff the index DB contains the ``chat_search_fts`` virtual table.
+
+        We only create the table when FTS5 is available at build time (see
+        :meth:`_create_fts_table`), so this check is per-index rather than
+        per-sqlite-installation: an index built on an older sqlite is
+        still LIKE-only even after the user upgrades.
+        """
         cur = con.cursor()
         cur.execute(
             """
@@ -569,6 +621,7 @@ class ChatIndex:
         return cur.fetchone() is not None
 
     def _summary_row_to_api(self, row: sqlite3.Row) -> dict[str, Any]:
+        """Project a ``chat_summary`` row into the JSON shape the frontend expects."""
         return {
             "project": {
                 "name": row["project_name"],

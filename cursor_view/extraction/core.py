@@ -96,7 +96,7 @@ def _collect_workspace_messages(
     ws_count = 0
     for ws_id, db in workspaces(root):
         ws_count += 1
-        logger.debug(f"Processing workspace {ws_id} - {db}")
+        logger.debug("Processing workspace %s - %s", ws_id, db)
         proj, meta = workspace_info(db)
         ws_proj[ws_id] = proj
         for cid, m in meta.items():
@@ -115,9 +115,9 @@ def _collect_workspace_messages(
             if cid not in comp_meta:
                 comp_meta[cid] = {"title": f"Chat {cid[:8]}", "createdAt": None, "lastUpdatedAt": None}
                 comp2ws[cid] = ws_id
-        logger.debug(f"  - Extracted {msg_count} messages from workspace {ws_id}")
+        logger.debug("  - Extracted %s messages from workspace %s", msg_count, ws_id)
 
-    logger.debug(f"Processed {ws_count} workspaces")
+    logger.debug("Processed %s workspaces", ws_count)
 
 
 def _collect_global_bubbles(
@@ -152,7 +152,7 @@ def _collect_global_bubbles(
             continue
         sessions[cid]["messages"].append({"role": role, "content": text})
         msg_count += 1
-    logger.debug(f"  - Extracted {msg_count} messages from global cursorDiskKV bubbles")
+    logger.debug("  - Extracted %s messages from global cursorDiskKV bubbles", msg_count)
 
 
 def _collect_global_composers(
@@ -254,10 +254,10 @@ def _collect_global_composers(
 
             if msg_count > 0:
                 comp_count += 1
-                logger.debug(f"  - Added {msg_count} messages from composer {cid[:8]}")
+                logger.debug("  - Added %s messages from composer %s", msg_count, cid[:8])
 
     if comp_count > 0:
-        logger.debug(f"  - Extracted data from {comp_count} composers in global cursorDiskKV")
+        logger.debug("  - Extracted data from %s composers in global cursorDiskKV", comp_count)
 
 
 def _apply_uri_fallbacks(
@@ -364,10 +364,10 @@ def _collect_global_item_table_chats(
                         role = "user" if bubble.get("type") == "user" else "assistant"
                         sessions[tab_id]["messages"].append({"role": role, "content": content})
                         msg_count += 1
-            logger.debug(f"  - Extracted {msg_count} messages from global chat data")
+            logger.debug("  - Extracted %s messages from global chat data", msg_count)
         con.close()
     except Exception as e:
-        logger.debug(f"Error processing global ItemTable: {e}")
+        logger.debug("Error processing global ItemTable: %s", e)
 
 
 def _finalize_sessions(
@@ -416,14 +416,14 @@ def _finalize_sessions(
 
     # Sort by recency (parsed ms) so ordering matches timestamp semantics
     out.sort(key=lambda s: session_sort_key_ms(s.get("session", {})), reverse=True)
-    logger.debug(f"Total chat sessions extracted: {len(out)}")
+    logger.debug("Total chat sessions extracted: %s", len(out))
     return out
 
 
 def extract_chats() -> list[Dict[str, Any]]:
     """Scan workspace and global Cursor databases and return all non-empty chat sessions."""
     root = cursor_root()
-    logger.debug(f"Using Cursor root: {root}")
+    logger.debug("Using Cursor root: %s", root)
 
     # Diagnostic: Check for AI-related keys in the first workspace
     if diagnostics_enabled():
@@ -450,7 +450,7 @@ def extract_chats() -> list[Dict[str, Any]]:
 
     global_db = global_storage_path(root)
     if global_db:
-        logger.debug(f"Processing global storage: {global_db}")
+        logger.debug("Processing global storage: %s", global_db)
         _collect_global_bubbles(
             global_db,
             sessions,

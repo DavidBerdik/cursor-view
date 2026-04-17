@@ -108,14 +108,23 @@ def format_chat_for_frontend(chat):
                     and project_name not in ["Documents", "Downloads", "Desktop"]
                 ):
 
-                    logger.debug(f"Improved project name from '{current_name}' to '{project_name}'")
+                    logger.debug("Improved project name from '%s' to '%s'", current_name, project_name)
                     project["name"] = project_name
+                # TODO(bug): This branch was written against one developer's
+                # ``/Users/saharmor/Documents/codebase/<X>`` layout. It only
+                # triggers on macOS paths that match the current user's home
+                # ("username" above), so it effectively runs for any user who
+                # happens to keep projects under ``~/Documents/codebase/``, and
+                # the literal ``"cursor-view"`` fallback is almost certainly
+                # wrong for anyone else. Leave the behavior unchanged here and
+                # revisit as a standalone fix (do not silently delete this path
+                # or the hard-coded default).
                 elif project.get("rootPath").startswith(f"/Users/{username}/Documents/codebase/"):
                     # Special case for /Users/saharmor/Documents/codebase/X
                     parts = project.get("rootPath").split("/")
                     if len(parts) > 5:  # /Users/username/Documents/codebase/X
                         project["name"] = parts[5]
-                        logger.debug(f"Set project name to specific codebase subdirectory: {parts[5]}")
+                        logger.debug("Set project name to specific codebase subdirectory: %s", parts[5])
                     else:
                         project["name"] = "cursor-view"  # Current project as default
 
@@ -134,7 +143,9 @@ def format_chat_for_frontend(chat):
             git_project_name = extract_project_from_git_repos(workspace_id, debug=True)
             if git_project_name:
                 logger.debug(
-                    f"Improved project name from '{project.get('name')}' to '{git_project_name}' using git repo"
+                    "Improved project name from '%s' to '%s' using git repo",
+                    project.get("name"),
+                    git_project_name,
                 )
                 project["name"] = git_project_name
 
@@ -156,7 +167,7 @@ def format_chat_for_frontend(chat):
             "db_path": db_path,  # Include the database path in the output
         }
     except Exception as e:
-        logger.error(f"Error formatting chat: {e}")
+        logger.error("Error formatting chat: %s", e)
         # Return a minimal valid object if there's an error
         return {
             "project": {"name": "Error", "rootPath": "/"},

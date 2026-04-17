@@ -54,7 +54,12 @@ def extract_project_name_from_path(root_path, debug=False):
             return "Home Directory"
 
     if username_index >= 0 and username_index + 1 < len(path_parts):
-        # First try specific project directories we know about by name
+        # TODO(bug): This ``known_projects`` list was populated from the
+        # original author's personal repos ("genaisf", "universal-github",
+        # "inquiry", etc.) and has no general meaning. Picking any of these
+        # names as the project regardless of where they appear in the path
+        # is a hardcoded bias that can mislabel unrelated chats. Revisit as
+        # a standalone fix.
         known_projects = ["genaisf", "cursor-view", "cursor", "cursor-apps", "universal-github", "inquiry"]
 
         # Look at the most specific/deepest part of the path first
@@ -62,7 +67,7 @@ def extract_project_name_from_path(root_path, debug=False):
             if path_parts[i] in known_projects:
                 project_name = path_parts[i]
                 if debug:
-                    logger.debug(f"Found known project name from specific list: {project_name}")
+                    logger.debug("Found known project name from specific list: %s", project_name)
                 break
 
         # If no known project found, use the last part of the path as it's likely the project directory
@@ -76,13 +81,13 @@ def extract_project_name_from_path(root_path, debug=False):
                 if codebase_index + 1 < len(path_parts):
                     project_name = path_parts[codebase_index + 1]
                     if debug:
-                        logger.debug(f"Found project name in Documents/codebase structure: {project_name}")
+                        logger.debug("Found project name in Documents/codebase structure: %s", project_name)
 
             # If no specific structure found, use the last component of the path
             if not project_name:
                 project_name = path_parts[-1]
                 if debug:
-                    logger.debug(f"Using last path component as project name: {project_name}")
+                    logger.debug("Using last path component as project name: %s", project_name)
 
         # Skip username as project name
         if project_name == current_username:
@@ -99,7 +104,7 @@ def extract_project_name_from_path(root_path, debug=False):
             if container_index + 1 < len(path_parts):
                 project_name = path_parts[container_index + 1]
                 if debug:
-                    logger.debug(f"Skipped container dir, using next component as project name: {project_name}")
+                    logger.debug("Skipped container dir, using next component as project name: %s", project_name)
 
         # If we still don't have a project name, use the first non-system directory after username
         if not project_name and username_index + 1 < len(path_parts):
@@ -108,13 +113,13 @@ def extract_project_name_from_path(root_path, debug=False):
                 if path_parts[i] not in system_dirs and path_parts[i] not in project_containers:
                     project_name = path_parts[i]
                     if debug:
-                        logger.debug(f"Using non-system dir as project name: {project_name}")
+                        logger.debug("Using non-system dir as project name: %s", project_name)
                     break
     else:
         # If not in a user directory, use the basename
         project_name = path_parts[-1] if path_parts else "Root"
         if debug:
-            logger.debug(f"Using basename as project name: {project_name}")
+            logger.debug("Using basename as project name: %s", project_name)
 
     # Final check: don't return username as project name
     if project_name == current_username:
@@ -171,7 +176,7 @@ def _project_root_from_workspace_json(ws_folder: pathlib.Path) -> str | None:
     try:
         data = json.loads(ws_json.read_text(encoding="utf-8"))
     except Exception as e:
-        logger.debug(f"Failed to read {ws_json}: {e}")
+        logger.debug("Failed to read %s: %s", ws_json, e)
         return None
     if not isinstance(data, dict):
         return None
@@ -180,7 +185,7 @@ def _project_root_from_workspace_json(ws_folder: pathlib.Path) -> str | None:
     if isinstance(folder_uri, str) and folder_uri:
         p = _file_uri_to_path(folder_uri)
         if p:
-            logger.debug(f"Project root from workspace.json folder: {p}")
+            logger.debug("Project root from workspace.json folder: %s", p)
             return p
 
     workspace_uri = data.get("workspace")
@@ -201,17 +206,19 @@ def _project_root_from_workspace_json(ws_folder: pathlib.Path) -> str | None:
                             )
                             if is_abs:
                                 logger.debug(
-                                    f"Project root from .code-workspace first folder: {first_norm}"
+                                    "Project root from .code-workspace first folder: %s",
+                                    first_norm,
                                 )
                                 return first_norm
                             resolved = (cw_path.parent / first_norm).resolve()
                             resolved_str = str(resolved).replace("\\", "/")
                             logger.debug(
-                                f"Project root from .code-workspace resolved folder: {resolved_str}"
+                                "Project root from .code-workspace resolved folder: %s",
+                                resolved_str,
                             )
                             return resolved_str
             except Exception as e:
-                logger.debug(f"Failed to parse .code-workspace {cw_path_str}: {e}")
+                logger.debug("Failed to parse .code-workspace %s: %s", cw_path_str, e)
     return None
 
 
@@ -239,7 +246,7 @@ def _project_root_from_tree_view_state(cur: sqlite3.Cursor) -> str | None:
     best_uri = max(counts.items(), key=lambda kv: kv[1])[0]
     resolved = _file_uri_to_path(best_uri)
     if resolved:
-        logger.debug(f"Project root from explorer.treeViewState: {resolved}")
+        logger.debug("Project root from explorer.treeViewState: %s", resolved)
     return resolved
 
 
@@ -280,7 +287,7 @@ def _project_root_from_history(paths: list[str]) -> str | None:
             project_root,
         )
         return None
-    logger.debug(f"Project root from history common prefix: {project_root}")
+    logger.debug("Project root from history common prefix: %s", project_root)
     return project_root
 
 
@@ -381,7 +388,7 @@ def _project_from_workspace_identifier(wsid) -> tuple[str, dict] | None:
                             if project:
                                 return ws_id, project
             except Exception as e:
-                logger.debug(f"Failed to parse .code-workspace {cw_path_str}: {e}")
+                logger.debug("Failed to parse .code-workspace %s: %s", cw_path_str, e)
             # Fallback: use the .code-workspace filename stem as the project name
             stem = pathlib.Path(cw_path_str).stem
             if stem:
@@ -542,6 +549,10 @@ def _project_from_global_composer_files(data) -> dict | None:
 
 def workspace_info(db: pathlib.Path):
     """Read a workspace ``state.vscdb`` and return ``(project dict, composer/tab metadata dict)``."""
+    # Initialize con to None up-front so the finally block can close it
+    # regardless of where in the try the failure happens. Avoids the
+    # fragile ``if "con" in locals()`` check this function used to have.
+    con = None
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
         cur = con.cursor()
@@ -565,7 +576,7 @@ def workspace_info(db: pathlib.Path):
                 if p:
                     paths.append(p)
             if paths:
-                logger.debug(f"Found {len(paths)} paths in history entries")
+                logger.debug("Found %s paths in history entries", len(paths))
             project_root = _project_root_from_history(paths)
 
         # 4) debug.selectedroot fallback (now works with raw-string-safe j())
@@ -577,7 +588,8 @@ def workspace_info(db: pathlib.Path):
                     trimmed = _trim_file_and_vscode_suffix(sr_path)
                     if trimmed and not (len(trimmed) <= 2 and trimmed.endswith(":")):
                         logger.debug(
-                            f"Project root from debug.selectedroot: {trimmed}"
+                            "Project root from debug.selectedroot: %s",
+                            trimmed,
                         )
                         project_root = trimmed
 
@@ -610,11 +622,11 @@ def workspace_info(db: pathlib.Path):
                     "lastUpdatedAt": None,
                 }
     except sqlite3.DatabaseError as e:
-        logger.debug(f"Error getting workspace info from {db}: {e}")
+        logger.debug("Error getting workspace info from %s: %s", db, e)
         proj = {"name": "(unknown)", "rootPath": "(unknown)"}
         comp_meta = {}
     finally:
-        if "con" in locals():
+        if con is not None:
             con.close()
 
     return proj, comp_meta

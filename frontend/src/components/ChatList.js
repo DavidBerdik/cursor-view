@@ -221,6 +221,11 @@ const ChatList = () => {
   const handleExportWarningClose = (confirmed) => {
     setExportModalOpen(false);
 
+    // TODO(bug): The cookie is written regardless of `confirmed`, so a
+    // user who ticks the "Don't show this warning again" checkbox and
+    // then closes the dialog with Cancel still has the preference
+    // persisted. The guard should be `if (confirmed && dontShowExportWarning)`
+    // to only remember the preference after an affirmative export.
     if (dontShowExportWarning) {
       const expiryDate = new Date();
       expiryDate.setFullYear(expiryDate.getFullYear() + 1);

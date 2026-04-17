@@ -19,7 +19,7 @@ def extract_project_from_git_repos(workspace_id, debug=False):
     """
     if not workspace_id or workspace_id == "unknown" or workspace_id == "(unknown)" or workspace_id == "(global)":
         if debug:
-            logger.debug(f"Invalid workspace ID: {workspace_id}")
+            logger.debug("Invalid workspace ID: %s", workspace_id)
         return None
 
     # Find the workspace DB
@@ -28,13 +28,13 @@ def extract_project_from_git_repos(workspace_id, debug=False):
 
     if not workspace_db_path.exists():
         if debug:
-            logger.debug(f"Workspace DB not found for ID: {workspace_id}")
+            logger.debug("Workspace DB not found for ID: %s", workspace_id)
         return None
 
     try:
         # Connect to the workspace DB
         if debug:
-            logger.debug(f"Connecting to workspace DB: {workspace_db_path}")
+            logger.debug("Connecting to workspace DB: %s", workspace_db_path)
         con = sqlite3.connect(f"file:{workspace_db_path}?mode=ro", uri=True)
         cur = con.cursor()
 
@@ -42,7 +42,11 @@ def extract_project_from_git_repos(workspace_id, debug=False):
         git_data = j(cur, "ItemTable", "scm:view:visibleRepositories")
         if not git_data or not isinstance(git_data, dict) or "all" not in git_data:
             if debug:
-                logger.debug(f"No git repositories found in workspace {workspace_id}, git_data: {git_data}")
+                logger.debug(
+                    "No git repositories found in workspace %s, git_data: %s",
+                    workspace_id,
+                    git_data,
+                )
             con.close()
             return None
 
@@ -50,12 +54,21 @@ def extract_project_from_git_repos(workspace_id, debug=False):
         repos = git_data.get("all", [])
         if not repos or not isinstance(repos, list):
             if debug:
-                logger.debug(f"No repositories in 'all' key for workspace {workspace_id}, repos: {repos}")
+                logger.debug(
+                    "No repositories in 'all' key for workspace %s, repos: %s",
+                    workspace_id,
+                    repos,
+                )
             con.close()
             return None
 
         if debug:
-            logger.debug(f"Found {len(repos)} git repositories in workspace {workspace_id}: {repos}")
+            logger.debug(
+                "Found %s git repositories in workspace %s: %s",
+                len(repos),
+                workspace_id,
+                repos,
+            )
 
         # Process each repo path
         for repo in repos:
@@ -73,20 +86,22 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                     project_name = path_parts[-1]
                     if debug:
                         logger.debug(
-                            f"Found project name '{project_name}' from git repo in workspace {workspace_id}"
+                            "Found project name '%s' from git repo in workspace %s",
+                            project_name,
+                            workspace_id,
                         )
                     con.close()
                     return project_name
             else:
                 if debug:
-                    logger.debug(f"No 'git:Git:file:///' pattern in repo: {repo}")
+                    logger.debug("No 'git:Git:file:///' pattern in repo: %s", repo)
 
         if debug:
-            logger.debug(f"No suitable git repos found in workspace {workspace_id}")
+            logger.debug("No suitable git repos found in workspace %s", workspace_id)
         con.close()
     except Exception as e:
         if debug:
-            logger.debug(f"Error extracting git repos from workspace {workspace_id}: {e}")
+            logger.debug("Error extracting git repos from workspace %s: %s", workspace_id, e)
         return None
 
     return None
