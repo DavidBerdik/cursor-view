@@ -17,6 +17,7 @@ import webview
 from werkzeug.serving import make_server
 
 from cursor_view.app_factory import create_app
+from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.paths import cursor_view_cache_dir
 
 logger = logging.getLogger(__name__)
@@ -207,6 +208,8 @@ def run_desktop() -> None:
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+
+    cleanup_orphan_temp_files()
 
     app = create_app()
     port = _free_port()

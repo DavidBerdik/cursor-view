@@ -9,8 +9,11 @@ import threading
 import webbrowser
 
 from cursor_view.app_factory import create_app
+from cursor_view.cleanup import cleanup_orphan_temp_files
 
 logger = logging.getLogger(__name__)
+
+cleanup_orphan_temp_files()
 
 app = create_app()
 
