@@ -37,7 +37,7 @@ todos:
     status: completed
   - id: fe_css
     content: Trim frontend/src/index.css of the dark-only code/pre/a overrides that are already handled by MUI / MessageMarkdown
-    status: pending
+    status: completed
   - id: docs_readme
     content: Add a 'Project layout' section to README.md describing the entry points, cursor_view subpackages, and frontend folders
     status: pending
