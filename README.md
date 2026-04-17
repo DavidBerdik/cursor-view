@@ -82,6 +82,18 @@ without code signing:
 xattr -dr com.apple.quarantine "dist/Cursor View.app"
 ```
 
+### User preferences / webview profile
+
+The desktop app persists UI preferences (theme, export warning opt-out) in a
+per-user webview profile directory:
+
+- Windows: `%LOCALAPPDATA%\cursor-view\webview-storage`
+- macOS:   `~/Library/Caches/cursor-view/webview-storage`
+- Linux:   `$XDG_CACHE_HOME/cursor-view/webview-storage` (falls back to
+  `~/.cache/cursor-view/webview-storage`)
+
+Delete that folder to reset preferences.
+
 ## Features
 
 - Browse all Cursor chat sessions

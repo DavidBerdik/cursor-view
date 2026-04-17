@@ -16,6 +16,7 @@ import webview
 from werkzeug.serving import make_server
 
 from cursor_view.app_factory import create_app
+from cursor_view.paths import cursor_view_cache_dir
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,17 @@ def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def _webview_storage_path() -> str:
+    """Return the directory where pywebview persists cookies / localStorage.
+
+    Isolated in a subfolder of the existing Cursor View cache dir so it does
+    not collide with index caches.
+    """
+    path = cursor_view_cache_dir() / "webview-storage"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 class DesktopApi:
@@ -128,7 +140,10 @@ def main() -> None:
     )
 
     try:
-        webview.start()
+        webview.start(
+            private_mode=False,
+            storage_path=_webview_storage_path(),
+        )
     finally:
         logger.info("Shutting down Flask server")
         server.shutdown()
