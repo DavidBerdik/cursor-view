@@ -9,7 +9,7 @@ import sqlite3
 from typing import Dict, Iterable
 from urllib.parse import unquote
 
-from cursor_view.sqlite_data import j
+from cursor_view.sources.sqlite_data import j
 
 logger = logging.getLogger(__name__)
 

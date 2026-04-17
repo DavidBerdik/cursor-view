@@ -37,14 +37,14 @@ from cursor_view.extraction.diagnostics import (
     dump_workspace_diagnostics,
 )
 from cursor_view.paths import cursor_root, global_storage_path, workspaces
-from cursor_view.project_inference import (
+from cursor_view.projects.inference import (
     _project_from_folder_uri_list,
     _project_from_global_composer_files,
     _project_from_uri_list,
     _project_from_workspace_identifier,
     workspace_info,
 )
-from cursor_view.sqlite_data import (
+from cursor_view.sources.sqlite_data import (
     iter_bubbles_from_disk_kv,
     iter_chat_from_item_table,
     iter_composer_data,

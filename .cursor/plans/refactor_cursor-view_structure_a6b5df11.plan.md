@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: py_move_modules
     content: Move project_inference.py, git_project.py into cursor_view/projects/ and sqlite_data.py into cursor_view/sources/, updating internal imports
-    status: pending
+    status: completed
   - id: py_style
     content: Standardize logging on lazy %-formatting, replace 'if con in locals()' cleanup with try/finally, add missing docstrings on ChatIndex helpers, add TODO(bug) markers for documented issues
     status: pending

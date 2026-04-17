@@ -6,7 +6,7 @@ import sqlite3
 from urllib.parse import unquote
 
 from cursor_view.paths import cursor_root
-from cursor_view.sqlite_data import j
+from cursor_view.sources.sqlite_data import j
 
 logger = logging.getLogger(__name__)
 

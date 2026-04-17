@@ -4,8 +4,8 @@ import logging
 import os
 import uuid
 
-from cursor_view.git_project import extract_project_from_git_repos
-from cursor_view.project_inference import extract_project_name_from_path
+from cursor_view.projects.git import extract_project_from_git_repos
+from cursor_view.projects.inference import extract_project_name_from_path
 from cursor_view.timestamps import session_display_date_seconds
 
 logger = logging.getLogger(__name__)
