@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: fe_split_app
     content: Split frontend/src/App.js into theme/{colors,buildTheme,themeCookie}.js + contexts/{ColorContext,ThemeModeContext}.js, leaving App.js as composition only
-    status: pending
+    status: completed
   - id: fe_split_chatlist
     content: Decompose ChatList.js into chat-list/{ChatList,SearchBar,EmptyState,ProjectGroup,ChatCard}.js + hooks/useChatSummaries.js
     status: pending

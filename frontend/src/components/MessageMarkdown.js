@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { Box, alpha } from '@mui/material';
-import { ThemeModeContext } from '../App';
+import { ThemeModeContext } from '../contexts/ThemeModeContext';
 
 function getCodeBlockBackground(colors, role, darkMode) {
   if (role === 'user') {

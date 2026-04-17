@@ -5,7 +5,8 @@ import ChatIcon from '@mui/icons-material/Chat';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
-import { ColorContext, ThemeModeContext } from '../App';
+import { ColorContext } from '../contexts/ColorContext';
+import { ThemeModeContext } from '../contexts/ThemeModeContext';
 
 const Header = () => {
   const colors = useContext(ColorContext);

@@ -34,7 +34,8 @@ import StorageIcon from '@mui/icons-material/Storage';
 import WarningIcon from '@mui/icons-material/Warning';
 import MessageMarkdown from './MessageMarkdown';
 import { prepareMarkdownHtml } from '../markdown/prepareMarkdownHtml';
-import { ColorContext, ThemeModeContext } from '../App';
+import { ColorContext } from '../contexts/ColorContext';
+import { ThemeModeContext } from '../contexts/ThemeModeContext';
 import { exportChat } from '../utils/exportChat';
 
 function formatDate(date) {

@@ -49,7 +49,8 @@ import MessageIcon from '@mui/icons-material/Message';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import WarningIcon from '@mui/icons-material/Warning';
-import { ColorContext, ThemeModeContext } from '../App';
+import { ColorContext } from '../contexts/ColorContext';
+import { ThemeModeContext } from '../contexts/ThemeModeContext';
 import { exportChat } from '../utils/exportChat';
 
 function getDbPathLabel(dbPath) {
