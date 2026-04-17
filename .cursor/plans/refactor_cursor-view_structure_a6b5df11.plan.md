@@ -41,6 +41,9 @@ todos:
   - id: docs_readme
     content: Add a 'Project layout' section to README.md describing the entry points, cursor_view subpackages, and frontend folders
     status: pending
+  - id: create_standards_rules
+    content: Author six focused Cursor rules under .cursor/rules/ (project-layout, python-standards, sqlite-cursor-db, known-bugs, react-components, comments-style) capturing the standards established by this refactor
+    status: pending
 isProject: false
 ---
 
@@ -242,6 +245,173 @@ frontend/src/
 
 - [README.md](README.md): add a short "Project layout" section after "Setup & Running" that lists the entry points, the `cursor_view/` package, and the frontend layout, so a new contributor doesn't have to grep. Also rewrite the existing `python3 server.py` invocations to `python3 terminal.py` to match the renamed entry point.
 - No new files outside README/code are needed.
+
+## Cursor rules under `.cursor/rules/`
+
+Instead of one monolithic rule, create six focused rule files that each cover a single concern. This matches the create-rule skill's guidance ("one concern per rule", "under ~50 lines where possible") and means the model only pays the context cost of the rules that apply to the file(s) it's editing. Each rule cites a concrete example from this refactor so the "why" is preserved alongside the "what".
+
+### Rule 1: `.cursor/rules/project-layout.mdc` (always apply)
+
+Frontmatter:
+
+```yaml
+---
+description: Cursor View repository layout and dead-code hygiene
+alwaysApply: true
+---
+```
+
+Body (~25 lines) covering:
+
+- New Python code lives inside the `cursor_view/` package. The repo root only holds **thin shims** ([terminal.py](terminal.py), [desktop.py](desktop.py), [cursor_view_main.py](cursor_view_main.py)) that import and call `main()` from their package counterpart. The old `server.py` was a full implementation at the root; that's exactly what this rule exists to prevent.
+- Organize by concern using subpackages, not by file type. Canonical subpackages (extend, don't replace): `cursor_view/extraction/`, `cursor_view/export/`, `cursor_view/projects/`, `cursor_view/sources/`, `cursor_view/desktop/`.
+- Do not create a new top-level Python file unless it is a shim for an existing package entry point. Ad-hoc utilities (e.g. the deleted `vscdb_to_sqlite.py`) belong inside a subpackage with a real caller, or nowhere.
+- Frontend source lives under `frontend/src/` with this fixed structure: `theme/`, `contexts/`, `hooks/`, `utils/`, `markdown/`, `components/<feature>/`.
+- Files with no caller anywhere in the active codebase (Python imports, spec files, workflow files, frontend imports) must be removed in the same change that orphans them. Git history is the archive.
+- Compiled or generated artifacts (`__pycache__/`, `dist/`, `build/`, `frontend/node_modules/`, `frontend/build/`) must stay gitignored. Do not commit them to "fix" a build.
+- Static HTML prototypes / UI mockups do not belong in the repo (motivating example: the deleted `cursor_chat_viewer/index.html`).
+- Any change that alters the repository layout must update the "Project layout" section of [README.md](README.md) in the same change.
+
+### Rule 2: `.cursor/rules/python-standards.mdc` (Python-only)
+
+Frontmatter:
+
+```yaml
+---
+description: Python module size, docstrings, typing, and logging conventions
+globs: **/*.py
+alwaysApply: false
+---
+```
+
+Body (~30 lines) covering:
+
+- Soft limit: any single Python module over ~400 lines must be split into a subpackage. Motivating examples: the original 377-line [cursor_view/extraction.py](cursor_view/extraction/core.py) and 547-line `export_html.py`, both of which became subpackages with a slim `__init__.py` re-export.
+- Soft limit: no function longer than ~100 lines. Break long functions into private `_named_helper` functions, keeping the top-level function as a short recipe (see `extract_chats` post-refactor in [cursor_view/extraction/core.py](cursor_view/extraction/core.py)).
+- Every module starts with a one-line docstring describing its role. Every public function has a docstring that explains **why**, not what each statement does.
+- Prefer typed signatures (`dict[str, Any]`, `list[str]`, `pathlib.Path`) over bare `dict`/`list`. `Any` is acceptable for heterogeneous JSON pass-through.
+- Use lazy `%`-style logging, not f-strings, inside `logger.debug/info/warning/error`:
+
+  ```python
+  # Wrong
+  logger.info(f"Loaded {count} chats")
+  # Right
+  logger.info("Loaded %s chats", count)
+  ```
+
+  Rationale: f-strings are evaluated even when the log level is disabled.
+
+### Rule 3: `.cursor/rules/sqlite-cursor-db.mdc` (Python-only, DB conventions)
+
+Frontmatter:
+
+```yaml
+---
+description: SQLite resource handling and Cursor-DB access conventions
+globs: **/*.py
+alwaysApply: false
+---
+```
+
+Body (~15 lines) covering:
+
+- Acquire SQLite connections inside `try/finally` or a `with contextlib.closing(...)` block. Never write `if "con" in locals(): con.close()`. If you need conditional cleanup, initialize `con = None` first and check that. Motivating example: the pre-refactor `iter_chat_from_item_table` and `workspace_info` used the locals() check and were both candidates to leak connections under error paths.
+- When opening an existing Cursor DB for reads, always use `sqlite3.connect(f"file:{db}?mode=ro", uri=True)`. The read-only URI is required — these databases are actively used by the Cursor IDE.
+- Include a concrete Wrong/Right snippet of the `try/finally` vs `if "con" in locals()` pattern.
+
+### Rule 4: `.cursor/rules/known-bugs.mdc` (always apply)
+
+Frontmatter:
+
+```yaml
+---
+description: Handling suspected bugs during refactors without fixing them
+alwaysApply: true
+---
+```
+
+Body (~10 lines) covering:
+
+- Never silently delete code paths that appear dead. If a path looks wrong, add a `# TODO(bug):` comment describing the symptom and suspected cause, and leave the behavior unchanged unless explicitly asked to fix the bug. Motivating example: [cursor_view/chat_format.py](cursor_view/chat_format.py) hard-codes a developer's username in a project-name fallback; it is annotated but not removed.
+- User-specific hardcoded paths, usernames, or project lists are **always** a bug. If you must add one temporarily, flag it with `# TODO(bug):`.
+- The `TODO(bug):` prefix is reserved for known-broken behavior we have chosen not to fix yet. Do not use it for generic "clean this up later" notes; use plain `TODO:` for those.
+
+### Rule 5: `.cursor/rules/react-components.mdc` (frontend-only)
+
+Frontmatter:
+
+```yaml
+---
+description: React component decomposition, shared logic, and theme ownership
+globs: frontend/src/**/*.{js,jsx}
+alwaysApply: false
+---
+```
+
+Body (~35 lines) covering:
+
+- One React component per file. Components that exceed ~250 lines must be decomposed into feature-folder siblings. Motivating example: `ChatList.js` was 670 lines and now lives in `components/chat-list/` split into `ChatList`, `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
+- Duplicated UI across pages (dialogs, toolbars, cards) is extracted into `components/<shared-area>/`. The export format + warning dialogs lived twice in the codebase before this refactor and must never again.
+- Duplicated logic across pages (fetch + cancel effects, cookie read/write, event state machines) lives in `src/hooks/` (e.g. `useChatSummaries`, `useExportFlow`, `useExportWarningPreference`).
+- Pure helpers (`formatDate`, `getDbPathLabel`, cookie parsing) live in `src/utils/`. A helper may not be copied into two components — promote it on sight:
+
+  ```jsx
+  // Wrong: duplicated at the top of ChatList.js and ChatDetail.js
+  function formatDate(date) { /* ... */ }
+
+  // Right
+  import { formatDate } from '../../utils/formatDate';
+  ```
+
+- MUI theme tokens (`palette`, `sx`) own the visual language. CSS files in `src/` must not hard-code colors that the theme already controls. Keep global CSS limited to font stacks, CSS-variable-driven scrollbars, and purely structural concerns. Motivating example: [frontend/src/index.css](frontend/src/index.css) previously hard-coded `#2D2D2D` for `pre` and `code` even in light mode.
+- Contexts (`ColorContext`, `ThemeModeContext`) are defined in `src/contexts/`, one per file. Do not re-export contexts from `App.js`; import them from their defining file.
+- Use a cancellation flag (`let cancelled = false; ... return () => { cancelled = true; };`) for every `useEffect` that awaits a network request, and respect it after every `await` boundary.
+- Reuse the `useExportFlow` hook for any new "export to file" UI rather than copying the format-dialog -> warning-dialog -> `exportChat()` state machine again.
+
+### Rule 6: `.cursor/rules/comments-style.mdc` (always apply)
+
+Frontmatter:
+
+```yaml
+---
+description: Comment intent rules for all languages in the repo
+alwaysApply: true
+---
+```
+
+Body (~15 lines) covering:
+
+- Comments explain intent, trade-offs, invariants, or non-obvious platform behavior. Do not write comments that re-narrate what the code literally says:
+
+  ```python
+  # Wrong
+  # Increment the counter
+  counter += 1
+
+  # Right
+  # Bubbles without text still carry URIs we need for project inference,
+  # so we count them separately from message-carrying bubbles.
+  counter += 1
+  ```
+
+- When a refactor materially changes a convention captured in any rule under `.cursor/rules/`, update that rule in the same PR. Rules must not drift from reality.
+
+### Summary table
+
+- `project-layout.mdc` — always apply — repo structure + dead-code hygiene + README sync.
+- `python-standards.mdc` — `**/*.py` — module/function size, docstrings, typing, logging.
+- `sqlite-cursor-db.mdc` — `**/*.py` — SQLite cleanup + Cursor-DB read-only convention.
+- `known-bugs.mdc` — always apply — `TODO(bug):` convention, no silent dead-code deletion.
+- `react-components.mdc` — `frontend/src/**/*.{js,jsx}` — component decomposition, shared logic, theme ownership, effects.
+- `comments-style.mdc` — always apply — intent-only comments, rule drift.
+
+### Authoring notes for the step
+
+- Write the rules in the order listed; each rule is independent, so there's no cross-file dependency.
+- Use concrete file links (`[cursor_view/extraction/core.py](cursor_view/extraction/core.py)` etc.) so a future agent can inspect the canonical example alongside the rule.
+- Keep each rule under ~50 lines of body content where possible. The React-components rule is expected to be the largest; the SQLite and known-bugs rules will be the smallest.
+- Do not use emojis anywhere (matches the repo-wide convention).
+- After writing all six rules, cross-check that every standard traces back to something this refactor actually changed in todos 1-12. Any standard that cannot be anchored to a concrete change must be cut rather than left speculative.
 
 ## Bugs to document (NOT fix as part of this refactor)
 
