@@ -6,34 +6,8 @@ import DataObjectIcon from '@mui/icons-material/DataObject';
 import FolderIcon from '@mui/icons-material/Folder';
 import StorageIcon from '@mui/icons-material/Storage';
 import { ColorContext } from '../../contexts/ColorContext';
-
-// Local helpers kept here for now; promoted to src/utils/ in a later
-// refactor step so the chat-list side can share the same implementation.
-function formatDate(date) {
-  try {
-    if (!date) {
-      return 'Unknown date';
-    }
-    const dateObject = new Date(date * 1000);
-    if (Number.isNaN(dateObject.getTime())) {
-      return 'Unknown date';
-    }
-    return dateObject.toLocaleString();
-  } catch {
-    return 'Unknown date';
-  }
-}
-
-// NOTE: ChatList uses ``slice(-2).join('/')`` on the same kind of DB
-// path; this page shows only the trailing filename because it also
-// surfaces the full ``Path:`` value next to it. Leave both shapes
-// alone until utils/ extraction decides whether to unify them.
-function getDbPathLabel(dbPath) {
-  if (typeof dbPath !== 'string' || !dbPath) {
-    return 'Unknown database';
-  }
-  return dbPath.split(/[\\/]/).pop();
-}
+import { dbPathLabel } from '../../utils/dbPath';
+import { formatDate } from '../../utils/formatDate';
 
 // Compact project/date/path/workspace/db metadata strip rendered above
 // the conversation. Consumes the active ColorContext for the highlight
@@ -100,7 +74,7 @@ export default function ChatMetaPanel({ chat }) {
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <DataObjectIcon sx={{ mr: 0.5, color: colors.highlightColor, opacity: 0.8, fontSize: 18 }} />
             <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-all' }}>
-              <strong>DB:</strong> {getDbPathLabel(chat.db_path)}
+              <strong>DB:</strong> {dbPathLabel(chat.db_path)}
             </Typography>
           </Box>
         )}

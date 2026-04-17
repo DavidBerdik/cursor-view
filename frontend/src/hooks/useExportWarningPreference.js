@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react';
 
+import { getCookie, oneYearFromNow, setCookie } from '../utils/cookies';
+
 const COOKIE_NAME = 'dontShowExportWarning';
 
 function readPreference() {
-  const row = document.cookie
-    .split('; ')
-    .find((r) => r.startsWith(`${COOKIE_NAME}=`));
-  return row ? row.split('=')[1] === 'true' : false;
+  return getCookie(COOKIE_NAME) === 'true';
 }
 
 function writePreference(value) {
-  const expiry = new Date();
-  expiry.setFullYear(expiry.getFullYear() + 1);
-  document.cookie = `${COOKIE_NAME}=${value}; expires=${expiry.toUTCString()}; path=/`;
+  setCookie(COOKIE_NAME, value, { expires: oneYearFromNow() });
 }
 
 // Encapsulates the ``dontShowExportWarning`` cookie that the export

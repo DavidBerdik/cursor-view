@@ -34,7 +34,7 @@ todos:
     status: completed
   - id: fe_utils
     content: Add utils/formatDate.js, utils/dbPath.js, utils/cookies.js and replace the duplicated copies
-    status: pending
+    status: completed
   - id: fe_css
     content: Trim frontend/src/index.css of the dark-only code/pre/a overrides that are already handled by MUI / MessageMarkdown
     status: pending

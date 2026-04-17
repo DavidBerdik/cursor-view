@@ -1,17 +1,19 @@
+import { getCookie, oneYearFromNow, setCookie } from '../utils/cookies';
+
 // Read/write the `themeMode` cookie that persists the user's light/dark
 // mode choice across sessions. The cookie is also read by the Python
 // side (see export_theme resolution) so the exported HTML can render in
 // the same mode the user was viewing when they hit Export.
 
+const COOKIE_NAME = 'themeMode';
+
 export function readThemeCookie() {
-  const match = document.cookie
-    .split('; ')
-    .find((r) => r.startsWith('themeMode='));
-  return match ? match.split('=')[1] !== 'light' : true;
+  // Absent cookie or any value other than "light" maps to dark; this
+  // preserves the pre-utility behavior where the cookie defaults to
+  // dark mode when the user has never toggled the theme.
+  return getCookie(COOKIE_NAME) !== 'light';
 }
 
 export function writeThemeCookie(isDark) {
-  const expiry = new Date();
-  expiry.setFullYear(expiry.getFullYear() + 1);
-  document.cookie = `themeMode=${isDark ? 'dark' : 'light'}; expires=${expiry.toUTCString()}; path=/`;
+  setCookie(COOKIE_NAME, isDark ? 'dark' : 'light', { expires: oneYearFromNow() });
 }
