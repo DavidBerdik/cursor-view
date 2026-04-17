@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: fe_split_chatlist
     content: Decompose ChatList.js into chat-list/{ChatList,SearchBar,EmptyState,ProjectGroup,ChatCard}.js + hooks/useChatSummaries.js
-    status: pending
+    status: completed
   - id: fe_split_chatdetail
     content: Decompose ChatDetail.js into chat-detail/{ChatDetail,ChatMetaPanel,MessageList,MessageBubble}.js
     status: pending
