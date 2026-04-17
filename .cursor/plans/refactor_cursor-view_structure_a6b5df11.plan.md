@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: py_entry_points
     content: Rename server.py -> terminal.py, move terminal.py / desktop.py / cursor_view_main.py impls into cursor_view/{terminal.py, desktop/, __main__.py}, replace originals with thin shims, and update README + cursor-view.spec to match
-    status: pending
+    status: completed
   - id: py_split_extraction
     content: Split cursor_view/extraction.py into extraction/{core.py, diagnostics.py} and break extract_chats into named per-pass helpers
     status: pending

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
-"""
-Simple API server to serve Cursor chat data for the web interface.
+"""Terminal/server mode entry point.
+
+Starts the Flask app on a fixed port (default 5000) and, unless suppressed
+with ``--no-browser``, opens the user's default browser at the chat UI.
+This is the mode that matches the historical ``python3 server.py``
+invocation; the ``--desktop`` mode lives in :mod:`cursor_view.desktop`.
 """
 
 import argparse

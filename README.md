@@ -26,7 +26,7 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
    ```
 4. Start the server:
    ```
-   python3 server.py
+   python3 terminal.py
    ```
 5. Open your browser to http://localhost:5000
 
@@ -34,7 +34,7 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
 
 Cursor View can also be packaged as a standalone binary so it can be run
 without a Python toolchain. By default the binary behaves the same way as
-`python3 server.py`: it starts a local Flask server and opens the chat UI
+`python3 terminal.py`: it starts a local Flask server and opens the chat UI
 in your default browser. Passing `--desktop` opts into an experimental
 mode where the UI is rendered inside a native OS webview window (WebView2
 on Windows, WKWebView on macOS, WebKitGTK/Qt on Linux) via
