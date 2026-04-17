@@ -40,7 +40,7 @@ todos:
     status: completed
   - id: docs_readme
     content: Add a 'Project layout' section to README.md describing the entry points, cursor_view subpackages, and frontend folders
-    status: pending
+    status: completed
   - id: create_standards_rules
     content: Author six focused Cursor rules under .cursor/rules/ (project-layout, python-standards, sqlite-cursor-db, known-bugs, react-components, comments-style) capturing the standards established by this refactor
     status: pending

@@ -30,6 +30,91 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
    ```
 5. Open your browser to http://localhost:5000
 
+## Project layout
+
+A contributor's map of where things live. The three scripts at the repo
+root are thin shims; the bulk of the code lives inside the
+`cursor_view/` Python package and the `frontend/src/` React app.
+
+### Entry points
+
+- `terminal.py` &mdash; starts the Flask server and opens the chat UI
+  in your browser (the default mode).
+- `desktop.py` &mdash; launches the same Flask server inside a native
+  pywebview window.
+- `cursor_view_main.py` &mdash; unified entry point used by PyInstaller;
+  dispatches to terminal or desktop mode based on `--desktop`.
+  Equivalent to `python3 -m cursor_view`.
+
+### Backend (`cursor_view/`)
+
+Top-level modules:
+
+- `app_factory.py`, `routes.py` &mdash; Flask app construction and the
+  HTTP API.
+- `chat_index.py` &mdash; persistent SQLite cache of chat summaries
+  plus FTS search.
+- `chat_format.py` &mdash; shapes extracted chat data for the frontend.
+- `terminal.py`, `__main__.py` &mdash; terminal-mode entry point and
+  the `python -m cursor_view` dispatcher.
+- `cleanup.py`, `paths.py`, `timestamps.py` &mdash; small cross-cutting
+  utilities.
+
+Subpackages:
+
+- `extraction/` &mdash; pipeline that scans Cursor's SQLite databases
+  and produces chat sessions. `core.py` holds the orchestrator and the
+  per-pass helpers; `diagnostics.py` holds the optional probe gated by
+  the `CURSOR_CHAT_DIAGNOSTICS` environment variable.
+- `export/` &mdash; chat export generators: `themes.py` (palette),
+  `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
+  normalization), `html.py` (standalone HTML + inline CSS template).
+- `projects/` &mdash; project-name resolution. `inference.py` walks
+  workspace storage, tree view state, and history entries;
+  `git.py` is the SCM (git repo) fallback.
+- `sources/` &mdash; raw access to Cursor's on-disk data.
+  `sqlite_data.py` holds the iterators over `cursorDiskKV` and
+  `ItemTable`.
+- `desktop/` &mdash; pywebview launcher. `__init__.py` hosts
+  `run_desktop`; `api.py` is the JS &harr; Python bridge;
+  `window_state.py` persists window geometry across launches.
+
+### Frontend (`frontend/src/`)
+
+- `App.js`, `index.js`, `index.css`, `starry-night-theme.css` &mdash;
+  root composition and global CSS.
+- `theme/` &mdash; `colors.js` (palettes), `buildTheme.js` (MUI theme
+  factory), `themeCookie.js` (dark/light cookie).
+- `contexts/` &mdash; `ColorContext.js` and `ThemeModeContext.js`, one
+  React context per file.
+- `hooks/` &mdash; shared custom hooks: `useChatSummaries`,
+  `useExportFlow`, `useExportWarningPreference`.
+- `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
+  `exportChat`.
+- `markdown/` &mdash; the unified/remark/rehype pipeline that
+  pre-renders chat messages to HTML.
+- `components/`
+  - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js` &mdash;
+    global UI.
+  - `chat-list/` &mdash; the list page split into `ChatList`,
+    `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
+  - `chat-detail/` &mdash; the detail page split into `ChatDetail`,
+    `ChatMetaPanel`, `MessageList`, `MessageBubble`.
+  - `export/` &mdash; shared `ExportFormatDialog` and
+    `ExportWarningDialog` used by both pages.
+
+### Assets and configuration
+
+- `cursor-view.spec` &mdash; PyInstaller spec that bundles
+  `cursor_view_main.py` and `frontend/build/` into the standalone
+  binary.
+- `assets/icons/` &mdash; multi-platform app icons plus the
+  `_generate_icons.py` regeneration script.
+- `.github/workflows/desktop-build.yml` &mdash; CI that builds the
+  standalone binary on Windows, macOS, and Linux.
+- `requirements.txt`, `frontend/package.json` &mdash; Python and JS
+  dependencies, respectively.
+
 ## Standalone binary
 
 Cursor View can also be packaged as a standalone binary so it can be run
