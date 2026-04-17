@@ -6,6 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import ChatList from './components/ChatList';
 import ChatDetail from './components/ChatDetail';
 import Header from './components/Header';
+import AppContextMenu from './components/AppContextMenu';
 
 const sharedColors = {
   primary: {
@@ -186,6 +187,7 @@ function App() {
           <CssBaseline />
           <Router>
             <Header />
+            <AppContextMenu />
             <Routes>
               <Route path="/" element={<ChatList />} />
               <Route path="/chat/:sessionId" element={<ChatDetail />} />

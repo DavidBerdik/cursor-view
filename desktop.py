@@ -137,6 +137,7 @@ def main() -> None:
         width=1200,
         height=800,
         min_size=(900, 600),
+        text_select=True,
     )
 
     try:
