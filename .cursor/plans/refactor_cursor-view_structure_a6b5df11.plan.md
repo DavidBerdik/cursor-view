@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: py_split_extraction
     content: Split cursor_view/extraction.py into extraction/{core.py, diagnostics.py} and break extract_chats into named per-pass helpers
-    status: pending
+    status: completed
   - id: py_split_export
     content: Split cursor_view/export_html.py into export/{themes.py, markdown.py, markdown_fences.py, html.py} and pull the inline HTML <style> block into a module-level template constant
     status: pending
