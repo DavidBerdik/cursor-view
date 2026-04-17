@@ -31,7 +31,7 @@ todos:
     status: completed
   - id: fe_dedupe_export
     content: Extract ExportFormatDialog and ExportWarningDialog and centralize the format -> warning -> export pipeline in hooks/useExportFlow.js + hooks/useExportWarningPreference.js
-    status: pending
+    status: completed
   - id: fe_utils
     content: Add utils/formatDate.js, utils/dbPath.js, utils/cookies.js and replace the duplicated copies
     status: pending

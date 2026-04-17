@@ -1,7 +1,6 @@
 import React, {
   useContext,
   useDeferredValue,
-  useEffect,
   useMemo,
   useState,
 } from 'react';
@@ -9,27 +8,17 @@ import {
   alpha,
   Box,
   Button,
-  Checkbox,
   CircularProgress,
   Container,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
-  FormControl,
-  FormControlLabel,
-  Radio,
-  RadioGroup,
   Typography,
 } from '@mui/material';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import WarningIcon from '@mui/icons-material/Warning';
 import { ColorContext } from '../../contexts/ColorContext';
 import { ThemeModeContext } from '../../contexts/ThemeModeContext';
 import { useChatSummaries } from '../../hooks/useChatSummaries';
-import { exportChat } from '../../utils/exportChat';
+import { useExportFlow } from '../../hooks/useExportFlow';
+import ExportFormatDialog from '../export/ExportFormatDialog';
+import ExportWarningDialog from '../export/ExportWarningDialog';
 import EmptyState from './EmptyState';
 import ProjectGroup from './ProjectGroup';
 import SearchBar from './SearchBar';
@@ -39,23 +28,19 @@ const ChatList = () => {
   const { darkMode } = useContext(ThemeModeContext);
   const [expandedProjects, setExpandedProjects] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
-  const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [formatDialogOpen, setFormatDialogOpen] = useState(false);
-  const [exportFormat, setExportFormat] = useState('html');
-  const [dontShowExportWarning, setDontShowExportWarning] = useState(false);
-  const [currentExportSession, setCurrentExportSession] = useState(null);
   const deferredSearchQuery = useDeferredValue(searchQuery.trim());
   const { chatData, loading, error, refresh } = useChatSummaries(deferredSearchQuery);
-
-  useEffect(() => {
-    const warningPreference = document.cookie
-      .split('; ')
-      .find((row) => row.startsWith('dontShowExportWarning='));
-
-    if (warningPreference) {
-      setDontShowExportWarning(warningPreference.split('=')[1] === 'true');
-    }
-  }, []);
+  const {
+    format,
+    setFormat,
+    dontShow,
+    setDontShow,
+    formatDialogOpen,
+    warningDialogOpen,
+    requestExport,
+    handleFormatConfirm,
+    handleWarningConfirm,
+  } = useExportFlow({ darkMode });
 
   const groupedProjects = useMemo(() => {
     const projectMap = new Map();
@@ -97,60 +82,12 @@ const ChatList = () => {
     setSearchQuery(event.target.value);
   };
 
-  const handleFormatDialogClose = (confirmed) => {
-    setFormatDialogOpen(false);
-    if (!confirmed) {
-      setCurrentExportSession(null);
-      return;
-    }
-    if (dontShowExportWarning && currentExportSession) {
-      proceedWithExport(currentExportSession, exportFormat);
-      setCurrentExportSession(null);
-    } else if (currentExportSession) {
-      setExportModalOpen(true);
-    }
-  };
-
-  const handleExportWarningClose = (confirmed) => {
-    setExportModalOpen(false);
-
-    // TODO(bug): The cookie is written regardless of `confirmed`, so a
-    // user who ticks the "Don't show this warning again" checkbox and
-    // then closes the dialog with Cancel still has the preference
-    // persisted. The guard should be `if (confirmed && dontShowExportWarning)`
-    // to only remember the preference after an affirmative export.
-    if (dontShowExportWarning) {
-      const expiryDate = new Date();
-      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-      document.cookie = `dontShowExportWarning=true; expires=${expiryDate.toUTCString()}; path=/`;
-    }
-
-    if (confirmed && currentExportSession) {
-      proceedWithExport(currentExportSession, exportFormat);
-    }
-
-    setCurrentExportSession(null);
-  };
-
-  const handleExport = (event, sessionId) => {
+  // Intercepts the click inside the <Link>-wrapped Card so hitting
+  // the export button doesn't also navigate to the chat detail route.
+  const handleCardExport = (event, sessionId) => {
     event.preventDefault();
     event.stopPropagation();
-    setCurrentExportSession(sessionId);
-    setFormatDialogOpen(true);
-  };
-
-  const proceedWithExport = async (sessionId, format) => {
-    const result = await exportChat({ sessionId, format, darkMode });
-    if (result.saved) {
-      if (result.path) {
-        alert(`Saved to ${result.path}`);
-      }
-      return;
-    }
-    if (result.cancelled) {
-      return;
-    }
-    alert(`Failed to export chat: ${result.error || 'Unknown error'}`);
+    requestExport(sessionId);
   };
 
   if (loading && chatData.items.length === 0) {
@@ -202,75 +139,19 @@ const ChatList = () => {
         </Button>
       </Box>
 
-      <Dialog
+      <ExportFormatDialog
         open={formatDialogOpen}
-        onClose={() => handleFormatDialogClose(false)}
-        aria-labelledby="chatlist-format-selection-dialog-title"
-      >
-        <DialogTitle id="chatlist-format-selection-dialog-title" sx={{ display: 'flex', alignItems: 'center' }}>
-          <FileDownloadIcon sx={{ color: colors.highlightColor, mr: 1 }} />
-          Export Format
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Please select the export format for your chat:
-          </DialogContentText>
-          <FormControl component="fieldset" sx={{ mt: 2 }}>
-            <RadioGroup
-              aria-label="export-format"
-              name="export-format"
-              value={exportFormat}
-              onChange={(event) => setExportFormat(event.target.value)}
-            >
-              <FormControlLabel value="html" control={<Radio />} label="HTML" />
-              <FormControlLabel value="json" control={<Radio />} label="JSON" />
-              <FormControlLabel value="markdown" control={<Radio />} label="Markdown" />
-            </RadioGroup>
-          </FormControl>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => handleFormatDialogClose(false)} color="highlight">
-            Cancel
-          </Button>
-          <Button onClick={() => handleFormatDialogClose(true)} color="highlight" variant="contained">
-            Continue
-          </Button>
-        </DialogActions>
-      </Dialog>
+        format={format}
+        onFormatChange={setFormat}
+        onClose={handleFormatConfirm}
+      />
 
-      <Dialog
-        open={exportModalOpen}
-        onClose={() => handleExportWarningClose(false)}
-        aria-labelledby="export-warning-dialog-title"
-      >
-        <DialogTitle id="export-warning-dialog-title" sx={{ display: 'flex', alignItems: 'center' }}>
-          <WarningIcon sx={{ color: 'warning.main', mr: 1 }} />
-          Export Warning
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Please make sure your exported chat doesn&apos;t include sensitive data such as API keys and customer information.
-          </DialogContentText>
-          <FormControlLabel
-            control={(
-              <Checkbox
-                checked={dontShowExportWarning}
-                onChange={(event) => setDontShowExportWarning(event.target.checked)}
-              />
-            )}
-            label="Don't show this warning again"
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => handleExportWarningClose(false)} color="primary">
-            Cancel
-          </Button>
-          <Button onClick={() => handleExportWarningClose(true)} color="highlight" variant="contained">
-            Continue Export
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ExportWarningDialog
+        open={warningDialogOpen}
+        dontShow={dontShow}
+        onDontShowChange={setDontShow}
+        onClose={handleWarningConfirm}
+      />
 
       <SearchBar
         value={searchQuery}
@@ -297,8 +178,8 @@ const ChatList = () => {
             project={project}
             isExpanded={!!expandedProjects[project.key]}
             onToggle={() => toggleProjectExpand(project.key)}
-            onExport={handleExport}
-            dontShowExportWarning={dontShowExportWarning}
+            onExport={handleCardExport}
+            dontShowExportWarning={dontShow}
           />
         ))
       )}
