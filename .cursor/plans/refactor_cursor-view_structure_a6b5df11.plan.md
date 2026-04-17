@@ -4,7 +4,7 @@ overview: "Reorganize the Cursor View codebase so it's easier to navigate and ma
 todos:
   - id: delete_dead_code
     content: Delete cursor_chat_finder.py, extract_cursor_chat.py, vscdb_to_sqlite.py, and cursor_chat_viewer/
-    status: pending
+    status: completed
   - id: py_entry_points
     content: Rename server.py -> terminal.py, move terminal.py / desktop.py / cursor_view_main.py impls into cursor_view/{terminal.py, desktop/, __main__.py}, replace originals with thin shims, and update README + cursor-view.spec to match
     status: pending
