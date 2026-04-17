@@ -201,7 +201,8 @@ class DesktopApi:
         return {"saved": True, "path": path}
 
 
-def main() -> None:
+def run_desktop() -> None:
+    """Launch the Cursor View UI inside a native pywebview window."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -290,6 +291,11 @@ def main() -> None:
         logger.info("Shutting down Flask server")
         server.shutdown()
         server_thread.join(timeout=5)
+
+
+def main() -> None:
+    """Backwards-compatible alias for ``run_desktop``."""
+    run_desktop()
 
 
 if __name__ == "__main__":

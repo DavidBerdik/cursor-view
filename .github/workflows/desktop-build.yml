@@ -1,4 +1,4 @@
-name: Desktop build
+name: Standalone build
 
 on:
   push:
@@ -18,13 +18,13 @@ jobs:
         include:
           - os: windows-latest
             artifact_name: cursor-view-windows
-            artifact_path: dist/Cursor View
+            artifact_path: dist/cursor-view
           - os: macos-latest
             artifact_name: cursor-view-macos
             artifact_path: dist/Cursor View.app
           - os: ubuntu-latest
             artifact_name: cursor-view-linux
-            artifact_path: dist/Cursor View
+            artifact_path: dist/cursor-view
 
     steps:
       - name: Checkout
@@ -65,7 +65,7 @@ jobs:
           npm ci
           npm run build
 
-      - name: Build desktop app
+      - name: Build standalone binary
         run: pyinstaller cursor-view.spec
 
       - name: Upload artifact

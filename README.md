@@ -30,14 +30,17 @@ Cursor View is a local tool to view, search, and export all your Cursor AI chat 
    ```
 5. Open your browser to http://localhost:5000
 
-## Desktop app
+## Standalone binary
 
-Cursor View can also be run as a standalone desktop application. The Flask
-server is started in the background and the UI is rendered inside a native OS
-webview window (WebView2 on Windows, WKWebView on macOS, WebKitGTK/Qt on Linux)
-via [pywebview](https://pywebview.flowrl.com/).
+Cursor View can also be packaged as a standalone binary so it can be run
+without a Python toolchain. By default the binary behaves the same way as
+`python3 server.py`: it starts a local Flask server and opens the chat UI
+in your default browser. Passing `--desktop` opts into an experimental
+mode where the UI is rendered inside a native OS webview window (WebView2
+on Windows, WKWebView on macOS, WebKitGTK/Qt on Linux) via
+[pywebview](https://pywebview.flowrl.com/).
 
-### Run from source
+### Run from source (desktop mode)
 
 ```
 python3 -m pip install -r requirements.txt
@@ -69,11 +72,11 @@ Then build with PyInstaller using the included spec:
 pyinstaller cursor-view.spec
 ```
 
-This produces a windowed (no-console) binary in `dist/`:
+This produces a console binary in `dist/`:
 
-- Windows: `dist/Cursor View/Cursor View.exe`
-- macOS:   `dist/Cursor View.app`
-- Linux:   `dist/Cursor View/Cursor View`
+- Windows: `dist/cursor-view/cursor-view.exe`
+- macOS:   `dist/cursor-view/cursor-view` (plus `dist/Cursor View.app` wrapping the same binary)
+- Linux:   `dist/cursor-view/cursor-view`
 
 On macOS, unsigned local builds may be quarantined by Gatekeeper. To run
 without code signing:
@@ -82,10 +85,31 @@ without code signing:
 xattr -dr com.apple.quarantine "dist/Cursor View.app"
 ```
 
+### Running the binary
+
+By default the binary starts the Flask server and opens the browser:
+
+```
+cursor-view                 # default: terminal/server mode + auto-open browser
+cursor-view --no-browser    # server only; open the browser yourself
+cursor-view --port 8080     # use a different port
+cursor-view --desktop       # experimental webview UI instead of the browser
+```
+
+On macOS the `.app` bundle is purely cosmetic packaging around the same
+`cursor-view` binary, so double-clicking `Cursor View.app` in Finder
+behaves like double-clicking the Windows `.exe`: it starts the server and
+opens the browser. To launch the experimental desktop mode from Finder,
+pass the flag explicitly:
+
+```
+open -a "Cursor View" --args --desktop
+```
+
 ### User preferences / webview profile
 
-The desktop app persists UI preferences (theme, export warning opt-out) in a
-per-user webview profile directory:
+When using `--desktop`, the app persists UI preferences (theme, export
+warning opt-out) in a per-user webview profile directory:
 
 - Windows: `%LOCALAPPDATA%\cursor-view\webview-storage`
 - macOS:   `~/Library/Caches/cursor-view/webview-storage`
