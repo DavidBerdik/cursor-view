@@ -46,6 +46,25 @@ def _webview_storage_path() -> str:
     return str(path)
 
 
+def _primary_screen():
+    """Return the primary screen (origin at 0,0), falling back to screens[0]."""
+    screens = list(webview.screens) or []
+    for s in screens:
+        if s.x == 0 and s.y == 0:
+            return s
+    return screens[0] if screens else None
+
+
+def _centered_position(width: int, height: int) -> tuple[int | None, int | None]:
+    """Compute (x, y) to center a window of the given size on the primary display."""
+    screen = _primary_screen()
+    if screen is None:
+        return None, None
+    x = screen.x + max(0, (screen.width - width) // 2)
+    y = screen.y + max(0, (screen.height - height) // 2)
+    return x, y
+
+
 class DesktopApi:
     """JS-to-Python bridge exposed to the React UI via pywebview.
 
@@ -130,12 +149,17 @@ def main() -> None:
     )
     server_thread.start()
 
+    WIDTH, HEIGHT = 1200, 800
+    x, y = _centered_position(WIDTH, HEIGHT)
+
     webview.create_window(
         title="Cursor View",
         url=f"http://127.0.0.1:{port}/",
         js_api=DesktopApi(port),
-        width=1200,
-        height=800,
+        width=WIDTH,
+        height=HEIGHT,
+        x=x,
+        y=y,
         min_size=(900, 600),
         text_select=True,
     )
