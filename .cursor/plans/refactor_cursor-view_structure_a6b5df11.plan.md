@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: py_split_export
     content: Split cursor_view/export_html.py into export/{themes.py, markdown.py, markdown_fences.py, html.py} and pull the inline HTML <style> block into a module-level template constant
-    status: pending
+    status: completed
   - id: py_move_modules
     content: Move project_inference.py, git_project.py into cursor_view/projects/ and sqlite_data.py into cursor_view/sources/, updating internal imports
     status: pending

@@ -8,7 +8,7 @@ from flask import Blueprint, Response, current_app, jsonify, request, send_from_
 
 from cursor_view.chat_format import messages_for_json_export
 from cursor_view.chat_index import get_chat_index
-from cursor_view.export_html import (
+from cursor_view.export import (
     generate_markdown,
     generate_standalone_html,
     resolve_export_theme,
