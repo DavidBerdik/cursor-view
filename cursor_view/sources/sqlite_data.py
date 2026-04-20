@@ -123,8 +123,15 @@ def j(cur: sqlite3.Cursor, table: str, key: str):
 
 def iter_bubbles_from_disk_kv(
     db: pathlib.Path,
-) -> Iterable[tuple[str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
-    """Yield (composerId, role, text, db_path, file_uris, folder_uris, tool_call).
+) -> Iterable[tuple[str, str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
+    """Yield (composerId, bubbleId, role, text, db_path, file_uris, folder_uris, tool_call).
+
+    ``bubbleId`` is the ``<bid>`` segment of the row's ``bubbleId:<cid>:<bid>``
+    primary key; callers pair it with :func:`build_bubble_order_map` to
+    reorder the stream into Cursor's canonical per-composer turn order
+    (``cursorDiskKV`` otherwise returns rows sorted alphabetically by
+    bubbleId, which is effectively random for UUIDv4 bubble ids and
+    scrambles messages downstream).
 
     ``file_uris`` and ``folder_uris`` are kept separate so project inference
     can trim filenames from files while treating folders as candidate roots.
@@ -172,8 +179,14 @@ def iter_bubbles_from_disk_kv(
             if not txt and not file_uris and not folder_uris and tool_call is None:
                 continue
             role = "user" if b.get("type") == 1 else "assistant"
-            composerId = k.split(":")[1]  # Format is bubbleId:composerId:bubbleId
-            yield composerId, role, txt, db_path_str, file_uris, folder_uris, tool_call
+            # Key layout is ``bubbleId:<composerId>:<bubbleId>``; we need both
+            # halves downstream (composerId for session routing, bubbleId for
+            # the chronological-ordering lookup against
+            # ``composerData.fullConversationHeadersOnly``).
+            parts = k.split(":", 2)
+            composerId = parts[1] if len(parts) >= 2 else ""
+            bubbleId = parts[2] if len(parts) >= 3 else ""
+            yield composerId, bubbleId, role, txt, db_path_str, file_uris, folder_uris, tool_call
     finally:
         if con is not None:
             con.close()
@@ -307,14 +320,14 @@ def _connect_cursor_disk_kv(db: pathlib.Path) -> sqlite3.Connection | None:
 def iter_bubbles_for_cids(
     db: pathlib.Path,
     cids: Iterable[str],
-) -> Iterable[tuple[str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
+) -> Iterable[tuple[str, str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
     """Cid-scoped form of :func:`iter_bubbles_from_disk_kv`.
 
-    Emits the same 7-tuple ``(composerId, role, text, db_path, file_uris,
-    folder_uris, tool_call)`` but only for bubbles whose ``composerId``
-    is in ``cids``. The per-cid query is a range scan of the
-    ``bubbleId:<cid>:`` PK prefix -- ``key > 'bubbleId:<cid>:'`` with a
-    ``key < 'bubbleId:<cid>;'`` upper bound (``;`` is the byte directly
+    Emits the same 8-tuple ``(composerId, bubbleId, role, text, db_path,
+    file_uris, folder_uris, tool_call)`` but only for bubbles whose
+    ``composerId`` is in ``cids``. The per-cid query is a range scan of
+    the ``bubbleId:<cid>:`` PK prefix -- ``key > 'bubbleId:<cid>:'`` with
+    a ``key < 'bubbleId:<cid>;'`` upper bound (``;`` is the byte directly
     after ``:``) -- which runs on the implicit primary-key index in
     O(bubbles_per_cid) time without a LIKE escape for composer ids that
     contain underscores (``task-<toolCallId>`` commonly do).
@@ -364,10 +377,113 @@ def iter_bubbles_for_cids(
                 # Re-split from the key rather than trusting the cid loop
                 # variable, in case a malformed key slipped past the range
                 # predicate (defensive; same parse as iter_bubbles_from_disk_kv).
-                composerId = k.split(":")[1]
-                yield composerId, role, txt, db_path_str, file_uris, folder_uris, tool_call
+                parts = k.split(":", 2)
+                composerId = parts[1] if len(parts) >= 2 else ""
+                bubbleId = parts[2] if len(parts) >= 3 else ""
+                yield composerId, bubbleId, role, txt, db_path_str, file_uris, folder_uris, tool_call
     finally:
         con.close()
+
+
+def build_bubble_order_map(
+    db: pathlib.Path,
+    cids: Iterable[str] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Read Cursor's canonical per-composer bubble ordering.
+
+    For each target composer, opens the ``composerData:<cid>`` row in
+    ``cursorDiskKV`` and reads ``fullConversationHeadersOnly`` -- the
+    array of ``{bubbleId, type, ...}`` records Cursor writes in
+    chronological turn order. Returns a ``{cid -> {bubbleId -> ordinal}}``
+    map the extraction pipeline uses to sort the bubble-id-keyed
+    ``bubbleId:<cid>:<bid>`` rows, which SQLite otherwise returns in
+    primary-key order (effectively random for UUIDv4 bubbleIds).
+
+    ``cids=None`` performs a full scan of ``composerData:*`` rows so the
+    full-rebuild path can build the order map without an extra
+    round-trip. A bounded ``cids`` iterable uses the same chunked
+    ``key IN (...)`` shape as :func:`iter_composer_data_for_cids` to
+    keep cost proportional to the dirty set.
+
+    Composers with no ``composerData`` row are omitted; composers whose
+    value lacks ``fullConversationHeadersOnly`` yield an empty inner
+    dict. Callers that encounter a missing or empty inner dict should
+    fall through to "append bubbles in encountered order", which is
+    the legacy behavior and the correct fallback for old Cursor builds
+    that predate the headers array.
+    """
+    cids_list: list[str] | None
+    if cids is None:
+        cids_list = None
+    else:
+        cids_list = [c for c in cids if isinstance(c, str) and c]
+        if not cids_list:
+            return {}
+    con = _connect_cursor_disk_kv(db)
+    if con is None:
+        return {}
+    order: dict[str, dict[str, int]] = {}
+    try:
+        cur = con.cursor()
+        rows: list[tuple[str, object]] = []
+        if cids_list is None:
+            try:
+                cur.execute(
+                    "SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'"
+                )
+                rows = list(cur.fetchall())
+            except sqlite3.DatabaseError as e:
+                logger.debug("Database error scanning composerData in %s: %s", db, e)
+                return order
+        else:
+            chunk_size = 500
+            for start in range(0, len(cids_list), chunk_size):
+                chunk = cids_list[start:start + chunk_size]
+                keys = [f"composerData:{c}" for c in chunk]
+                placeholders = ",".join("?" for _ in keys)
+                try:
+                    cur.execute(
+                        f"SELECT key, value FROM cursorDiskKV WHERE key IN ({placeholders})",
+                        keys,
+                    )
+                    rows.extend(cur.fetchall())
+                except sqlite3.DatabaseError as e:
+                    logger.debug(
+                        "Database error reading composerData chunk in %s: %s", db, e
+                    )
+                    continue
+        for k, v in rows:
+            if v is None:
+                continue
+            try:
+                data = json.loads(v)
+            except Exception as e:
+                logger.debug("Failed to parse composer data for key %s: %s", k, e)
+                continue
+            if not isinstance(data, dict):
+                continue
+            cid = k.split(":", 1)[1] if ":" in k else ""
+            if not cid:
+                continue
+            headers = data.get("fullConversationHeadersOnly")
+            if not isinstance(headers, list):
+                order[cid] = {}
+                continue
+            per_cid: dict[str, int] = {}
+            for idx, entry in enumerate(headers):
+                if not isinstance(entry, dict):
+                    continue
+                bid = entry.get("bubbleId")
+                # First-seen wins: a bubbleId should appear at most once
+                # in a well-formed headers array, but we guard against
+                # duplicates so a later malformed entry can't shift an
+                # earlier bubble's ordinal out of chronological order.
+                if isinstance(bid, str) and bid and bid not in per_cid:
+                    per_cid[bid] = idx
+            order[cid] = per_cid
+    finally:
+        con.close()
+    return order
 
 
 def iter_composer_data_for_cids(

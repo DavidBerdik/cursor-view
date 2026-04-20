@@ -98,8 +98,16 @@ def _composer(
     created_at: int = 1_700_000_000_000,
     updated_at: int = 1_700_000_001_000,
     workspace_id: str | None = None,
+    headers: list[tuple[str, int]] | None = None,
 ) -> dict:
-    """Build a composerData value; leaves ``subagentInfo`` null to mirror ``task_v2`` spawns."""
+    """Build a composerData value; leaves ``subagentInfo`` null to mirror ``task_v2`` spawns.
+
+    ``headers`` populates ``fullConversationHeadersOnly`` as a list of
+    ``{"bubbleId": <bid>, "type": <role_type>}`` entries. Tests that
+    care about the bubble-ordering fix pass it explicitly; tests that
+    do not care leave it unset and the composer has no headers array,
+    which is also the legacy shape.
+    """
     v: dict = {
         "name": name,
         "createdAt": created_at,
@@ -111,6 +119,10 @@ def _composer(
             "id": workspace_id,
             "uri": {"external": f"file:///tmp/{workspace_id}"},
         }
+    if headers is not None:
+        v["fullConversationHeadersOnly"] = [
+            {"bubbleId": bid, "type": role_type} for bid, role_type in headers
+        ]
     return v
 
 
@@ -447,6 +459,108 @@ class IncrementalRefreshTest(unittest.TestCase):
             "(global)",
             "Removing the cid from the only container that held it must demote to (global)",
         )
+
+
+    # ---------------------------------------------------------------
+    # Regression: bubble order follows composerData.fullConversationHeadersOnly
+    # ---------------------------------------------------------------
+    def test_bubble_order_uses_headers_array(self) -> None:
+        """Messages land in ``fullConversationHeadersOnly`` order, not bubbleId order.
+
+        Reproduces the scrambled-messages bug fixed by the
+        ``fix_bubble_ordering`` step: Cursor writes bubbles into
+        ``cursorDiskKV`` keyed by ``bubbleId:<cid>:<bid>`` where
+        ``<bid>`` is a UUIDv4, so SQLite's PK scan returns rows in
+        alphabetical (i.e. effectively random) order. The canonical
+        chronological order lives on ``composerData.fullConversationHeadersOnly``.
+        Bubble ids are chosen here so their alphabetical order
+        (``b_aaa < b_mmm < b_zzz``) is the EXACT REVERSE of the order
+        the headers array records (``b_zzz``, ``b_mmm``, ``b_aaa``) --
+        a PK-order extraction would land in the wrong order and the
+        alternating role sequence would tell us which order actually
+        took effect.
+        """
+        cid = "99999999-9999-9999-9999-999999999999"
+        # Types: 1 == user, 2 == assistant. Alternating roles so the
+        # coalescer does not merge adjacent entries and every bubble
+        # becomes its own chat_message row we can assert on.
+        _put_kv(
+            self.global_db,
+            f"composerData:{cid}",
+            _composer(
+                "Order Test",
+                headers=[("b_zzz", 1), ("b_mmm", 2), ("b_aaa", 1)],
+            ),
+        )
+        _put_kv(self.global_db, f"bubbleId:{cid}:b_aaa", _bubble("third user msg"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b_mmm",
+            _bubble("second assistant msg", role_type=2),
+        )
+        _put_kv(self.global_db, f"bubbleId:{cid}:b_zzz", _bubble("first user msg"))
+
+        ci = self._build_index()
+
+        rows = self._messages_with_rowid(cid)
+        self.assertEqual(
+            [(r[2], r[3]) for r in rows],
+            [
+                ("user", "first user msg"),
+                ("assistant", "second assistant msg"),
+                ("user", "third user msg"),
+            ],
+            "Full rebuild should order messages by fullConversationHeadersOnly, "
+            "not by the alphabetical bubbleId order cursorDiskKV returns",
+        )
+
+        # Incremental refresh must preserve the order after a bubble
+        # edit on the middle turn; the delta path uses the same Pass 2
+        # that the full rebuild does, so breaking this means the
+        # scoped iterator or the apply step dropped the ordering map.
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b_mmm",
+            _bubble("second assistant msg EDITED", role_type=2),
+        )
+        dirty = self._refresh(ci)
+        self.assertIn(cid, dirty.modified_cids)
+
+        rows_after = self._messages_with_rowid(cid)
+        self.assertEqual(
+            [(r[2], r[3]) for r in rows_after],
+            [
+                ("user", "first user msg"),
+                ("assistant", "second assistant msg EDITED"),
+                ("user", "third user msg"),
+            ],
+            "Incremental refresh should preserve headers-array order and reflect the bubble edit",
+        )
+
+    # ---------------------------------------------------------------
+    # Regression: legacy composers without the headers array still work
+    # ---------------------------------------------------------------
+    def test_bubble_order_falls_back_to_encounter_order_without_headers(self) -> None:
+        """Composers with no ``fullConversationHeadersOnly`` keep legacy behavior.
+
+        Old Cursor builds predate the headers array, so the ordering
+        fix must not make their case worse. Bubbles fall through to
+        "append in encountered order" (PK order). This test just
+        asserts the chat still surfaces with the expected message
+        count -- we don't assert on the specific ordering because
+        legacy behavior against UUIDv4 bubbleIds is, by design, not
+        chronologically meaningful.
+        """
+        cid = "aaaaaaaa-0000-0000-0000-000000000001"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Legacy"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("hello"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("world", role_type=2))
+
+        ci = self._build_index()
+        summary = self._summary(cid)
+        self.assertIsNotNone(summary)
+        rows = self._messages_with_rowid(cid)
+        self.assertEqual(len(rows), 2, "Legacy composer should still produce both messages")
 
 
 if __name__ == "__main__":

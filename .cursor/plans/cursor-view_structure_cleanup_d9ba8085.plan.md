@@ -3,8 +3,8 @@ name: cursor-view structure cleanup
 overview: "Restore rule compliance across the Python and React halves of the project after the incremental-refresh and bug-fix work: split six files that grew past the size soft limits into focused submodules, deduplicate a pane-view key parser that now lives in two places, stop importing private helpers across package boundaries, prune narrating comments, tighten a small chat-formatting DRY issue on the cache write path, and fix one severe bug in the extraction pipeline where bubbles are read in alphabetical-bubbleId order instead of the canonical order Cursor records in `composerData.fullConversationHeadersOnly`, which scrambles message order and makes `coalesce_consecutive_messages_by_role` merge unrelated user prompts."
 todos:
   - id: fix_bubble_ordering
-    content: "Fix the scrambled-messages bug: change the extraction pipeline to read composerData.fullConversationHeadersOnly FIRST and use it as the canonical bubble order, then sort each composer's messages by that order before coalescing. Affects full rebuild (iter_bubbles_from_disk_kv path), cid-scoped extraction (iter_bubbles_for_cids path), and requires a matching ordering column in chat_message so the incremental apply preserves it. Includes a regression test fixture with a fullConversationHeadersOnly array whose bubbleId order is the reverse of the bubbleIds' alphabetical order. Sequenced first so users stop reading gibberish chat histories during the refactor window."
-    status: pending
+    content: "Fix the scrambled-messages bug: change the extraction pipeline to read composerData.fullConversationHeadersOnly FIRST and use it as the canonical bubble order, then sort each composer's messages by that order before coalescing. Affects full rebuild (iter_bubbles_from_disk_kv path) and cid-scoped extraction (iter_bubbles_for_cids path). Includes a regression test fixture with a fullConversationHeadersOnly array whose bubbleId order is the reverse of the bubbleIds' alphabetical order. Sequenced first so users stop reading gibberish chat histories during the refactor window. INDEX_SCHEMA_VERSION stays at 2 because the scrambled caches never shipped; developers with a stale local cache delete chat-index.sqlite3 or hit Refresh."
+    status: completed
   - id: split_chat_index
     content: Split cursor_view/chat_index.py (819 lines) into a cursor_view/chat_index/ subpackage with schema.py, fingerprint.py, rebuild.py, rows.py, and index.py (the ChatIndex orchestrator)
     status: pending
@@ -49,10 +49,9 @@ todos:
     status: pending
   - id: verify
     content: Run the smoke-test import line documented in the plan, then python -m unittest discover -s tests and cd frontend && npm run build to confirm no regressions
-    status: pending
+    status: completed
 isProject: false
 ---
-
 
 ## Motivation
 
@@ -377,8 +376,8 @@ After editing each rule, verify every bullet can still be anchored to a real fil
 
 ## Out of scope
 
-- One behavior change is in scope: the bubble-ordering fix documented in the "Behavior fix in scope" section above (`fix_bubble_ordering` todo). Bumps `INDEX_SCHEMA_VERSION` from `2` to `3` so cached chats re-extract with correct ordering on first launch.
-- No other behavior changes, no SQL changes beyond that schema bump, no new public API, no new HTTP routes.
+- One behavior change is in scope: the bubble-ordering fix documented in the "Behavior fix in scope" section above (`fix_bubble_ordering` todo). `INDEX_SCHEMA_VERSION` stays at `2` because the scrambled caches were never shipped to users; any developer running an affected cache can delete `chat-index.sqlite3` manually or hit the UI's Refresh button to force a rebuild.
+- No other behavior changes, no SQL changes, no new public API, no new HTTP routes.
 - No performance changes beyond the single-pass de-duplication in step 9 and the per-cid `composerData` read that the ordering fix requires (amortized by the existing cid-scoped `iter_composer_data_for_cids` path).
 - No frontend behavior changes; `AppContextMenu`'s selection behavior is refactored, not altered.
 - The bugs catalogued in the next section are **documented only**; fixing them belongs in a follow-up plan modeled on [.cursor/plans/fix_documented_bugs_2848bfcb.plan.md](.cursor/plans/fix_documented_bugs_2848bfcb.plan.md). Each will be annotated with `# TODO(bug):` per [.cursor/rules/known-bugs.mdc](.cursor/rules/known-bugs.mdc) at the site where it lives (alongside the refactor edit that touches that site); no behavior change for those lands in this plan.
@@ -440,7 +439,7 @@ The fix is mechanically small and localized to extraction + one cache column. Co
 
 3. **Thread an `ordinal` through to the cache write path.** The cache's `chat_message` PK is `(session_id, position)` and `get_chat` orders by `position ASC`. `_insert_chat` currently uses `enumerate(messages)` to populate `position`, which is fine once the upstream list is ordered; no schema change required for the fix itself. But for safety during the incremental apply path (where a partial re-extract of one composer could otherwise produce a position collision with stale rows), `_delete_cid_rows` already deletes all rows by `session_id` before `_insert_chat` runs, so re-numbering from 0 on each re-insert is correct. Document this invariant as a docstring on `_insert_chat` in [cursor_view/chat_index/rows.py](cursor_view/chat_index/rows.py) (post-step-1) so a future contributor doesn't try to make position globally stable.
 
-4. **Regenerate caches on upgrade.** Because cached `chat_message` rows carry the old scrambled positions, the schema-version bump is the right lever — bump `INDEX_SCHEMA_VERSION` from `2` to `3` in [cursor_view/chat_index.py](cursor_view/chat_index.py), which forces one full rebuild on first launch after the fix lands. This is the existing mechanism from the incremental-refresh plan; reusing it is what makes this behavior fix safe to ship. The rebuild re-extracts every chat with correct ordering and the incremental path takes over from there.
+4. **No schema-version bump needed.** The scrambled caches never shipped to users, so no automatic on-first-launch rebuild is required. `INDEX_SCHEMA_VERSION` stays at `2`. Developers who happen to have an affected local `chat-index.sqlite3` can either delete the cache file or hit the UI's Refresh button (which calls `ensure_current(force=True)`) to force a rebuild with the corrected ordering. Leaving the version pinned also keeps the incremental refresh path usable for everyone else immediately — no one-time full rebuild is paid at the first post-fix startup.
 
 5. **Test.** Extend `tests/test_chat_index_incremental.py` with a new test `test_bubble_order_uses_headers_array`:
    - Synthetic composer has three bubbles with bubbleIds whose alphabetical order is `b_zzz`, `b_mmm`, `b_aaa`.
@@ -453,8 +452,8 @@ The fix is mechanically small and localized to extraction + one cache column. Co
 This plan is otherwise "structural only, no behavior changes." Including this fix, and sequencing it ahead of every split, is justified on three grounds:
 
 - The bug is actively harmful to the tool's primary use case (reading old chats) in a way that users can see, unlike the more subtle race and leak bugs documented in the next section. Every day the refactor takes is another day of gibberish chat histories if the fix trails it.
-- The fix is localized: one new helper in `cursor_view/sources/sqlite_data.py`, one re-ordering change in `cursor_view/extraction/core.py`, one `INDEX_SCHEMA_VERSION` bump in `cursor_view/chat_index.py`, and one new test in `tests/test_chat_index_incremental.py`. It touches only files that later split steps will move, so the sequencing is "fix in place first, then split the files" — no structural todo blocks the fix, and no fix-site disappears before the fix lands.
-- The later split steps (`split_sources`, `split_extraction_core`, `split_chat_index`) pick up the three edits as ordinary content when they relocate those files. The move is mechanical: the new ordering helper lands in `cursor_view/sources/bubbles.py` (post-`split_sources`), the re-ordering becomes part of whichever pass module owns Pass 2 in `cursor_view/extraction/passes/` (post-`split_extraction_core`), and the schema bump rides along in `cursor_view/chat_index/schema.py` (post-`split_chat_index`). No step needs to re-do the fix; each split step just carries it to its new home.
+- The fix is localized: one new helper in `cursor_view/sources/sqlite_data.py`, one re-ordering change in `cursor_view/extraction/core.py`, and one new test in `tests/test_chat_index_incremental.py`. It touches only files that later split steps will move, so the sequencing is "fix in place first, then split the files" — no structural todo blocks the fix, and no fix-site disappears before the fix lands.
+- The later split steps (`split_sources`, `split_extraction_core`) pick up the two edits as ordinary content when they relocate those files. The move is mechanical: the new ordering helper lands in `cursor_view/sources/bubbles.py` (post-`split_sources`) and the re-ordering becomes part of whichever pass module owns Pass 2 in `cursor_view/extraction/passes/` (post-`split_extraction_core`). No step needs to re-do the fix; each split step just carries it to its new home.
 
 All other bugs discovered in the review stay documentation-only below.
 

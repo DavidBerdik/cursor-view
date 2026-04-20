@@ -43,6 +43,19 @@ logger = logging.getLogger(__name__)
 # source fingerprint alone only tracks Cursor's own ``state.vscdb`` files, so
 # pure code changes to ``cursor_view`` never invalidate it; this field is the
 # one lever we have to force a rebuild for those cases.
+#
+# History:
+#   1 -> initial schema (content tables only).
+#   2 -> added composer_state / source_row / tool_call_parent for the
+#        incremental-refresh path. Current version. Note that the
+#        later bubble-ordering fix (extraction now sorts bubbles by
+#        ``composerData.fullConversationHeadersOnly`` instead of the
+#        alphabetical bubbleId order cursorDiskKV returned) did NOT
+#        bump the version: the scrambled caches never shipped to
+#        users, so there is no on-first-launch rebuild to force.
+#        Developers with a stale local cache can delete
+#        ``chat-index.sqlite3`` or hit the UI's Refresh button to
+#        regenerate it.
 INDEX_SCHEMA_VERSION = 2
 
 _INDEX_SINGLETON: "ChatIndex | None" = None
@@ -628,6 +641,26 @@ class ChatIndex:
             return False
 
     def _insert_chat(self, cur: sqlite3.Cursor, chat: dict[str, Any], fts_enabled: bool) -> None:
+        """Write one chat into the content tables of the cache.
+
+        Used by both the full rebuild and the incremental apply path.
+        The caller is responsible for having already cleared any prior
+        rows for ``session_id`` from the content tables (the full
+        rebuild runs against a fresh temp DB; the incremental apply
+        runs :func:`cursor_view.cache.apply_delta._delete_cid_rows`
+        first). This method therefore always re-numbers ``position``
+        from ``0`` using :func:`enumerate` on the coalesced messages
+        list; ``position`` is a per-refresh local index, NOT a globally
+        stable identifier. Callers that need a stable per-message id
+        should use ``(session_id, position)`` pairs read back after
+        the most recent refresh.
+
+        ``_insert_chat`` relies on ``formatted["messages"]`` already
+        being in the correct chronological order produced by
+        :func:`cursor_view.extraction.extract_chats`; it does no
+        sorting of its own and trusts the upstream pipeline, so the
+        bubble-order fix lives there rather than here.
+        """
         formatted = format_chat_for_frontend(chat)
         messages = coalesce_consecutive_messages_by_role(formatted.get("messages", []))
         session_id = formatted["session_id"]

@@ -58,6 +58,7 @@ from cursor_view.projects.inference import (
     workspace_info,
 )
 from cursor_view.sources.sqlite_data import (
+    build_bubble_order_map,
     iter_bubbles_for_cids,
     iter_bubbles_from_disk_kv,
     iter_chat_from_item_table,
@@ -76,6 +77,15 @@ logger = logging.getLogger(__name__)
 # with ``subagentInfo: null`` (which is the current behavior). Pass 5 strips
 # this prefix to look up the parent in ``tool_call_parent``.
 _TASK_CID_PREFIX = "task-"
+
+# Sentinel ordinal for bubbles whose bubbleId is absent from the composer's
+# ``fullConversationHeadersOnly`` array (legacy builds, or a bubble written
+# after the composerData snapshot we read). Chosen much larger than any real
+# ordinal so unmapped bubbles sort to the END of the per-cid bucket while
+# still preserving encountered-order within the unmapped tail. Kept a
+# plain int (not ``math.inf``) so (ordinal, seq) tuples stay comparable
+# under the stdlib's ordering rules.
+_UNMAPPED_BUBBLE_ORDINAL = 10**9
 
 
 @dataclass
@@ -188,6 +198,7 @@ def _collect_global_bubbles(
     bubble_file_uris_by_cid: Dict[str, list[str]],
     bubble_folder_uris_by_cid: Dict[str, list[str]],
     tool_call_parent: Dict[str, str],
+    bubble_order_by_cid: Dict[str, Dict[str, int]],
     cids: set[str] | None = None,
 ) -> None:
     """Pass 2: extract per-bubble messages + URIs from the global cursorDiskKV.
@@ -199,6 +210,23 @@ def _collect_global_bubbles(
     bubble so ``_link_task_subagents_to_parents`` can recover subagent
     parent links that Cursor no longer stores on the subagent itself.
 
+    ``cursorDiskKV`` returns ``bubbleId:*`` rows in primary-key (key-string)
+    order, which is effectively random for the UUIDv4 bubbleIds Cursor
+    uses. Appending messages in that order scrambles the chronological
+    turn order and makes ``coalesce_consecutive_messages_by_role`` merge
+    unrelated user prompts. ``bubble_order_by_cid`` -- the
+    ``{cid -> {bubbleId -> ordinal}}`` map produced by
+    :func:`cursor_view.sources.sqlite_data.build_bubble_order_map` from
+    each composer's ``composerData.fullConversationHeadersOnly`` --
+    supplies Cursor's own canonical ordering. Messages are accumulated
+    per cid tagged with their ordinal and sorted before being appended
+    to ``sessions[cid]["messages"]``, so the final list matches the
+    order the user actually saw the turns in. Bubbles whose bubbleId
+    is missing from the map (legacy builds, or a bubble written after
+    the composerData snapshot we read) fall to the end of the per-cid
+    list in encountered order -- the exact fallback
+    ``fullConversationHeadersOnly`` is designed to make rare.
+
     When ``cids`` is given, bubbles are fetched via
     :func:`iter_bubbles_for_cids` so only rows in the dirty set are
     read -- a PK-range scan per cid instead of the full-table scan.
@@ -209,8 +237,16 @@ def _collect_global_bubbles(
         bubble_iter = iter_bubbles_for_cids(global_db, cids)
     else:
         bubble_iter = iter_bubbles_from_disk_kv(global_db)
+    # Per-cid ordered message buckets populated from the bubble stream.
+    # Each entry is (ordinal, sequence, message_dict): ``ordinal`` comes
+    # from the headers array (or ``_UNMAPPED_BUBBLE_ORDINAL`` for bubbles
+    # not listed there) and ``sequence`` is the encounter order used as
+    # a stable tiebreaker so bubbles with identical ordinals preserve the
+    # order the iterator yielded them.
+    messages_by_cid: Dict[str, list[tuple[int, int, dict]]] = defaultdict(list)
     msg_count = 0
-    for cid, role, text, db_path, file_uris, folder_uris, tool_call in bubble_iter:
+    seq = 0
+    for cid, bubble_id, role, text, db_path, file_uris, folder_uris, tool_call in bubble_iter:
         # Always record db_path, comp_meta, and URIs, even for text-less
         # bubbles, so project inference can see workspaceUris attached to
         # empty assistant bubbles.
@@ -233,8 +269,21 @@ def _collect_global_bubbles(
             comp2ws[cid] = "(global)"
         if not text:
             continue
-        sessions[cid]["messages"].append({"role": role, "content": text})
+        ordinal_map = bubble_order_by_cid.get(cid) or {}
+        ordinal = ordinal_map.get(bubble_id, _UNMAPPED_BUBBLE_ORDINAL)
+        messages_by_cid[cid].append((ordinal, seq, {"role": role, "content": text}))
+        seq += 1
         msg_count += 1
+
+    # Sort each cid's bucket by (ordinal, seq) and append to sessions.
+    # Pass 1 workspace-ItemTable messages (if any) stay at the head of
+    # sessions[cid]["messages"]; this matches the prior "Pass 1 before
+    # Pass 2" ordering for composers that appear in both stores, while
+    # reordering Pass 2's contribution into Cursor's canonical turn order.
+    for cid, bucket in messages_by_cid.items():
+        bucket.sort(key=lambda item: (item[0], item[1]))
+        sessions[cid]["messages"].extend(msg for _ord, _s, msg in bucket)
+
     logger.debug("  - Extracted %s messages from global cursorDiskKV bubbles", msg_count)
 
 
@@ -663,6 +712,12 @@ def extract_chats(
     global_db = global_storage_path(root)
     if global_db:
         logger.debug("Processing global storage: %s", global_db)
+        # Read the canonical bubble order from each composer's
+        # ``fullConversationHeadersOnly`` array BEFORE Pass 2 runs, so
+        # Pass 2 can tag each bubble with its ordinal as it streams rows
+        # out of the PK-ordered cursorDiskKV and produce messages in
+        # Cursor's own turn order rather than alphabetical-bubbleId order.
+        bubble_order_by_cid = build_bubble_order_map(global_db, cids=cids)
         _collect_global_bubbles(
             global_db,
             sessions,
@@ -671,6 +726,7 @@ def extract_chats(
             bubble_file_uris_by_cid,
             bubble_folder_uris_by_cid,
             tool_call_parent,
+            bubble_order_by_cid,
             cids=cids,
         )
         _collect_global_composers(
