@@ -4,9 +4,9 @@ overview: Replace the "any change → full rebuild" invalidation in the chat ind
 todos:
   - id: schema-bump
     content: Bump INDEX_SCHEMA_VERSION to 2 and add composer_state / source_row / tool_call_parent tables + indexes in _create_schema
-    status: pending
+    status: completed
   - id: source-diff
-    content: "Add cursor_view/cache/source_diff.py with _compute_source_diff() that hashes cursorDiskKV rows plus workspace ItemTable keys (including workbench.panel.aichat.view.<cid> pane keys and composerChatViewPane.%) and returns DirtySet { modified_cids, deleted_cids, workspace_project_dirty, workspace_comp2ws_dirty, tool_call_parent_updates }"
+    content: Add cursor_view/cache/source_diff.py with _compute_source_diff() that hashes cursorDiskKV rows plus workspace ItemTable keys (including workbench.panel.aichat.view.<cid> pane keys and composerChatViewPane.%) and returns DirtySet { modified_cids, deleted_cids, workspace_project_dirty, workspace_comp2ws_dirty, tool_call_parent_updates }
     status: pending
   - id: dirty-propagation
     content: Propagate dirtiness from modified parents to task-<toolCallId> subagents via the cached tool_call_parent table, bounded by _MAX_PARENT_DEPTH

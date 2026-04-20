@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # source fingerprint alone only tracks Cursor's own ``state.vscdb`` files, so
 # pure code changes to ``cursor_view`` never invalidate it; this field is the
 # one lever we have to force a rebuild for those cases.
-INDEX_SCHEMA_VERSION = 1
+INDEX_SCHEMA_VERSION = 2
 
 _INDEX_SINGLETON: "ChatIndex | None" = None
 _INDEX_SINGLETON_LOCK = threading.Lock()
@@ -430,11 +430,66 @@ class ChatIndex:
                 content TEXT NOT NULL
             );
 
+            -- Per-composer watermark used by the incremental refresh path.
+            -- ``last_updated_ms`` mirrors composerData.lastUpdatedAt as a cheap
+            -- monotonic signal, while ``composer_hash`` lets us detect content
+            -- changes that don't bump the timestamp. ``bubble_count`` is kept
+            -- to catch the rare bubble-delete case where both timestamp and
+            -- top-level composer hash look unchanged.
+            CREATE TABLE composer_state (
+                session_id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                db_path TEXT NOT NULL,
+                last_updated_ms INTEGER,
+                composer_hash TEXT NOT NULL,
+                bubble_count INTEGER NOT NULL
+            );
+
+            -- Row-level content hashes for every Cursor source row the
+            -- extraction pipeline consumes. A row's (db_path, table_name, key)
+            -- tuple is stable across Cursor runs, so a change in ``row_hash``
+            -- is what flips a composer into the dirty set. ``composer_id`` is
+            -- denormalized so the diff can join straight to affected sessions
+            -- without re-parsing keys; it may be empty for container rows
+            -- (e.g. ``workbench.panel.composerChatViewPane.<paneId>``) whose
+            -- cids are only known after decoding the value.
+            CREATE TABLE source_row (
+                db_path TEXT NOT NULL,
+                table_name TEXT NOT NULL,
+                key TEXT NOT NULL,
+                row_hash TEXT NOT NULL,
+                composer_id TEXT NOT NULL,
+                PRIMARY KEY (db_path, table_name, key)
+            );
+
+            -- Persisted form of the in-memory map that Pass 2 of extraction
+            -- builds: toolFormerData.toolCallId -> the composerId whose bubble
+            -- fired that tool. Needed so Pass 5
+            -- (_link_task_subagents_to_parents) can resolve ``task-<toolCallId>``
+            -- subagent parents incrementally without re-scanning every bubble
+            -- in the global DB.
+            CREATE TABLE tool_call_parent (
+                tool_call_id TEXT PRIMARY KEY,
+                parent_composer_id TEXT NOT NULL
+            );
+
             CREATE INDEX idx_chat_summary_sort
             ON chat_summary(sort_key_ms DESC, session_id);
 
             CREATE INDEX idx_chat_message_session
             ON chat_message(session_id, position);
+
+            CREATE INDEX idx_composer_state_workspace
+            ON composer_state(workspace_id);
+
+            CREATE INDEX idx_source_row_composer
+            ON source_row(composer_id);
+
+            -- Reverse lookup for dirty-set propagation: given a dirty parent
+            -- composer, find every task-<toolCallId> subagent that inherited
+            -- from it so those children can be folded into the dirty set.
+            CREATE INDEX idx_tool_call_parent_composer
+            ON tool_call_parent(parent_composer_id);
             """
         )
         cur.close()
