@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: bug2_inference_known_projects
     content: Delete the hardcoded known_projects list and its loop + TODO(bug) comment in cursor_view/projects/inference.py; reword the orphaned trailing comment
-    status: pending
+    status: completed
   - id: bug3_export_warning_cookie
     content: Gate the persist() call on `confirmed` in frontend/src/hooks/useExportFlow.js handleWarningConfirm, collapse the two confirmed checks, remove the TODO(bug) comment
     status: pending

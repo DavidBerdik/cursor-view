@@ -54,23 +54,7 @@ def extract_project_name_from_path(root_path, debug=False):
             return "Home Directory"
 
     if username_index >= 0 and username_index + 1 < len(path_parts):
-        # TODO(bug): This ``known_projects`` list was populated from the
-        # original author's personal repos ("genaisf", "universal-github",
-        # "inquiry", etc.) and has no general meaning. Picking any of these
-        # names as the project regardless of where they appear in the path
-        # is a hardcoded bias that can mislabel unrelated chats. Revisit as
-        # a standalone fix.
-        known_projects = ["genaisf", "cursor-view", "cursor", "cursor-apps", "universal-github", "inquiry"]
-
-        # Look at the most specific/deepest part of the path first
-        for i in range(len(path_parts) - 1, username_index, -1):
-            if path_parts[i] in known_projects:
-                project_name = path_parts[i]
-                if debug:
-                    logger.debug("Found known project name from specific list: %s", project_name)
-                break
-
-        # If no known project found, use the last part of the path as it's likely the project directory
+        # Use the last part of the path as it's likely the project directory
         if not project_name and len(path_parts) > username_index + 1:
             # Check if we have a structure like /Users/username/Documents/codebase/project_name
             if "Documents" in path_parts and "codebase" in path_parts:
