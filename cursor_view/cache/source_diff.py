@@ -610,7 +610,20 @@ def compute_source_diff(
         if parent in dirty.deleted_cids:
             dirty.tool_call_parent_updates.setdefault(tcid, None)
 
-    _propagate_subagent_dirtiness(dirty, cached_tcp)
+    # Subagent propagation uses the POST-change view of
+    # ``tool_call_parent`` so links that appeared in this refresh (a
+    # newly-fired tool-call bubble linking its ``task-<toolCallId>``
+    # child) immediately fold the child into ``modified_cids``.
+    # Without the merge the walk would only see links from previous
+    # refreshes and miss first-time subagent spawns.
+    merged_tcp = dict(cached_tcp)
+    for tcid, parent in dirty.tool_call_parent_updates.items():
+        if parent is None:
+            merged_tcp.pop(tcid, None)
+        else:
+            merged_tcp[tcid] = parent
+
+    _propagate_subagent_dirtiness(dirty, merged_tcp)
     _trim_comp2ws_observability(dirty)
 
     return dirty
