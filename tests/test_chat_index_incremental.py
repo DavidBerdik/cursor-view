@@ -405,5 +405,49 @@ class IncrementalRefreshTest(unittest.TestCase):
         )
 
 
+    # ---------------------------------------------------------------
+    # Regression: container pane-view row removing a cid demotes it
+    # ---------------------------------------------------------------
+    def test_container_pane_view_removal_demotes_workspace_residency(self) -> None:
+        """A ``composerChatViewPane.<paneId>`` container losing a cid demotes it to global.
+
+        Caught during the review of this plan: when a cid's only
+        workspace link is a container-nested pane-view entry (no
+        stand-alone ``workbench.panel.aichat.view.<cid>`` key) and
+        Cursor rewrites the container to drop the cid, the diff used
+        to see the container's hash change but extract no cids from
+        the new (empty) value, leaving the cid pinned to the stale
+        workspace. Conservative widening in ``_classify_workspace_row``
+        now folds every workspace-resident cid into ``modified_cids``
+        when a container row changes so removals are honored.
+        """
+        cid = "66666666-6666-6666-6666-666666666666"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Nested"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("nested hi"))
+        _put_item(
+            self.ws_db,
+            "workbench.panel.composerChatViewPane.pane1",
+            {f"workbench.panel.aichat.view.{cid}": {"x": 1}},
+        )
+
+        ci = self._build_index()
+        self.assertEqual(
+            self._summary(cid)[2],
+            self.ws_id,
+            "After full build the container entry should place cid in the workspace",
+        )
+
+        _put_item(self.ws_db, "workbench.panel.composerChatViewPane.pane1", {})
+
+        dirty = self._refresh(ci)
+        self.assertIn(cid, dirty.modified_cids)
+
+        self.assertEqual(
+            self._summary(cid)[2],
+            "(global)",
+            "Removing the cid from the only container that held it must demote to (global)",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

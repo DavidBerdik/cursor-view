@@ -419,7 +419,22 @@ def _classify_workspace_row(
             ws_promoted.add(cid_for_key)
         return
     if key.startswith(_PANE_CONTAINER_PREFIX):
-        for cid in _cids_from_pane_container_value(value):
+        # Container rows enumerate cids via their JSON body's sub-keys.
+        # Newly-listed cids land in ``modified_cids`` directly. Removals
+        # are invisible at this layer (we hashed the value but don't
+        # keep the prior cid list), so conservatively fold every cid
+        # currently tagged as resident in this workspace into the dirty
+        # set. The only cost is re-extracting workspace-resident
+        # composers when a pane is moved or closed -- a rare event
+        # relative to bubble appends, and still bounded by
+        # ``O(|workspace composers|)`` rather than the full corpus.
+        new_cids = _cids_from_pane_container_value(value)
+        for cid in new_cids:
+            dirty.modified_cids.add(cid)
+            ws_promoted.add(cid)
+        for cid in known_cids:
+            if cid in new_cids:
+                continue
             dirty.modified_cids.add(cid)
             ws_promoted.add(cid)
         return
