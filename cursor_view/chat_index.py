@@ -14,7 +14,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from cursor_view.cache import DirtySet, apply_delta, compute_source_diff
+from cursor_view.cache import (
+    DirtySet,
+    apply_delta,
+    backfill_incremental_tables,
+    compute_source_diff,
+)
 from cursor_view.chat_format import (
     coalesce_consecutive_messages_by_role,
     format_chat_for_frontend,
@@ -459,7 +464,16 @@ class ChatIndex:
         source_fingerprint: str,
         sources: list[dict[str, Any]],
     ) -> None:
-        """Phase A: populate a new index file; does not touch self.db_path."""
+        """Phase A: populate a new index file; does not touch self.db_path.
+
+        Also runs :func:`cursor_view.cache.backfill_incremental_tables`
+        after the content tables are populated so the new ``v2``
+        tables (``composer_state`` / ``source_row`` /
+        ``tool_call_parent``) are filled in during this one full
+        rebuild. Subsequent ``ensure_current`` calls can then take the
+        incremental apply path instead of triggering a second full
+        rebuild to acquire a baseline.
+        """
         if temp_path.exists():
             temp_path.unlink()
         con = sqlite3.connect(temp_path, check_same_thread=False)
@@ -471,6 +485,7 @@ class ChatIndex:
             chats = extract_chats()
             for chat in chats:
                 self._insert_chat(cur, chat, fts_enabled)
+            backfill_incremental_tables(con, chats, sources)
             now = str(int(time.time()))
             meta_rows = [
                 ("schema_version", str(INDEX_SCHEMA_VERSION)),

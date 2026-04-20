@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: backfill-on-upgrade
     content: Populate composer_state, source_row, and tool_call_parent during the one post-upgrade full rebuild so subsequent runs take the incremental path
-    status: pending
+    status: completed
   - id: observability
     content: Add logger.info counters for modified / deleted / project-only / subagent-propagated composers per refresh
     status: pending
