@@ -47,3 +47,71 @@ sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 
 The Cursor IDE is an active writer against these files; opening in
 writable mode can corrupt them or contend with running sessions.
+
+# Invalidation: hash rows, don't stat files
+
+The chat-index cache owns a two-stage invalidation scheme
+(`cursor_view/chat_index.py`, `cursor_view/cache/source_diff.py`):
+
+1. **Coarse gate** — `ChatIndex._current_source_fingerprint` hashes
+   each source DB's `(path, mtime_ns, size, wal_mtime_ns, wal_size)`
+   tuple. Match ⇒ serve from cache, do no further work. This gate
+   only exists to avoid opening the source DBs when nothing moved.
+2. **Fine diff** — on a coarse miss,
+   `cursor_view.cache.compute_source_diff` opens each source DB
+   read-only and hashes the values of the specific rows the
+   extraction pipeline consumes (`cursorDiskKV` `bubbleId:*` /
+   `composerData:*`; workspace `ItemTable` rows listed in
+   `workspace_info`; the `workspace.json` sidecar). A composer is
+   dirty iff one of its rows' hashes actually changed.
+
+Don't add new invalidation paths that use file mtime or size alone:
+
+- Cursor bumps `composerData.lastUpdatedAt` (and hence the file
+  mtime) for navigation-only writes that leave the chat unchanged.
+  An mtime-only strategy re-extracts every chat on every click.
+- Cursor also occasionally rewrites bubble values without advancing
+  a timestamp on the containing composer. An mtime-only strategy
+  misses those edits entirely.
+
+Both failure modes are why the diff is content-hash based. If you
+need a new source row in the diff, add it to the appropriate branch
+in `cursor_view/cache/source_diff.py`; don't reach for `stat()`.
+
+# Cache tables
+
+`ChatIndex._create_schema` owns the cache's on-disk layout. Bumping
+`INDEX_SCHEMA_VERSION` forces one full rebuild on first launch;
+subsequent launches take the incremental path. The tables split into
+two roles:
+
+- **Content tables** serve reads: `chat_summary`, `chat_message`,
+  `chat_search_text`, `chat_search_fts`. The full rebuild and the
+  per-cid delete-then-insert in `cursor_view/cache/apply_delta.py`
+  both go through `ChatIndex._insert_chat`, so the row shape is
+  identical between paths.
+- **Delta tables** support the diff and never appear in API output:
+  - `composer_state(session_id PK, workspace_id, db_path,
+    last_updated_ms, composer_hash, bubble_count)` — per-composer
+    watermark. Used for ancestor lookups in scoped Pass 6 (a
+    non-dirty parent's resolved workspace) and to seed
+    `_known_cids_by_workspace` during the diff's workspace-key
+    classification.
+  - `source_row(db_path, table_name, key PK-composite, row_hash,
+    composer_id)` — row-level content hashes keyed by the stable
+    `(db_path, table_name, key)` triple. Updated wholesale every
+    refresh; comparing `row_hash` against the freshly computed hash
+    is what flips a composer into `modified_cids`.
+  - `tool_call_parent(tool_call_id PK, parent_composer_id)` — the
+    persisted form of the in-memory map Pass 2 of extraction
+    builds. Without it, every refresh that touches a `task-*`
+    subagent would force a full global-bubble scan to re-resolve
+    its parent. The refresh uses this table both to resolve
+    subagent parents in scoped Pass 5 and to propagate dirtiness
+    from modified parents down the subagent chain
+    (`_propagate_subagent_dirtiness`).
+
+When you touch any of these tables, update this rule and
+`ChatIndex._create_schema` in the same change. Schema drift
+between code and rule is exactly what
+`.cursor/rules/comments-style.mdc` calls out.

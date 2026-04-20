@@ -53,7 +53,13 @@ Top-level modules:
 - `app_factory.py`, `routes.py` &mdash; Flask app construction and the
   HTTP API.
 - `chat_index.py` &mdash; persistent SQLite cache of chat summaries
-  plus FTS search.
+  plus FTS search. Two-stage invalidation: a coarse
+  `(mtime, size, wal_mtime, wal_size)` fingerprint short-circuits
+  idle reads; on a miss, the cache runs a row-hash diff against the
+  Cursor source DBs (see `cache/` below) and applies the resulting
+  per-composer delta in a single transaction, falling back to a full
+  rebuild only on `force_refresh`, schema drift, `DatabaseError`, or
+  a missing cache file.
 - `chat_format.py` &mdash; shapes extracted chat data for the frontend.
 - `terminal.py`, `__main__.py` &mdash; terminal-mode entry point and
   the `python -m cursor_view` dispatcher.
@@ -65,7 +71,19 @@ Subpackages:
 - `extraction/` &mdash; pipeline that scans Cursor's SQLite databases
   and produces chat sessions. `core.py` holds the orchestrator and the
   per-pass helpers; `diagnostics.py` holds the optional probe gated by
-  the `CURSOR_CHAT_DIAGNOSTICS` environment variable.
+  the `CURSOR_CHAT_DIAGNOSTICS` environment variable. `extract_chats`
+  also accepts an optional `cids` set so the cache's incremental
+  refresh can re-extract only the composers whose source rows
+  actually changed.
+- `cache/` &mdash; incremental-refresh helpers invoked by
+  `chat_index.py`. `source_diff.py` computes a `DirtySet` by hashing
+  the exact `cursorDiskKV` and `ItemTable` rows extraction reads
+  (`bubbleId:*`, `composerData:*`, the workspace pane-view keys,
+  `treeViewState`, `history.entries`, `debug.selectedroot`, etc.) and
+  comparing against the cached hashes; `apply_delta.py` replays that
+  `DirtySet` against the live cache in one `BEGIN IMMEDIATE`
+  transaction and also owns the one-shot full-rebuild backfill that
+  populates the delta tables below.
 - `export/` &mdash; chat export generators: `themes.py` (palette),
   `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
   normalization), `html.py` (standalone HTML + inline CSS template).
@@ -74,10 +92,55 @@ Subpackages:
   `git.py` is the SCM (git repo) fallback.
 - `sources/` &mdash; raw access to Cursor's on-disk data.
   `sqlite_data.py` holds the iterators over `cursorDiskKV` and
-  `ItemTable`.
+  `ItemTable`, including the cid-scoped forms
+  (`iter_bubbles_for_cids`, `iter_composer_data_for_cids`) that
+  range-scan a single composer's rows without touching the rest of
+  the corpus.
 - `desktop/` &mdash; pywebview launcher. `__init__.py` hosts
   `run_desktop`; `api.py` is the JS &harr; Python bridge;
   `window_state.py` persists window geometry across launches.
+
+The cache SQLite layout has two kinds of tables, owned by
+`ChatIndex._create_schema`:
+
+- **Content tables** serve the HTTP API: `chat_summary`,
+  `chat_message`, `chat_search_text`, `chat_search_fts`. Both the
+  full rebuild and the per-cid delete-then-insert in
+  `cache/apply_delta.py` go through `ChatIndex._insert_chat`, so the
+  row shape is identical between the rebuild and delta paths.
+- **Delta tables** exist only to support the row-hash diff and are
+  never read by the API:
+  - `composer_state` &mdash; per-composer watermark
+    (`workspace_id`, `db_path`, `last_updated_ms`, `composer_hash`,
+    `bubble_count`). Used for ancestor lookups when a scoped
+    re-extraction walks the subagent parent chain into a composer
+    that wasn't in the dirty set, and to seed the diff's
+    per-workspace cid buckets.
+  - `source_row` &mdash; row-level content hashes keyed by
+    `(db_path, table_name, key)`. A composer flips into the dirty
+    set only when one of its rows' hashes actually changes, so
+    mtime-only churn (e.g. Cursor bumping `lastUpdatedAt` on a
+    navigation-only write) never triggers a rebuild.
+  - `tool_call_parent` &mdash; persisted
+    `toolCallId -> parent_composer_id` map. Lets the refresh
+    resolve `task-<toolCallId>` subagent parents without scanning
+    every bubble in the global DB, and drives the
+    dirtiness-propagation walk that flags subagent descendants of a
+    modified parent.
+
+### Tests (`tests/`)
+
+Stdlib `unittest` tests that exercise the incremental refresh path
+against synthetic Cursor source DBs. Run with:
+
+```
+python -m unittest discover -s tests
+```
+
+`tests/test_chat_index_incremental.py` covers the four behaviors the
+delta path is specifically designed for: single-bubble mutation,
+workspace `treeViewState` churn, first-time `task_v2` subagent spawn,
+and pane-view key promotion from `(global)` to a workspace.
 
 ### Frontend (`frontend/src/`)
 

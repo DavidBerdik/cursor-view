@@ -31,7 +31,7 @@ todos:
     status: completed
   - id: rules-readme
     content: Update .cursor/rules/sqlite-cursor-db.mdc and README backend section to document row-hash-based invalidation and the new cache tables (composer_state, source_row, tool_call_parent)
-    status: pending
+    status: completed
 isProject: false
 ---
 
