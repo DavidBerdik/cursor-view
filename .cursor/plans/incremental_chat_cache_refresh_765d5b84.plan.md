@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: apply-delta
     content: "Implement ChatIndex._apply_delta: per-cid DELETE+INSERT across chat_summary/message/search_text/search_fts, workspace-scoped project-only UPDATE, tool_call_parent upserts/deletes, and source_row updates all in one transaction on the live cache"
-    status: pending
+    status: completed
   - id: route-ensure-current
     content: Switch ensure_current() to call _apply_delta on schema-match cache-exists paths, keeping _rebuild only for force_refresh / schema drift / DatabaseError / missing cache
     status: pending

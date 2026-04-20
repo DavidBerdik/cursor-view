@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+from cursor_view.cache import DirtySet, apply_delta, compute_source_diff
 from cursor_view.chat_format import (
     coalesce_consecutive_messages_by_role,
     format_chat_for_frontend,
@@ -335,6 +336,48 @@ class ChatIndex:
             entry["wal_mtime_ns"] = wst.st_mtime_ns
             entry["wal_size"] = wst.st_size
         return entry
+
+    def _apply_delta(
+        self,
+        dirty: DirtySet,
+        source_fingerprint: str,
+        sources: list[dict[str, Any]],
+    ) -> None:
+        """Apply an incremental :class:`DirtySet` to the live cache.
+
+        Thin adapter over :func:`cursor_view.cache.apply_delta` that
+        owns the writable connection (so the caller does not have to
+        reach into private ``_connect`` internals) and forwards the
+        cache's ``_insert_chat`` / ``_database_has_fts`` hooks so the
+        apply step reuses the exact row-shaping logic the full rebuild
+        uses. Concurrency is the caller's responsibility:
+        ``ensure_current`` wraps every invocation of this method in
+        ``_rebuild_build_lock`` to keep the apply path single-writer
+        just like ``_rebuild``.
+        """
+        with self._connect(read_only=False) as con:
+            apply_delta(
+                con,
+                dirty,
+                source_fingerprint,
+                sources,
+                insert_chat=self._insert_chat,
+                database_has_fts=self._database_has_fts,
+            )
+
+    def _compute_source_diff(
+        self, sources: list[dict[str, Any]]
+    ) -> DirtySet:
+        """Produce the :class:`DirtySet` :meth:`_apply_delta` consumes.
+
+        Delegates to :func:`cursor_view.cache.compute_source_diff`
+        using a short-lived read-only connection to the live cache.
+        Kept as a method (rather than inlined at the single call site
+        :meth:`ensure_current` will grow) so tests can stub it out
+        without monkey-patching a free function on the cache package.
+        """
+        with self._connect(read_only=True) as con:
+            return compute_source_diff(sources, con)
 
     def _rebuild(self, source_fingerprint: str, sources: list[dict[str, Any]]) -> None:
         logger.info("Rebuilding chat index at %s", self.db_path)
