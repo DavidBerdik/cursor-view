@@ -7,10 +7,10 @@ todos:
     status: completed
   - id: source-diff
     content: Add cursor_view/cache/source_diff.py with _compute_source_diff() that hashes cursorDiskKV rows plus workspace ItemTable keys (including workbench.panel.aichat.view.<cid> pane keys and composerChatViewPane.%) and returns DirtySet { modified_cids, deleted_cids, workspace_project_dirty, workspace_comp2ws_dirty, tool_call_parent_updates }
-    status: pending
+    status: completed
   - id: dirty-propagation
     content: Propagate dirtiness from modified parents to task-<toolCallId> subagents via the cached tool_call_parent table, bounded by _MAX_PARENT_DEPTH
-    status: pending
+    status: completed
   - id: scoped-extraction
     content: Parameterize extract_chats/_collect_* to accept (cids, cached_state); thread cached tool_call_parent into Pass 5 and cached comp2ws/_inferred_project into Pass 6; add iter_bubbles_for_cids / iter_composer_data_for_cids in sources/sqlite_data.py preserving the 7-tuple with tool_call
     status: pending
