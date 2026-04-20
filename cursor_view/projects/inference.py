@@ -234,6 +234,60 @@ def _project_root_from_tree_view_state(cur: sqlite3.Cursor) -> str | None:
     return resolved
 
 
+_COMPOSER_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+_AICHAT_VIEW_PREFIX = "workbench.panel.aichat.view."
+
+
+def _composer_ids_from_pane_view_state(cur: sqlite3.Cursor) -> list[str]:
+    """Return composer ids linked to this workspace via UI pane view keys.
+
+    Cursor persists per-chat UI state as ``workbench.panel.aichat.view.<cid>``
+    keys, either directly in ``ItemTable`` or as sub-keys inside
+    ``workbench.panel.composerChatViewPane.<paneId>`` values. The pane key's
+    own UUID is a pane-instance id, NOT a composer id, so we only trust the
+    ``aichat.view.<cid>`` form. Research-only chats (no file ops) leave no
+    other workspace signal, so this key is often their only link back to a
+    real workspace.
+
+    The ``aichat.view.<UUID>``-only filter is empirically justified: on the
+    install this fix was developed against, 0 of 541 outer
+    ``composerChatViewPane.<UUID>`` UUIDs matched any known composer id in
+    ``cursorDiskKV``, while 671 of 421 distinct sub-key UUIDs did. A future
+    maintainer tempted to simplify by also trusting the outer UUID should
+    re-run that audit before doing so; relaxing the filter would pollute
+    ``comp2ws`` with pane-instance ids that never correspond to a chat.
+    """
+    cids: set[str] = set()
+    cur.execute(
+        "SELECT key FROM ItemTable WHERE key LIKE ?",
+        (_AICHAT_VIEW_PREFIX + "%",),
+    )
+    for (k,) in cur.fetchall():
+        seg = k[len(_AICHAT_VIEW_PREFIX):]
+        if _COMPOSER_UUID_RE.match(seg):
+            cids.add(seg)
+    cur.execute(
+        "SELECT value FROM ItemTable WHERE key LIKE ?",
+        ("workbench.panel.composerChatViewPane.%",),
+    )
+    for (v,) in cur.fetchall():
+        try:
+            data = json.loads(v) if v else None
+        except Exception:
+            data = None
+        if not isinstance(data, dict):
+            continue
+        for sk in data.keys():
+            if not isinstance(sk, str) or not sk.startswith(_AICHAT_VIEW_PREFIX):
+                continue
+            seg = sk[len(_AICHAT_VIEW_PREFIX):]
+            if _COMPOSER_UUID_RE.match(seg):
+                cids.add(seg)
+    return sorted(cids)
+
+
 def _project_root_from_history(paths: list[str]) -> str | None:
     """Compute a project root from ``history.entries`` paths.
 
@@ -602,6 +656,21 @@ def workspace_info(db: pathlib.Path):
             if tab_id and tab_id not in comp_meta:
                 comp_meta[tab_id] = {
                     "title": f"Chat {tab_id[:8]}",
+                    "createdAt": None,
+                    "lastUpdatedAt": None,
+                }
+
+        # Chats that did no file/folder work (pure web-research, ask_question,
+        # create_plan, etc.) have no workspaceIdentifier and no attached URIs,
+        # so none of the global-DB heuristics can find their workspace. The
+        # workspace's own ItemTable still holds a per-chat UI pane key
+        # ``workbench.panel.aichat.view.<composerId>`` which gives us a
+        # direct cid -> workspace mapping. Seed comp_meta from those keys so
+        # the caller's loop wires comp2ws for these otherwise-orphaned chats.
+        for cid in _composer_ids_from_pane_view_state(cur):
+            if cid not in comp_meta:
+                comp_meta[cid] = {
+                    "title": f"Chat {cid[:8]}",
                     "createdAt": None,
                     "lastUpdatedAt": None,
                 }

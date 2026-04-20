@@ -9,20 +9,32 @@ Pass order matters:
 
 1. ``_collect_workspace_messages`` populates the workspace-level project
    and composer metadata and scrapes messages from each workspace's
-   ``ItemTable``.
+   ``ItemTable``. Via ``workspace_info`` it also seeds synthetic
+   ``comp_meta`` entries from ``workbench.panel.aichat.view.<cid>`` UI
+   pane-view keys, which is often the only workspace link for chats
+   that never touched files (pure web research, ``ask_question``,
+   ``create_plan``, etc.).
 2. ``_collect_global_bubbles`` streams per-bubble messages and URIs out
-   of the global ``cursorDiskKV``.
+   of the global ``cursorDiskKV``, and records every bubble's
+   ``toolFormerData.toolCallId -> parent composerId`` so Pass 5 can
+   reconstruct subagent parent links without a second bubble scan.
 3. ``_collect_global_composers`` walks ``composerData:*`` entries, filling
    in metadata, recording subagent -> parent relationships, resolving
    workspace associations, and appending conversation messages.
 4. ``_apply_uri_fallbacks`` infers a project for still-global composers
    from the URIs seen in their bubbles.
-5. ``_apply_subagent_inheritance`` walks the subagent parent chain so
+5. ``_link_task_subagents_to_parents`` reconstructs the parent of
+   ``task-<toolCallId>`` subagent composers from the parent bubble's
+   ``toolFormerData``. Needed because ``task_v2``-spawned composers
+   ship with ``subagentInfo: null``, so Pass 3 never records their
+   parent and Pass 6 would otherwise have no chain to walk. Must run
+   before Pass 6.
+6. ``_apply_subagent_inheritance`` walks the subagent parent chain so
    unresolved subagent composers inherit an ancestor's project.
-6. ``_collect_global_item_table_chats`` scrapes an older chat storage
+7. ``_collect_global_item_table_chats`` scrapes an older chat storage
    format (``workbench.panel.aichat.view.aichat.chatdata``) in the global
    ``ItemTable``.
-7. ``_finalize_sessions`` drops empty sessions, resolves each session's
+8. ``_finalize_sessions`` drops empty sessions, resolves each session's
    project, and returns the recency-sorted list.
 """
 
@@ -53,6 +65,14 @@ from cursor_view.sources.sqlite_data import (
 from cursor_view.timestamps import session_sort_key_ms
 
 logger = logging.getLogger(__name__)
+
+# Cursor names every ``task_v2``-spawned subagent composer ``task-<toolCallId>``
+# where ``<toolCallId>`` is the parent bubble's ``toolFormerData.toolCallId``.
+# This convention was observed empirically across a real Cursor install; it is
+# the only durable link back to the parent when Cursor persists the subagent
+# with ``subagentInfo: null`` (which is the current behavior). Pass 5 strips
+# this prefix to look up the parent in ``tool_call_parent``.
+_TASK_CID_PREFIX = "task-"
 
 
 def _merge_global_composer_into_meta(meta: dict, cid: str, data: dict) -> None:
@@ -127,15 +147,19 @@ def _collect_global_bubbles(
     comp2ws: Dict[str, str],
     bubble_file_uris_by_cid: Dict[str, list[str]],
     bubble_folder_uris_by_cid: Dict[str, list[str]],
+    tool_call_parent: Dict[str, str],
 ) -> None:
     """Pass 2: extract per-bubble messages + URIs from the global cursorDiskKV.
 
     Always records ``db_path``, composer meta, and URIs for every bubble
     we see, even for text-less ones, so later project inference can still
     work from ``workspaceUris`` attached to empty assistant bubbles.
+    Also records ``toolCallId -> parent composerId`` for every tool-call
+    bubble so ``_link_task_subagents_to_parents`` can recover subagent
+    parent links that Cursor no longer stores on the subagent itself.
     """
     msg_count = 0
-    for cid, role, text, db_path, file_uris, folder_uris in iter_bubbles_from_disk_kv(global_db):
+    for cid, role, text, db_path, file_uris, folder_uris, tool_call in iter_bubbles_from_disk_kv(global_db):
         # Always record db_path, comp_meta, and URIs, even for text-less
         # bubbles, so project inference can see workspaceUris attached to
         # empty assistant bubbles.
@@ -145,6 +169,14 @@ def _collect_global_bubbles(
             bubble_file_uris_by_cid[cid].extend(file_uris)
         if folder_uris:
             bubble_folder_uris_by_cid[cid].extend(folder_uris)
+        if tool_call is not None:
+            tcid, _name = tool_call
+            # Cursor stamps each tool invocation with the upstream model
+            # provider's tool-call id (e.g. Anthropic's ``toolu_*``, OpenAI's
+            # ``call_*``). These are unique per model invocation, so a
+            # collision here would indicate a bubble replay or storage
+            # anomaly; first-seen wins for determinism.
+            tool_call_parent.setdefault(tcid, cid)
         if cid not in comp_meta:
             comp_meta[cid] = {"title": f"Chat {cid[:8]}", "createdAt": None, "lastUpdatedAt": None}
             comp2ws[cid] = "(global)"
@@ -287,20 +319,69 @@ def _apply_uri_fallbacks(
             sessions[cid]["_inferred_project"] = inferred
 
 
+def _link_task_subagents_to_parents(
+    sessions: Dict[str, Dict[str, Any]],
+    subagent_parent: Dict[str, str],
+    tool_call_parent: Dict[str, str],
+) -> None:
+    """Pass 5: map ``task-<toolCallId>`` composers to the parent that fired the tool.
+
+    Some subagent composers are persisted with ``subagentInfo: null`` (seen
+    on ``task_v2``-spawned composers), so ``_apply_subagent_inheritance``
+    finds no link. Their composerId is always ``"task-" + toolCallId``,
+    and the parent's bubble carries the same ``toolCallId`` in
+    ``toolFormerData``. Combine the two to recover the parent link so the
+    subsequent inheritance pass can attach the parent's workspace.
+
+    This pass is a dedicated seam rather than part of Pass 3 or Pass 6
+    because of where the two halves of its input live: Pass 3 walks
+    ``composerData`` and never sees bubble ``toolFormerData``, so it
+    cannot populate ``tool_call_parent`` itself, while Pass 6 expects
+    ``subagent_parent`` to be final before it walks. Pass 2 already
+    builds ``tool_call_parent`` cheaply as a side-effect of its bubble
+    iteration, so this pass only has to do an O(sessions) dict join,
+    not a second O(bubbles) scan.
+    """
+    # Guard against ``subagent_parent[cid]`` being preset (e.g. genuine
+    # ``subagentInfo.parentComposerId`` from Pass 3) so authentic links win
+    # over reconstructed ones in the rare case both are present for the
+    # same composer.
+    for cid in sessions.keys():
+        if not cid.startswith(_TASK_CID_PREFIX):
+            continue
+        if cid in subagent_parent:
+            continue
+        tcid = cid[len(_TASK_CID_PREFIX):]
+        parent = tool_call_parent.get(tcid)
+        if parent and parent != cid:
+            subagent_parent[cid] = parent
+
+
 def _apply_subagent_inheritance(
     sessions: Dict[str, Dict[str, Any]],
     comp2ws: Dict[str, str],
     subagent_parent: Dict[str, str],
 ) -> None:
-    """Pass 5: make subagent composers inherit a resolved ancestor's project.
+    """Pass 6: make subagent composers inherit a resolved ancestor's project.
 
     Subagent composers (e.g. ``explore`` tasks) are spawned with no
     ``workspaceIdentifier``, no attached-file URIs, and no URIs in their
-    bubbles. They do know their parent composer id via
-    ``subagentInfo.parentComposerId``, so walk that chain up to
+    bubbles, so they need a parent's workspace to fall back on. By the
+    time this pass runs, ``subagent_parent`` has been populated from two
+    sources:
+
+    - (a) Authentic ``subagentInfo.parentComposerId`` entries recorded
+      by ``_collect_global_composers`` (Pass 3).
+    - (b) Reconstructed ``task-<toolCallId> -> parent_cid`` entries
+      recorded by ``_link_task_subagents_to_parents`` (Pass 5) for
+      composers persisted with ``subagentInfo: null`` (``task_v2``
+      subagents on current Cursor builds).
+
+    Both kinds are treated identically: walk the parent chain up to
     ``_MAX_PARENT_DEPTH`` hops and inherit the first resolved ancestor's
-    workspace or inferred project. Must run after all the earlier passes
-    so ancestor state is final.
+    workspace or inferred project. Ordering invariants: must run AFTER
+    every other project-resolution pass so ancestor state is final, and
+    AFTER Pass 5 so its synthetic entries are visible to the walk.
     """
     _MAX_PARENT_DEPTH = 8
     for child_cid, first_parent in subagent_parent.items():
@@ -331,7 +412,7 @@ def _collect_global_item_table_chats(
     comp_meta: Dict[str, Dict[str, Any]],
     comp2ws: Dict[str, str],
 ) -> None:
-    """Pass 6: scrape legacy ``workbench.panel.aichat.view.aichat.chatdata`` tabs.
+    """Pass 7: scrape legacy ``workbench.panel.aichat.view.aichat.chatdata`` tabs.
 
     This is an older chat storage format that predates the
     ``cursorDiskKV``/``composerData`` split; wrapped in a broad
@@ -376,7 +457,7 @@ def _finalize_sessions(
     comp2ws: Dict[str, str],
     comp_meta: Dict[str, Dict[str, Any]],
 ) -> list[Dict[str, Any]]:
-    """Pass 7: drop empty sessions, resolve each one's project, sort by recency.
+    """Pass 8: drop empty sessions, resolve each one's project, sort by recency.
 
     Project resolution preference:
 
@@ -384,6 +465,16 @@ def _finalize_sessions(
     2. A project inferred from URIs / composer files.
     3. The workspace project as-is (which may be ``(unknown)``), or the
        sentinel ``{"name": "(unknown)", ...}`` as a last resort.
+
+    Reaching branch 3 means every upstream pass has failed for this
+    composer: no workspaceIdentifier, no pane-view-key link (Pass 1),
+    no bubble URIs (Pass 4), no ``subagentInfo`` parent and no
+    ``task-<toolCallId>`` reconstruction (Passes 5 + 6). A steady
+    trickle of these is expected (e.g. ephemeral global-only chats),
+    but a sudden spike in ``(unknown)`` counts is an operational
+    signal that Cursor's on-disk schema has shifted again and the
+    pipeline likely needs another heuristic rather than a tweak to
+    an existing pass.
     """
     out = []
     for cid, data in sessions.items():
@@ -445,6 +536,10 @@ def extract_chats() -> list[Dict[str, Any]]:
     # parent's workspace/project for subagents that have no workspace signal
     # of their own.
     subagent_parent: Dict[str, str] = {}
+    # Maps bubble ``toolFormerData.toolCallId`` -> the composerId whose
+    # bubble fired that tool. Used to reconstruct subagent parent links for
+    # ``task-<toolCallId>`` composers that ship with ``subagentInfo: null``.
+    tool_call_parent: Dict[str, str] = {}
 
     _collect_workspace_messages(root, ws_proj, comp_meta, comp2ws, sessions)
 
@@ -458,6 +553,7 @@ def extract_chats() -> list[Dict[str, Any]]:
             comp2ws,
             bubble_file_uris_by_cid,
             bubble_folder_uris_by_cid,
+            tool_call_parent,
         )
         _collect_global_composers(
             global_db,
@@ -475,6 +571,11 @@ def extract_chats() -> list[Dict[str, Any]]:
             bubble_file_uris_by_cid,
             bubble_folder_uris_by_cid,
         )
+        # ``task_v2`` subagent composers ship with ``subagentInfo: null`` so
+        # they have no explicit parent link. Reconstruct it from the parent
+        # bubble's ``toolFormerData.toolCallId`` before running the generic
+        # inheritance pass.
+        _link_task_subagents_to_parents(sessions, subagent_parent, tool_call_parent)
         # Quaternary fallback: subagent composers inherit an ancestor's project.
         _apply_subagent_inheritance(sessions, comp2ws, subagent_parent)
         # Also try the legacy ItemTable chat storage in the global DB.

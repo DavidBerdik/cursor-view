@@ -80,6 +80,29 @@ def _extract_uris_from_bubble(b: dict) -> tuple[list[str], list[str]]:
     return file_uris, folder_uris
 
 
+def _tool_call_from_bubble(b: dict) -> tuple[str, str] | None:
+    """Return ``(toolCallId, tool_name)`` for bubbles that recorded a tool invocation.
+
+    Subagent / task composers persist with id ``task-<toolCallId>`` but do
+    not record their own parent (``subagentInfo`` is ``None`` on
+    ``task_v2``-spawned composers, and parents' ``subagentComposerIds`` /
+    ``subComposerIds`` arrays are empty on current Cursor builds). The
+    only durable link back to the parent is the parent's bubble that
+    fired the tool with ``toolCallId == <toolu_id>``. We surface every
+    tool call (not just subagent spawners) and let the caller filter on
+    the child composer's id prefix.
+    """
+    tf = b.get("toolFormerData")
+    if not isinstance(tf, dict):
+        return None
+    tcid = tf.get("toolCallId")
+    if not isinstance(tcid, str) or not tcid:
+        return None
+    name_val = tf.get("name")
+    name = name_val if isinstance(name_val, str) else ""
+    return tcid, name
+
+
 def j(cur: sqlite3.Cursor, table: str, key: str):
     """Load a JSON value from ``table`` by string ``key``; return raw string if JSON decode fails."""
     cur.execute(f"SELECT value FROM {table} WHERE key=?", (key,))
@@ -100,11 +123,15 @@ def j(cur: sqlite3.Cursor, table: str, key: str):
 
 def iter_bubbles_from_disk_kv(
     db: pathlib.Path,
-) -> Iterable[tuple[str, str, str, str, list[str], list[str]]]:
-    """Yield (composerId, role, text, db_path, file_uris, folder_uris).
+) -> Iterable[tuple[str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
+    """Yield (composerId, role, text, db_path, file_uris, folder_uris, tool_call).
 
     ``file_uris`` and ``folder_uris`` are kept separate so project inference
     can trim filenames from files while treating folders as candidate roots.
+    ``tool_call`` is ``(toolCallId, tool_name)`` when the bubble recorded a
+    tool invocation (``toolFormerData``) and ``None`` otherwise; callers
+    use this to reconstruct subagent parent links that Cursor no longer
+    stores on the subagent composer itself.
     """
     # Initialize con to None so the outer finally can close it regardless
     # of whether sqlite3.connect or a subsequent cur.execute is what fails.
@@ -134,16 +161,19 @@ def iter_bubbles_from_disk_kv(
 
             if isinstance(b, dict):
                 file_uris, folder_uris = _extract_uris_from_bubble(b)
+                tool_call = _tool_call_from_bubble(b)
             else:
                 file_uris, folder_uris = [], []
+                tool_call = None
             txt = (b.get("text") or b.get("richText") or "").strip()
-            # Preserve bubbles that carry workspaceUris/relevantFiles etc. even if
-            # they have no text, so project inference can see the URIs.
-            if not txt and not file_uris and not folder_uris:
+            # Preserve bubbles that carry workspaceUris/relevantFiles or a
+            # tool call even if they have no text, so project inference and
+            # subagent-parent reconstruction can still see them.
+            if not txt and not file_uris and not folder_uris and tool_call is None:
                 continue
             role = "user" if b.get("type") == 1 else "assistant"
             composerId = k.split(":")[1]  # Format is bubbleId:composerId:bubbleId
-            yield composerId, role, txt, db_path_str, file_uris, folder_uris
+            yield composerId, role, txt, db_path_str, file_uris, folder_uris, tool_call
     finally:
         if con is not None:
             con.close()
