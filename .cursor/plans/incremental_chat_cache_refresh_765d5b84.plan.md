@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: route-ensure-current
     content: Switch ensure_current() to call _apply_delta on schema-match cache-exists paths, keeping _rebuild only for force_refresh / schema drift / DatabaseError / missing cache
-    status: pending
+    status: completed
   - id: backfill-on-upgrade
     content: Populate composer_state, source_row, and tool_call_parent during the one post-upgrade full rebuild so subsequent runs take the incremental path
     status: pending

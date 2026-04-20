@@ -100,11 +100,12 @@ class ChatIndex:
 
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or (cursor_view_cache_dir() / "chat-index.sqlite3")
-        # Serialize rebuild attempts (sync force, first build, corrupt recovery, background worker).
+        # Serialize write attempts (sync force, first build, corrupt recovery,
+        # background delta refresh, background fallback rebuild).
         self._rebuild_build_lock = threading.Lock()
-        # Single-flight background rebuild after stale-while-revalidate scheduling.
+        # Single-flight background refresh after stale-while-revalidate scheduling.
         self._bg_schedule_lock = threading.Lock()
-        self._bg_rebuild_thread: threading.Thread | None = None
+        self._bg_refresh_thread: threading.Thread | None = None
         # Coordinate swap (replace) vs readers of self.db_path (Windows cannot replace an open file).
         self._swap_cv = threading.Condition(threading.Lock())
         self._active_readers = 0
@@ -161,24 +162,30 @@ class ChatIndex:
         return detail
 
     def ensure_current(self, force: bool = False) -> None:
-        """Rebuild the index if source DBs changed or refresh was requested."""
-        source_fingerprint, sources = self._current_source_fingerprint()
+        """Refresh the index if source DBs changed or a rebuild was requested.
 
-        if not force and self.db_path.exists():
-            try:
-                if self._cached_index_up_to_date(source_fingerprint):
-                    return
-            except sqlite3.DatabaseError:
-                logger.warning("Existing chat index is unreadable; rebuilding")
-                with self._rebuild_build_lock:
-                    if self.db_path.exists():
-                        try:
-                            if self._cached_index_up_to_date(source_fingerprint):
-                                return
-                        except sqlite3.DatabaseError:
-                            pass
-                    self._rebuild(source_fingerprint, sources)
-                return
+        Routing matches section 3.1 of the incremental-refresh plan:
+
+        - ``force=True`` always triggers a synchronous full
+          :meth:`_rebuild`; there is no delta equivalent because the
+          UI uses this entry point to reset suspected-bad cache
+          state.
+        - A missing cache file is a first-build and likewise rebuilds
+          synchronously; the delta path needs a populated
+          ``source_row`` / ``composer_state`` baseline to be useful.
+        - A readable cache whose ``meta`` answers the fast
+          fingerprint check is a pure cache hit; no work scheduled.
+        - A cache that raises :class:`sqlite3.DatabaseError` while
+          we're reading its meta is corrupt and rebuilt synchronously
+          under the lock.
+        - Anything else (schema drift, fingerprint mismatch) is a
+          stale-but-readable cache; the current snapshot is served
+          immediately while
+          :meth:`_schedule_background_refresh` dispatches the
+          incremental apply (or a full rebuild when the schema
+          differs) off the request path.
+        """
+        source_fingerprint, sources = self._current_source_fingerprint()
 
         if force:
             with self._rebuild_build_lock:
@@ -196,42 +203,97 @@ class ChatIndex:
                 self._rebuild(source_fingerprint, sources)
             return
 
-        # Stale but readable index: serve current snapshot; refresh in background.
-        self._schedule_background_rebuild()
-        return
-
-    def _schedule_background_rebuild(self) -> None:
-        """Start at most one daemon thread to rebuild the index (stale-while-revalidate)."""
-        with self._bg_schedule_lock:
-            if self._bg_rebuild_thread is not None and self._bg_rebuild_thread.is_alive():
+        try:
+            if self._cached_index_up_to_date(source_fingerprint):
                 return
-            logger.info("Scheduling background chat index rebuild")
-            self._bg_rebuild_thread = threading.Thread(
-                target=self._background_rebuild_worker,
-                name="chat-index-rebuild",
+        except sqlite3.DatabaseError:
+            logger.warning("Existing chat index is unreadable; rebuilding")
+            with self._rebuild_build_lock:
+                if self.db_path.exists():
+                    try:
+                        if self._cached_index_up_to_date(source_fingerprint):
+                            return
+                    except sqlite3.DatabaseError:
+                        pass
+                self._rebuild(source_fingerprint, sources)
+            return
+
+        self._schedule_background_refresh()
+
+    def _schedule_background_refresh(self) -> None:
+        """Start at most one daemon thread to refresh the index (stale-while-revalidate).
+
+        The worker thread decides between the incremental delta path
+        and the full-rebuild fallback based on the cache's schema
+        version; this scheduling helper only arbitrates single-flight
+        dispatch so a burst of stale reads doesn't spawn N workers.
+        """
+        with self._bg_schedule_lock:
+            if self._bg_refresh_thread is not None and self._bg_refresh_thread.is_alive():
+                return
+            logger.info("Scheduling background chat index refresh")
+            self._bg_refresh_thread = threading.Thread(
+                target=self._background_refresh_worker,
+                name="chat-index-refresh",
                 daemon=True,
             )
-            self._bg_rebuild_thread.start()
+            self._bg_refresh_thread.start()
 
-    def _background_rebuild_worker(self) -> None:
-        """Run a stale-while-revalidate rebuild, releasing the schedule slot on exit.
+    def _background_refresh_worker(self) -> None:
+        """Run a stale-while-revalidate refresh, releasing the schedule slot on exit.
 
-        Acquires ``_rebuild_build_lock`` so this doesn't race against a
-        synchronous force-refresh or first-build. Re-checks ``is this
-        index already up-to-date`` after taking the lock because another
-        thread may have finished the rebuild while we were waiting.
+        Acquires ``_rebuild_build_lock`` so delta applies and fallback
+        rebuilds don't race against a synchronous force-refresh or
+        first-build. Under the lock:
+
+        1. Re-fingerprint the sources; another thread may have
+           completed the refresh while we were waiting, turning this
+           worker into a no-op.
+        2. Read the cache's ``schema_version``. Anything that throws
+           :class:`sqlite3.DatabaseError` or that doesn't match the
+           current :data:`INDEX_SCHEMA_VERSION` falls through to a
+           full rebuild; the delta path requires the v2 tables to be
+           present and consistent.
+        3. Otherwise run the row-hash diff and apply it. If the
+           apply transaction fails with a SQLite error (corruption,
+           schema surprise, etc.), log and fall back to a full
+           rebuild so the cache is never left in a broken state.
         """
         try:
             with self._rebuild_build_lock:
                 fp, sources = self._current_source_fingerprint()
-                if self._cached_index_up_to_date(fp):
+                try:
+                    if self._cached_index_up_to_date(fp):
+                        return
+                    cached_schema = self._read_meta_value("schema_version")
+                except sqlite3.DatabaseError:
+                    logger.warning(
+                        "Existing chat index is unreadable during background refresh; rebuilding"
+                    )
+                    self._rebuild(fp, sources)
                     return
-                self._rebuild(fp, sources)
+                if cached_schema != str(INDEX_SCHEMA_VERSION):
+                    logger.info(
+                        "Chat index schema drift (%s -> %s); falling back to full rebuild",
+                        cached_schema,
+                        INDEX_SCHEMA_VERSION,
+                    )
+                    self._rebuild(fp, sources)
+                    return
+                try:
+                    dirty = self._compute_source_diff(sources)
+                    self._apply_delta(dirty, fp, sources)
+                except sqlite3.DatabaseError:
+                    logger.warning(
+                        "Incremental chat-index refresh failed; falling back to full rebuild",
+                        exc_info=True,
+                    )
+                    self._rebuild(fp, sources)
         except Exception:
-            logger.exception("Background chat index rebuild failed")
+            logger.exception("Background chat index refresh failed")
         finally:
             with self._bg_schedule_lock:
-                self._bg_rebuild_thread = None
+                self._bg_refresh_thread = None
 
     def _cached_index_up_to_date(self, source_fingerprint: str) -> bool:
         """True iff the on-disk index matches the current source fingerprint and schema version."""
