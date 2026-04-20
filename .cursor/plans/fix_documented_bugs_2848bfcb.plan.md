@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: bug5_diagnostics_rewrite
     content: Rewrite cursor_view/extraction/diagnostics.py to split into _dump_first_workspace/_dump_global_storage helpers using contextlib.closing; bump routine messages to logger.info; replace the except-clause logger.debug with logger.exception; remove the TODO(bug) comment
-    status: pending
+    status: completed
 isProject: false
 ---
 

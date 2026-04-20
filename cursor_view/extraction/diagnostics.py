@@ -8,10 +8,14 @@ import logging
 import os
 import pathlib
 import sqlite3
+from contextlib import closing
 
 from cursor_view.paths import global_storage_path, workspaces
 
 logger = logging.getLogger(__name__)
+
+
+_AI_KEY_PATTERNS = ("%ai%", "%chat%", "%composer%", "%prompt%", "%generation%")
 
 
 def diagnostics_enabled() -> bool:
@@ -23,67 +27,61 @@ def dump_workspace_diagnostics(root: pathlib.Path) -> None:
     """Log a summary of tables/keys in the first workspace and the global DB.
 
     Intended as a one-shot probe to help users investigate why their chats
-    are or aren't showing up. Wrapped in a blanket ``try/except`` at debug
-    level so a failure here never blocks the real extraction pipeline.
+    are or aren't showing up. Errors are caught so a probe failure does
+    not block the real extraction pipeline, but they are logged with a
+    traceback so the user can see why the probe itself misbehaved.
     """
-    # TODO(bug): The two ``sqlite3.connect`` calls below are not protected
-    # by ``try/finally`` or ``contextlib.closing``, so if any ``cur.execute``
-    # in the loops raises, the connection leaks. The outer ``except
-    # Exception`` also swallows real errors at ``logger.debug`` level,
-    # which hides misconfiguration when users are actively trying to
-    # investigate why their chats don't show up (the whole point of this
-    # probe). Fix both in a follow-up.
     try:
-        first_ws = next(workspaces(root), None)
-        if first_ws:
-            ws_id, db = first_ws
-            logger.debug("\n--- DIAGNOSTICS for workspace %s ---", ws_id)
-            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-            cur = con.cursor()
+        _dump_first_workspace(root)
+        _dump_global_storage(root)
+        logger.info("\n--- END DIAGNOSTICS ---\n")
+    except Exception:
+        logger.exception("Diagnostic probe failed")
 
-            # List all tables
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = [row[0] for row in cur.fetchall()]
-            logger.debug("Tables in workspace DB: %s", tables)
 
-            # Search for AI-related keys
-            if "ItemTable" in tables:
-                for pattern in ["%ai%", "%chat%", "%composer%", "%prompt%", "%generation%"]:
-                    cur.execute("SELECT key FROM ItemTable WHERE key LIKE ?", (pattern,))
-                    keys = [row[0] for row in cur.fetchall()]
-                    if keys:
-                        logger.debug("Keys matching '%s': %s", pattern, keys)
+def _dump_first_workspace(root: pathlib.Path) -> None:
+    first_ws = next(workspaces(root), None)
+    if first_ws is None:
+        return
+    ws_id, db = first_ws
+    logger.info("\n--- DIAGNOSTICS for workspace %s ---", ws_id)
+    with closing(sqlite3.connect(f"file:{db}?mode=ro", uri=True)) as con:
+        cur = con.cursor()
+        tables = _list_tables(cur)
+        logger.info("Tables in workspace DB: %s", tables)
+        if "ItemTable" in tables:
+            _dump_item_table_keys(cur)
 
-            con.close()
 
-        # Check global storage
-        global_db = global_storage_path(root)
-        if global_db:
-            logger.debug("\n--- DIAGNOSTICS for global storage ---")
-            con = sqlite3.connect(f"file:{global_db}?mode=ro", uri=True)
-            cur = con.cursor()
+def _dump_global_storage(root: pathlib.Path) -> None:
+    global_db = global_storage_path(root)
+    if global_db is None:
+        return
+    logger.info("\n--- DIAGNOSTICS for global storage ---")
+    with closing(sqlite3.connect(f"file:{global_db}?mode=ro", uri=True)) as con:
+        cur = con.cursor()
+        tables = _list_tables(cur)
+        logger.info("Tables in global DB: %s", tables)
+        if "ItemTable" in tables:
+            _dump_item_table_keys(cur)
+        if "cursorDiskKV" in tables:
+            _dump_cursor_disk_kv_prefixes(cur)
 
-            # List all tables
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = [row[0] for row in cur.fetchall()]
-            logger.debug("Tables in global DB: %s", tables)
 
-            # Search for AI-related keys in ItemTable
-            if "ItemTable" in tables:
-                for pattern in ["%ai%", "%chat%", "%composer%", "%prompt%", "%generation%"]:
-                    cur.execute("SELECT key FROM ItemTable WHERE key LIKE ?", (pattern,))
-                    keys = [row[0] for row in cur.fetchall()]
-                    if keys:
-                        logger.debug("Keys matching '%s': %s", pattern, keys)
+def _list_tables(cur: sqlite3.Cursor) -> list[str]:
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    return [row[0] for row in cur.fetchall()]
 
-            # Check for keys in cursorDiskKV
-            if "cursorDiskKV" in tables:
-                cur.execute("SELECT DISTINCT substr(key, 1, instr(key, ':') - 1) FROM cursorDiskKV")
-                prefixes = [row[0] for row in cur.fetchall()]
-                logger.debug("Key prefixes in cursorDiskKV: %s", prefixes)
 
-            con.close()
+def _dump_item_table_keys(cur: sqlite3.Cursor) -> None:
+    for pattern in _AI_KEY_PATTERNS:
+        cur.execute("SELECT key FROM ItemTable WHERE key LIKE ?", (pattern,))
+        keys = [row[0] for row in cur.fetchall()]
+        if keys:
+            logger.info("Keys matching '%s': %s", pattern, keys)
 
-        logger.debug("\n--- END DIAGNOSTICS ---\n")
-    except Exception as e:
-        logger.debug("Error in diagnostics: %s", e)
+
+def _dump_cursor_disk_kv_prefixes(cur: sqlite3.Cursor) -> None:
+    cur.execute("SELECT DISTINCT substr(key, 1, instr(key, ':') - 1) FROM cursorDiskKV")
+    prefixes = [row[0] for row in cur.fetchall()]
+    logger.info("Key prefixes in cursorDiskKV: %s", prefixes)
