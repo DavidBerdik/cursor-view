@@ -74,16 +74,11 @@ export function useExportFlow({ darkMode }) {
     (confirmed) => {
       setWarningDialogOpen(false);
 
-      // TODO(bug): persists the cookie regardless of `confirmed`, so a
-      // user who ticks "Don't show this warning again" and then clicks
-      // Cancel still has the preference recorded. Original behavior was
-      // duplicated across both pages before this hook was introduced;
-      // preserve it for now and fix in a dedicated change. The guard
-      // should be `if (confirmed) { persist(); }`.
-      persist();
-
-      if (confirmed && pendingSessionId) {
-        proceed(pendingSessionId, format);
+      if (confirmed) {
+        persist();
+        if (pendingSessionId) {
+          proceed(pendingSessionId, format);
+        }
       }
       setPendingSessionId(null);
     },

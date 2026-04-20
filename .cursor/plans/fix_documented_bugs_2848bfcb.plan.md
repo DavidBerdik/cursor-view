@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: bug3_export_warning_cookie
     content: Gate the persist() call on `confirmed` in frontend/src/hooks/useExportFlow.js handleWarningConfirm, collapse the two confirmed checks, remove the TODO(bug) comment
-    status: pending
+    status: completed
   - id: bug4_sqlite_leak
     content: Wrap iter_bubbles_from_disk_kv and iter_composer_data in cursor_view/sources/sqlite_data.py with the con=None + outer try/finally pattern used by iter_chat_from_item_table; remove both TODO(bug) comments and the now-redundant inline con.close() calls
     status: pending
