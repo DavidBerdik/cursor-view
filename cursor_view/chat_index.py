@@ -29,6 +29,14 @@ from cursor_view.timestamps import session_sort_key_ms
 
 logger = logging.getLogger(__name__)
 
+# Bump ``INDEX_SCHEMA_VERSION`` when either (a) the on-disk table layout built
+# in ``_create_schema`` changes in a backwards-incompatible way (columns added /
+# removed / retyped, indices renamed, etc.), or (b) an extraction-logic change
+# must immediately invalidate existing caches on first launch rather than
+# waiting for a natural source-DB mtime change to flip the fingerprint. The
+# source fingerprint alone only tracks Cursor's own ``state.vscdb`` files, so
+# pure code changes to ``cursor_view`` never invalidate it; this field is the
+# one lever we have to force a rebuild for those cases.
 INDEX_SCHEMA_VERSION = 1
 
 _INDEX_SINGLETON: "ChatIndex | None" = None
