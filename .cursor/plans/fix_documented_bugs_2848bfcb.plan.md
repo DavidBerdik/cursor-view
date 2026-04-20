@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: bug4_sqlite_leak
     content: Wrap iter_bubbles_from_disk_kv and iter_composer_data in cursor_view/sources/sqlite_data.py with the con=None + outer try/finally pattern used by iter_chat_from_item_table; remove both TODO(bug) comments and the now-redundant inline con.close() calls
-    status: pending
+    status: completed
   - id: bug5_diagnostics_rewrite
     content: Rewrite cursor_view/extraction/diagnostics.py to split into _dump_first_workspace/_dump_global_storage helpers using contextlib.closing; bump routine messages to logger.info; replace the except-clause logger.debug with logger.exception; remove the TODO(bug) comment
     status: pending

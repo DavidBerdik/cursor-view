@@ -106,52 +106,47 @@ def iter_bubbles_from_disk_kv(
     ``file_uris`` and ``folder_uris`` are kept separate so project inference
     can trim filenames from files while treating folders as candidate roots.
     """
-    # TODO(bug): If ``sqlite3.connect`` succeeds but one of the ``cur.execute``
-    # calls below raises ``sqlite3.DatabaseError``, the connection is never
-    # closed because ``con`` was created inside the same ``try`` block we
-    # return from. Either hoist ``con = sqlite3.connect(...)`` outside the
-    # ``try`` or wrap everything in a ``with contextlib.closing(...)``. Leave
-    # as-is for now to keep this refactor behavior-preserving.
+    # Initialize con to None so the outer finally can close it regardless
+    # of whether sqlite3.connect or a subsequent cur.execute is what fails.
+    con = None
     try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        cur = con.cursor()
-        # Check if table exists
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'")
-        if not cur.fetchone():
-            con.close()
+        try:
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            cur = con.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'")
+            if not cur.fetchone():
+                return
+            cur.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'")
+        except sqlite3.DatabaseError as e:
+            logger.debug("Database error with %s: %s", db, e)
             return
 
-        cur.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'bubbleId:%'")
-    except sqlite3.DatabaseError as e:
-        logger.debug("Database error with %s: %s", db, e)
-        return
+        db_path_str = str(db)
 
-    db_path_str = str(db)
-
-    for k, v in cur:
-        try:
-            if v is None:
+        for k, v in cur:
+            try:
+                if v is None:
+                    continue
+                b = json.loads(v)
+            except Exception as e:
+                logger.debug("Failed to parse bubble JSON for key %s: %s", k, e)
                 continue
 
-            b = json.loads(v)
-        except Exception as e:
-            logger.debug("Failed to parse bubble JSON for key %s: %s", k, e)
-            continue
-
-        if isinstance(b, dict):
-            file_uris, folder_uris = _extract_uris_from_bubble(b)
-        else:
-            file_uris, folder_uris = [], []
-        txt = (b.get("text") or b.get("richText") or "").strip()
-        # Preserve bubbles that carry workspaceUris/relevantFiles etc. even if
-        # they have no text, so project inference can see the URIs.
-        if not txt and not file_uris and not folder_uris:
-            continue
-        role = "user" if b.get("type") == 1 else "assistant"
-        composerId = k.split(":")[1]  # Format is bubbleId:composerId:bubbleId
-        yield composerId, role, txt, db_path_str, file_uris, folder_uris
-
-    con.close()
+            if isinstance(b, dict):
+                file_uris, folder_uris = _extract_uris_from_bubble(b)
+            else:
+                file_uris, folder_uris = [], []
+            txt = (b.get("text") or b.get("richText") or "").strip()
+            # Preserve bubbles that carry workspaceUris/relevantFiles etc. even if
+            # they have no text, so project inference can see the URIs.
+            if not txt and not file_uris and not folder_uris:
+                continue
+            role = "user" if b.get("type") == 1 else "assistant"
+            composerId = k.split(":")[1]  # Format is bubbleId:composerId:bubbleId
+            yield composerId, role, txt, db_path_str, file_uris, folder_uris
+    finally:
+        if con is not None:
+            con.close()
 
 
 def iter_chat_from_item_table(db: pathlib.Path) -> Iterable[tuple[str, str, str, str]]:
@@ -224,37 +219,31 @@ def iter_chat_from_item_table(db: pathlib.Path) -> Iterable[tuple[str, str, str,
 
 def iter_composer_data(db: pathlib.Path) -> Iterable[tuple[str, dict, str]]:
     """Yield (composerId, composerData, db_path) from cursorDiskKV table."""
-    # TODO(bug): Same connection-leak shape as ``iter_bubbles_from_disk_kv``:
-    # if ``cur.execute`` raises after ``sqlite3.connect`` succeeds, the
-    # connection is never closed. Hoist ``con`` or use
-    # ``contextlib.closing`` in a follow-up fix.
+    con = None
     try:
-        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        cur = con.cursor()
-        # Check if table exists
-        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'")
-        if not cur.fetchone():
-            con.close()
+        try:
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            cur = con.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'")
+            if not cur.fetchone():
+                return
+            cur.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
+        except sqlite3.DatabaseError as e:
+            logger.debug("Database error with %s: %s", db, e)
             return
 
-        cur.execute("SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'")
-    except sqlite3.DatabaseError as e:
-        logger.debug("Database error with %s: %s", db, e)
-        return
+        db_path_str = str(db)
 
-    db_path_str = str(db)
-
-    for k, v in cur:
-        try:
-            if v is None:
+        for k, v in cur:
+            try:
+                if v is None:
+                    continue
+                composer_data = json.loads(v)
+                composer_id = k.split(":")[1]
+                yield composer_id, composer_data, db_path_str
+            except Exception as e:
+                logger.debug("Failed to parse composer data for key %s: %s", k, e)
                 continue
-
-            composer_data = json.loads(v)
-            composer_id = k.split(":")[1]
-            yield composer_id, composer_data, db_path_str
-
-        except Exception as e:
-            logger.debug("Failed to parse composer data for key %s: %s", k, e)
-            continue
-
-    con.close()
+    finally:
+        if con is not None:
+            con.close()
