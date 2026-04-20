@@ -277,3 +277,143 @@ def iter_composer_data(db: pathlib.Path) -> Iterable[tuple[str, dict, str]]:
     finally:
         if con is not None:
             con.close()
+
+
+def _connect_cursor_disk_kv(db: pathlib.Path) -> sqlite3.Connection | None:
+    """Open ``db`` read-only and confirm the ``cursorDiskKV`` table is present.
+
+    Returns ``None`` (and logs at debug) for any error or for DBs that
+    never grew the ``cursorDiskKV`` table; callers should iterate
+    nothing in that case.
+    """
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.DatabaseError as e:
+        logger.debug("Database error opening %s: %s", db, e)
+        return None
+    try:
+        cur = con.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'")
+        if cur.fetchone() is None:
+            con.close()
+            return None
+    except sqlite3.DatabaseError as e:
+        logger.debug("Database error probing cursorDiskKV in %s: %s", db, e)
+        con.close()
+        return None
+    return con
+
+
+def iter_bubbles_for_cids(
+    db: pathlib.Path,
+    cids: Iterable[str],
+) -> Iterable[tuple[str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
+    """Cid-scoped form of :func:`iter_bubbles_from_disk_kv`.
+
+    Emits the same 7-tuple ``(composerId, role, text, db_path, file_uris,
+    folder_uris, tool_call)`` but only for bubbles whose ``composerId``
+    is in ``cids``. The per-cid query is a range scan of the
+    ``bubbleId:<cid>:`` PK prefix -- ``key > 'bubbleId:<cid>:'`` with a
+    ``key < 'bubbleId:<cid>;'`` upper bound (``;`` is the byte directly
+    after ``:``) -- which runs on the implicit primary-key index in
+    O(bubbles_per_cid) time without a LIKE escape for composer ids that
+    contain underscores (``task-<toolCallId>`` commonly do).
+
+    Cids with no matching rows are skipped silently so callers can pass
+    a noisy dirty set without pre-filtering.
+    """
+    cids_list = [c for c in cids if isinstance(c, str) and c]
+    if not cids_list:
+        return
+    con = _connect_cursor_disk_kv(db)
+    if con is None:
+        return
+    try:
+        cur = con.cursor()
+        db_path_str = str(db)
+        for cid in cids_list:
+            lower = f"bubbleId:{cid}:"
+            upper = f"bubbleId:{cid};"
+            try:
+                cur.execute(
+                    "SELECT key, value FROM cursorDiskKV WHERE key > ? AND key < ?",
+                    (lower, upper),
+                )
+                rows = cur.fetchall()
+            except sqlite3.DatabaseError as e:
+                logger.debug("Database error reading bubbles for %s in %s: %s", cid, db, e)
+                continue
+            for k, v in rows:
+                try:
+                    if v is None:
+                        continue
+                    b = json.loads(v)
+                except Exception as e:
+                    logger.debug("Failed to parse bubble JSON for key %s: %s", k, e)
+                    continue
+                if isinstance(b, dict):
+                    file_uris, folder_uris = _extract_uris_from_bubble(b)
+                    tool_call = _tool_call_from_bubble(b)
+                else:
+                    file_uris, folder_uris = [], []
+                    tool_call = None
+                txt = (b.get("text") or b.get("richText") or "").strip()
+                if not txt and not file_uris and not folder_uris and tool_call is None:
+                    continue
+                role = "user" if b.get("type") == 1 else "assistant"
+                # Re-split from the key rather than trusting the cid loop
+                # variable, in case a malformed key slipped past the range
+                # predicate (defensive; same parse as iter_bubbles_from_disk_kv).
+                composerId = k.split(":")[1]
+                yield composerId, role, txt, db_path_str, file_uris, folder_uris, tool_call
+    finally:
+        con.close()
+
+
+def iter_composer_data_for_cids(
+    db: pathlib.Path,
+    cids: Iterable[str],
+) -> Iterable[tuple[str, dict, str]]:
+    """Cid-scoped form of :func:`iter_composer_data`.
+
+    Unlike bubbles, each composer has exactly one ``composerData:<cid>``
+    row, so a batched ``WHERE key IN (...)`` query stays within
+    SQLite's 999-parameter default limit for every realistic dirty set
+    (and chunks above that).
+    """
+    cids_list = [c for c in cids if isinstance(c, str) and c]
+    if not cids_list:
+        return
+    con = _connect_cursor_disk_kv(db)
+    if con is None:
+        return
+    try:
+        cur = con.cursor()
+        db_path_str = str(db)
+        # Chunk to stay below SQLite's default SQLITE_MAX_VARIABLE_NUMBER.
+        chunk_size = 500
+        for start in range(0, len(cids_list), chunk_size):
+            chunk = cids_list[start:start + chunk_size]
+            keys = [f"composerData:{c}" for c in chunk]
+            placeholders = ",".join("?" for _ in keys)
+            try:
+                cur.execute(
+                    f"SELECT key, value FROM cursorDiskKV WHERE key IN ({placeholders})",
+                    keys,
+                )
+                rows = cur.fetchall()
+            except sqlite3.DatabaseError as e:
+                logger.debug("Database error reading composerData chunk in %s: %s", db, e)
+                continue
+            for k, v in rows:
+                try:
+                    if v is None:
+                        continue
+                    composer_data = json.loads(v)
+                    composer_id = k.split(":")[1]
+                    yield composer_id, composer_data, db_path_str
+                except Exception as e:
+                    logger.debug("Failed to parse composer data for key %s: %s", k, e)
+                    continue
+    finally:
+        con.close()

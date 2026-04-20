@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: scoped-extraction
     content: Parameterize extract_chats/_collect_* to accept (cids, cached_state); thread cached tool_call_parent into Pass 5 and cached comp2ws/_inferred_project into Pass 6; add iter_bubbles_for_cids / iter_composer_data_for_cids in sources/sqlite_data.py preserving the 7-tuple with tool_call
-    status: pending
+    status: completed
   - id: apply-delta
     content: "Implement ChatIndex._apply_delta: per-cid DELETE+INSERT across chat_summary/message/search_text/search_fts, workspace-scoped project-only UPDATE, tool_call_parent upserts/deletes, and source_row updates all in one transaction on the live cache"
     status: pending
