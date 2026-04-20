@@ -223,26 +223,31 @@ def _project_only_refresh(
     cur: sqlite3.Cursor,
     workspace_id: str,
     workspace_db: Path | None,
-) -> bool:
+) -> int:
     """UPDATE every ``chat_summary`` row in one workspace with the fresh project.
 
-    Returns True iff the UPDATE fired. Skipping on unnamed projects
+    Returns the number of ``chat_summary`` rows the UPDATE touched
+    (``0`` when the UPDATE was skipped). Skipping on unnamed projects
     matches extraction's preference order (``_finalize_sessions``
     prefers a named ``ws_project`` over an inferred one) so we never
     demote a cached inferred project just because the workspace's
     project inference happened to come back unknown this run.
     """
     if workspace_db is None or not workspace_db.exists():
-        return False
+        return 0
     project, _meta = workspace_info(workspace_db)
     name = project.get("name") if isinstance(project, dict) else None
     if not name or name == "(unknown)":
-        return False
+        return 0
     cur.execute(
         "UPDATE chat_summary SET project_name=?, project_root_path=? WHERE workspace_id=?",
         (name, project.get("rootPath") or "Unknown", workspace_id),
     )
-    return True
+    # ``cur.rowcount`` is the number of rows the UPDATE actually
+    # modified; negative values (older SQLite builds that can't
+    # report a count) are clamped to 0 so the caller's running total
+    # is always a non-negative cid count.
+    return max(cur.rowcount, 0)
 
 
 def _apply_tool_call_parent_updates(
@@ -434,10 +439,13 @@ def apply_delta(
                 _upsert_composer_state(cur, chat, formatted, messages)
                 inserted += 1
 
-            project_only_updates = 0
+            project_only_workspaces = 0
+            project_only_composers = 0
             for ws_id in dirty.workspace_project_dirty:
-                if _project_only_refresh(cur, ws_id, workspace_dbs.get(ws_id)):
-                    project_only_updates += 1
+                updated = _project_only_refresh(cur, ws_id, workspace_dbs.get(ws_id))
+                if updated > 0:
+                    project_only_workspaces += 1
+                    project_only_composers += updated
 
             _apply_tool_call_parent_updates(cur, dirty.tool_call_parent_updates)
             _sync_source_row(cur, dirty.source_row_snapshot)
@@ -449,13 +457,26 @@ def apply_delta(
     finally:
         con.isolation_level = prior_isolation
 
+    # Counter layout matches the observability line described in
+    # todo 8 of the incremental-refresh plan: message-level dirtiness
+    # (``modified`` / ``inserted``), link-driven dirtiness
+    # (``subagent-propagated``), removals (``deleted``), cheap
+    # workspace-scoped UPDATEs (``project-only``), and persisted-map
+    # churn (``tool_call_parent updates``) are each tracked
+    # separately so a spike in any single axis is diagnosable from
+    # the log alone.
     logger.info(
-        "Incremental chat-index refresh: %s modified (inserted %s), %s deleted, "
-        "%s project-only workspaces, %s tool_call_parent updates",
+        "Incremental chat-index refresh: "
+        "%s modified (inserted %s, %s subagent-propagated), "
+        "%s deleted, "
+        "%s project-only composers across %s workspaces, "
+        "%s tool_call_parent updates",
         len(dirty.modified_cids),
         inserted,
+        len(dirty.subagent_propagated_cids),
         len(dirty.deleted_cids),
-        project_only_updates,
+        project_only_composers,
+        project_only_workspaces,
         len(dirty.tool_call_parent_updates),
     )
 

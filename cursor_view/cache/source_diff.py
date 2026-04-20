@@ -110,6 +110,12 @@ class DirtySet:
     # Full new ``source_row`` snapshot. Apply step writes this wholesale
     # (INSERT OR REPLACE + DELETE rows not present here).
     source_row_snapshot: dict[SourceKey, SourceRowRecord] = field(default_factory=dict)
+    # Subset of ``modified_cids`` that entered the set via subagent
+    # parent-chain propagation (``task-<toolCallId>`` descendants of a
+    # dirty parent). Tracked for observability so the refresh log can
+    # distinguish content-driven dirtiness from link-driven dirtiness;
+    # apply behavior is identical for propagated and direct cids.
+    subagent_propagated_cids: set[str] = field(default_factory=set)
 
     def has_changes(self) -> bool:
         """True iff the apply step has any work to do."""
@@ -514,7 +520,10 @@ def _propagate_subagent_dirtiness(dirty: DirtySet, cached_tcp: dict[str, str]) -
     the cached ``tool_call_parent`` map, bounded by
     :data:`_MAX_PARENT_DEPTH` so the propagation budget matches
     ``_apply_subagent_inheritance``. A ``visited`` set guards against
-    cycles that malformed data could introduce.
+    cycles that malformed data could introduce. Propagated children
+    are additionally recorded in :attr:`DirtySet.subagent_propagated_cids`
+    so the apply step can log link-driven dirtiness separately from the
+    content-driven set.
     """
     if not cached_tcp:
         return
@@ -532,6 +541,7 @@ def _propagate_subagent_dirtiness(dirty: DirtySet, cached_tcp: dict[str, str]) -
                     continue
                 visited.add(child)
                 dirty.modified_cids.add(child)
+                dirty.subagent_propagated_cids.add(child)
                 next_frontier.append(child)
         frontier = next_frontier
         depth += 1

@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: observability
     content: Add logger.info counters for modified / deleted / project-only / subagent-propagated composers per refresh
-    status: pending
+    status: completed
   - id: tests
     content: Add tests that (1) mutate a single bubbleId, (2) mutate only treeViewState, (3) add a tool-call bubble to a parent and assert the task-<toolCallId> child's summary re-resolves without message rewrites, and (4) add a workbench.panel.aichat.view.<cid> pane key and assert the targeted cid is promoted without touching other chats in that workspace
     status: pending
