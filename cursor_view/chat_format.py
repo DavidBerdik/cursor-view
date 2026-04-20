@@ -110,23 +110,6 @@ def format_chat_for_frontend(chat):
 
                     logger.debug("Improved project name from '%s' to '%s'", current_name, project_name)
                     project["name"] = project_name
-                # TODO(bug): This branch was written against one developer's
-                # ``/Users/saharmor/Documents/codebase/<X>`` layout. It only
-                # triggers on macOS paths that match the current user's home
-                # ("username" above), so it effectively runs for any user who
-                # happens to keep projects under ``~/Documents/codebase/``, and
-                # the literal ``"cursor-view"`` fallback is almost certainly
-                # wrong for anyone else. Leave the behavior unchanged here and
-                # revisit as a standalone fix (do not silently delete this path
-                # or the hard-coded default).
-                elif project.get("rootPath").startswith(f"/Users/{username}/Documents/codebase/"):
-                    # Special case for /Users/saharmor/Documents/codebase/X
-                    parts = project.get("rootPath").split("/")
-                    if len(parts) > 5:  # /Users/username/Documents/codebase/X
-                        project["name"] = parts[5]
-                        logger.debug("Set project name to specific codebase subdirectory: %s", parts[5])
-                    else:
-                        project["name"] = "cursor-view"  # Current project as default
 
         # If the project doesn't have a rootPath or it's very generic, enhance it with workspace_id
         if not project.get("rootPath") or project.get("rootPath") == "/" or project.get("rootPath") == "/Users":

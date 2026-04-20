@@ -4,7 +4,7 @@ overview: "Fix the five `TODO(bug):` issues documented during the refactor: two 
 todos:
   - id: bug1_chat_format_saharmor
     content: Delete the Documents/codebase elif branch + 'cursor-view' literal fallback + its TODO(bug) comment in cursor_view/chat_format.py
-    status: pending
+    status: completed
   - id: bug2_inference_known_projects
     content: Delete the hardcoded known_projects list and its loop + TODO(bug) comment in cursor_view/projects/inference.py; reword the orphaned trailing comment
     status: pending
