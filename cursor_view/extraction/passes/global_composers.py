@@ -6,9 +6,9 @@ import logging
 import pathlib
 from typing import Any, Dict
 
-from cursor_view.projects.inference import (
-    _project_from_global_composer_files,
-    _project_from_workspace_identifier,
+from cursor_view.projects import (
+    project_from_global_composer_files,
+    project_from_workspace_identifier,
 )
 from cursor_view.sources.sqlite_data import (
     iter_composer_data,
@@ -100,7 +100,7 @@ def _collect_global_composers(
         # absent, so workspace-scoped mappings from Pass 1 are preserved.
         current_ws = comp2ws.get(cid)
         if current_ws in (None, "(global)"):
-            wsid_resolved = _project_from_workspace_identifier(
+            wsid_resolved = project_from_workspace_identifier(
                 data.get("workspaceIdentifier") if isinstance(data, dict) else None
             )
             if wsid_resolved is not None:
@@ -109,7 +109,7 @@ def _collect_global_composers(
                 if ws_id not in ws_proj or (ws_proj[ws_id].get("name") in (None, "(unknown)")):
                     ws_proj[ws_id] = resolved_project
             else:
-                inferred = _project_from_global_composer_files(data)
+                inferred = project_from_global_composer_files(data)
                 if inferred and "_inferred_project" not in sessions[cid]:
                     sessions[cid]["_inferred_project"] = inferred
 

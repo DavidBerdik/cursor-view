@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from cursor_view.projects.inference import (
-    _project_from_folder_uri_list,
-    _project_from_uri_list,
+from cursor_view.projects import (
+    project_from_folder_uri_list,
+    project_from_uri_list,
 )
 
 
@@ -28,9 +28,9 @@ def _apply_uri_fallbacks(
             continue
         if "_inferred_project" in sessions[cid]:
             continue
-        inferred = _project_from_folder_uri_list(
+        inferred = project_from_folder_uri_list(
             bubble_folder_uris_by_cid.get(cid, [])
-        ) or _project_from_uri_list(
+        ) or project_from_uri_list(
             bubble_file_uris_by_cid.get(cid, [])
         )
         if inferred:

@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: split_projects_inference
     content: Split cursor_view/projects/inference.py (685 lines) into name.py, uris.py, workspace_json.py, workspace_sources.py, workspace_identifier.py, composer_uris.py, pane_view.py, and a slimmed inference.py that owns only workspace_info; re-export the now-public helpers via projects/__init__.py and update extraction imports to drop the underscore-prefixed cross-package names
-    status: pending
+    status: completed
   - id: split_source_diff
     content: Split cursor_view/cache/source_diff.py (629 lines) into a cursor_view/cache/diff/ subpackage with types.py, hashing.py, cache_state.py, global_db.py, workspace_db.py, propagation.py, and engine.py; delete the old source_diff.py after updating call sites
     status: pending
