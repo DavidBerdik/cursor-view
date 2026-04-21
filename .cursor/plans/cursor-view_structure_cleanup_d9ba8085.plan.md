@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: move_legacy_chatdata_sql
     content: Move the global legacy-chatdata SQL out of cursor_view/extraction/core.py _collect_global_item_table_chats and into a new iter_global_legacy_chatdata() iterator in cursor_view/sources/item_table.py so extraction consumes sources instead of opening SQLite directly
-    status: pending
+    status: completed
   - id: dedupe_pane_view
     content: Delete the pane-view cid parsing duplicated between cursor_view/projects/inference.py and cursor_view/cache/source_diff.py; have cache/diff/hashing.py import cid_from_pane_view_key and cids_from_pane_container_value from cursor_view/projects/pane_view.py
     status: pending
