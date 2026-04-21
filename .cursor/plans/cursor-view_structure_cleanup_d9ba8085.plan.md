@@ -49,7 +49,7 @@ todos:
     status: completed
   - id: verify
     content: Run the smoke-test import line documented in the plan, then python -m unittest discover -s tests and cd frontend && npm run build to confirm no regressions
-    status: pending
+    status: completed
 isProject: false
 ---
 
