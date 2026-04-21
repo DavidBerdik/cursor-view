@@ -36,7 +36,7 @@ from cursor_view.projects.workspace_sources import (
     _project_root_from_history,
     _project_root_from_tree_view_state,
 )
-from cursor_view.sources.sqlite_data import j
+from cursor_view.sources.sqlite_util import j
 
 logger = logging.getLogger(__name__)
 

@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict
 
 from cursor_view.paths import cursor_root, global_storage_path
-from cursor_view.sources.sqlite_data import build_bubble_order_map
+from cursor_view.sources.composer_data import build_bubble_order_map
 
 logger = logging.getLogger(__name__)
 

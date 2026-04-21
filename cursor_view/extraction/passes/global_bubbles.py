@@ -7,7 +7,7 @@ import pathlib
 from collections import defaultdict
 from typing import Any, Dict
 
-from cursor_view.sources.sqlite_data import (
+from cursor_view.sources.bubbles import (
     iter_bubbles_for_cids,
     iter_bubbles_from_disk_kv,
 )

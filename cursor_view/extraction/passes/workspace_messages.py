@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 from cursor_view.paths import workspaces
 from cursor_view.projects import workspace_info
-from cursor_view.sources.sqlite_data import iter_chat_from_item_table
+from cursor_view.sources.item_table import iter_chat_from_item_table
 
 logger = logging.getLogger(__name__)
 

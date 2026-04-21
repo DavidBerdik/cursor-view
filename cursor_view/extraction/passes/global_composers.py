@@ -10,7 +10,7 @@ from cursor_view.projects import (
     project_from_global_composer_files,
     project_from_workspace_identifier,
 )
-from cursor_view.sources.sqlite_data import (
+from cursor_view.sources.composer_data import (
     iter_composer_data,
     iter_composer_data_for_cids,
 )

@@ -1,7 +1,15 @@
 """Cursor source-database access helpers.
 
-Currently exposes :mod:`cursor_view.sources.sqlite_data` for read-only
-access to the workspace and global ``state.vscdb`` files. Future Cursor
-data sources (filesystem-backed caches, IPC-based sources, etc.) should
-land alongside it.
+Internals are split by source table:
+
+- :mod:`cursor_view.sources.sqlite_util` — ``j()`` and the shared
+  ``cursorDiskKV`` connection handshake.
+- :mod:`cursor_view.sources.bubbles` — ``bubbleId:*`` iterators.
+- :mod:`cursor_view.sources.composer_data` — ``composerData:*``
+  iterators and the ``fullConversationHeadersOnly`` order map.
+- :mod:`cursor_view.sources.item_table` — workspace / global
+  ``ItemTable`` chat-shaped reads.
+
+Future Cursor data sources (filesystem-backed caches, IPC-based
+sources, etc.) should land alongside these as new submodules.
 """

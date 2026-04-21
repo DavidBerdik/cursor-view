@@ -8,7 +8,7 @@ import sqlite3
 from typing import Dict
 
 from cursor_view.projects.uris import _file_uri_to_path, _path_group_key
-from cursor_view.sources.sqlite_data import j
+from cursor_view.sources.sqlite_util import j
 
 logger = logging.getLogger(__name__)
 

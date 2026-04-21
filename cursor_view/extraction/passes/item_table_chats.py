@@ -7,7 +7,7 @@ import pathlib
 import sqlite3
 from typing import Any, Dict
 
-from cursor_view.sources.sqlite_data import j
+from cursor_view.sources.sqlite_util import j
 
 logger = logging.getLogger(__name__)
 

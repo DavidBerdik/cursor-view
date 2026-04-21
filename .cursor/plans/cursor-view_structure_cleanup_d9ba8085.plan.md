@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: split_sources
     content: Split cursor_view/sources/sqlite_data.py (419 lines) into sqlite_util.py (j, _connect_cursor_disk_kv), bubbles.py, composer_data.py, and item_table.py; unify iter_bubbles_from_disk_kv/iter_composer_data on _connect_cursor_disk_kv and swap the nested try/except for contextlib.closing where it shortens the function
-    status: pending
+    status: completed
   - id: move_legacy_chatdata_sql
     content: Move the global legacy-chatdata SQL out of cursor_view/extraction/core.py _collect_global_item_table_chats and into a new iter_global_legacy_chatdata() iterator in cursor_view/sources/item_table.py so extraction consumes sources instead of opening SQLite directly
     status: pending
