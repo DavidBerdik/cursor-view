@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: split_extraction_core
     content: Split cursor_view/extraction/core.py (716 lines) into a cursor_view/extraction/passes/ subpackage with one module per pass (workspace_messages, global_bubbles, global_composers, uri_fallbacks, task_subagents, subagent_inheritance, item_table_chats, finalize); keep core.py as the orchestrator only
-    status: pending
+    status: completed
   - id: split_projects_inference
     content: Split cursor_view/projects/inference.py (685 lines) into name.py, uris.py, workspace_json.py, workspace_sources.py, workspace_identifier.py, composer_uris.py, pane_view.py, and a slimmed inference.py that owns only workspace_info; re-export the now-public helpers via projects/__init__.py and update extraction imports to drop the underscore-prefixed cross-package names
     status: pending

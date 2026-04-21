@@ -2,8 +2,8 @@
 
 The top-level :func:`extract_chats` is a sequence of well-defined passes
 over the workspace and global SQLite databases; each pass lives in its
-own private helper so the orchestrator reads as a recipe rather than one
-300-line function.
+own module under :mod:`cursor_view.extraction.passes` so the
+orchestrator reads as a recipe rather than one 300-line function.
 
 Pass order matters:
 
@@ -38,54 +38,17 @@ Pass order matters:
    project, and returns the recency-sorted list.
 """
 
+from __future__ import annotations
+
 import logging
-import pathlib
-import sqlite3
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
-from cursor_view.extraction.diagnostics import (
-    diagnostics_enabled,
-    dump_workspace_diagnostics,
-)
-from cursor_view.paths import cursor_root, global_storage_path, workspaces
-from cursor_view.projects.inference import (
-    _project_from_folder_uri_list,
-    _project_from_global_composer_files,
-    _project_from_uri_list,
-    _project_from_workspace_identifier,
-    workspace_info,
-)
-from cursor_view.sources.sqlite_data import (
-    build_bubble_order_map,
-    iter_bubbles_for_cids,
-    iter_bubbles_from_disk_kv,
-    iter_chat_from_item_table,
-    iter_composer_data,
-    iter_composer_data_for_cids,
-    j,
-)
-from cursor_view.timestamps import session_sort_key_ms
+from cursor_view.paths import cursor_root, global_storage_path
+from cursor_view.sources.sqlite_data import build_bubble_order_map
 
 logger = logging.getLogger(__name__)
-
-# Cursor names every ``task_v2``-spawned subagent composer ``task-<toolCallId>``
-# where ``<toolCallId>`` is the parent bubble's ``toolFormerData.toolCallId``.
-# This convention was observed empirically across a real Cursor install; it is
-# the only durable link back to the parent when Cursor persists the subagent
-# with ``subagentInfo: null`` (which is the current behavior). Pass 5 strips
-# this prefix to look up the parent in ``tool_call_parent``.
-_TASK_CID_PREFIX = "task-"
-
-# Sentinel ordinal for bubbles whose bubbleId is absent from the composer's
-# ``fullConversationHeadersOnly`` array (legacy builds, or a bubble written
-# after the composerData snapshot we read). Chosen much larger than any real
-# ordinal so unmapped bubbles sort to the END of the per-cid bucket while
-# still preserving encountered-order within the unmapped tail. Kept a
-# plain int (not ``math.inf``) so (ordinal, seq) tuples stay comparable
-# under the stdlib's ordering rules.
-_UNMAPPED_BUBBLE_ORDINAL = 10**9
 
 
 @dataclass
@@ -139,525 +102,26 @@ def _merge_global_composer_into_meta(meta: dict, cid: str, data: dict) -> None:
         meta["lastUpdatedAt"] = last_updated
 
 
-def _collect_workspace_messages(
-    root: pathlib.Path,
-    ws_proj: Dict[str, Dict[str, Any]],
-    comp_meta: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    sessions: Dict[str, Dict[str, Any]],
-    cids: set[str] | None = None,
-) -> None:
-    """Pass 1: scan workspace DBs for project metadata and ItemTable messages.
-
-    Populates ``ws_proj`` / ``comp_meta`` / ``comp2ws`` / ``sessions`` in
-    place. Composers seen only in the workspace ItemTable (no prior
-    metadata entry) get a synthetic ``Chat <id-prefix>`` title so they
-    still surface in the UI.
-
-    When ``cids`` is given, the pass still runs ``workspace_info`` on
-    every workspace (so ``ws_proj`` stays complete for ancestor lookups
-    in Pass 6), but message recording and synthetic meta seeding in
-    ``sessions`` are restricted to cids in the dirty set. Populating
-    ``comp_meta`` / ``comp2ws`` for every seen cid remains correct
-    because those dicts are additive and the callers only serialize the
-    dirty subset.
-    """
-    logger.debug("Processing workspace databases...")
-    ws_count = 0
-    for ws_id, db in workspaces(root):
-        ws_count += 1
-        logger.debug("Processing workspace %s - %s", ws_id, db)
-        proj, meta = workspace_info(db)
-        ws_proj[ws_id] = proj
-        for cid, m in meta.items():
-            comp_meta[cid] = m
-            comp2ws[cid] = ws_id
-
-        # Extract chat data from workspace's state.vscdb
-        msg_count = 0
-        for cid, role, text, db_path in iter_chat_from_item_table(db):
-            if cids is not None and cid not in cids:
-                continue
-            sessions[cid]["messages"].append({"role": role, "content": text})
-            if "db_path" not in sessions[cid]:
-                sessions[cid]["db_path"] = db_path
-            msg_count += 1
-            if cid not in comp_meta:
-                comp_meta[cid] = {"title": f"Chat {cid[:8]}", "createdAt": None, "lastUpdatedAt": None}
-                comp2ws[cid] = ws_id
-        logger.debug("  - Extracted %s messages from workspace %s", msg_count, ws_id)
-
-    logger.debug("Processed %s workspaces", ws_count)
-
-
-def _collect_global_bubbles(
-    global_db: pathlib.Path,
-    sessions: Dict[str, Dict[str, Any]],
-    comp_meta: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    bubble_file_uris_by_cid: Dict[str, list[str]],
-    bubble_folder_uris_by_cid: Dict[str, list[str]],
-    tool_call_parent: Dict[str, str],
-    bubble_order_by_cid: Dict[str, Dict[str, int]],
-    cids: set[str] | None = None,
-) -> None:
-    """Pass 2: extract per-bubble messages + URIs from the global cursorDiskKV.
-
-    Always records ``db_path``, composer meta, and URIs for every bubble
-    we see, even for text-less ones, so later project inference can still
-    work from ``workspaceUris`` attached to empty assistant bubbles.
-    Also records ``toolCallId -> parent composerId`` for every tool-call
-    bubble so ``_link_task_subagents_to_parents`` can recover subagent
-    parent links that Cursor no longer stores on the subagent itself.
-
-    ``cursorDiskKV`` returns ``bubbleId:*`` rows in primary-key (key-string)
-    order, which is effectively random for the UUIDv4 bubbleIds Cursor
-    uses. Appending messages in that order scrambles the chronological
-    turn order and makes ``coalesce_consecutive_messages_by_role`` merge
-    unrelated user prompts. ``bubble_order_by_cid`` -- the
-    ``{cid -> {bubbleId -> ordinal}}`` map produced by
-    :func:`cursor_view.sources.sqlite_data.build_bubble_order_map` from
-    each composer's ``composerData.fullConversationHeadersOnly`` --
-    supplies Cursor's own canonical ordering. Messages are accumulated
-    per cid tagged with their ordinal and sorted before being appended
-    to ``sessions[cid]["messages"]``, so the final list matches the
-    order the user actually saw the turns in. Bubbles whose bubbleId
-    is missing from the map (legacy builds, or a bubble written after
-    the composerData snapshot we read) fall to the end of the per-cid
-    list in encountered order -- the exact fallback
-    ``fullConversationHeadersOnly`` is designed to make rare.
-
-    When ``cids`` is given, bubbles are fetched via
-    :func:`iter_bubbles_for_cids` so only rows in the dirty set are
-    read -- a PK-range scan per cid instead of the full-table scan.
-    The in-memory ``tool_call_parent`` built here only covers dirty
-    composers; Pass 5 merges in the cached map for the rest.
-    """
-    if cids is not None:
-        bubble_iter = iter_bubbles_for_cids(global_db, cids)
-    else:
-        bubble_iter = iter_bubbles_from_disk_kv(global_db)
-    # Per-cid ordered message buckets populated from the bubble stream.
-    # Each entry is (ordinal, sequence, message_dict): ``ordinal`` comes
-    # from the headers array (or ``_UNMAPPED_BUBBLE_ORDINAL`` for bubbles
-    # not listed there) and ``sequence`` is the encounter order used as
-    # a stable tiebreaker so bubbles with identical ordinals preserve the
-    # order the iterator yielded them.
-    messages_by_cid: Dict[str, list[tuple[int, int, dict]]] = defaultdict(list)
-    msg_count = 0
-    seq = 0
-    for cid, bubble_id, role, text, db_path, file_uris, folder_uris, tool_call in bubble_iter:
-        # Always record db_path, comp_meta, and URIs, even for text-less
-        # bubbles, so project inference can see workspaceUris attached to
-        # empty assistant bubbles.
-        if "db_path" not in sessions[cid]:
-            sessions[cid]["db_path"] = db_path
-        if file_uris:
-            bubble_file_uris_by_cid[cid].extend(file_uris)
-        if folder_uris:
-            bubble_folder_uris_by_cid[cid].extend(folder_uris)
-        if tool_call is not None:
-            tcid, _name = tool_call
-            # Cursor stamps each tool invocation with the upstream model
-            # provider's tool-call id (e.g. Anthropic's ``toolu_*``, OpenAI's
-            # ``call_*``). These are unique per model invocation, so a
-            # collision here would indicate a bubble replay or storage
-            # anomaly; first-seen wins for determinism.
-            tool_call_parent.setdefault(tcid, cid)
-        if cid not in comp_meta:
-            comp_meta[cid] = {"title": f"Chat {cid[:8]}", "createdAt": None, "lastUpdatedAt": None}
-            comp2ws[cid] = "(global)"
-        if not text:
-            continue
-        ordinal_map = bubble_order_by_cid.get(cid) or {}
-        ordinal = ordinal_map.get(bubble_id, _UNMAPPED_BUBBLE_ORDINAL)
-        messages_by_cid[cid].append((ordinal, seq, {"role": role, "content": text}))
-        seq += 1
-        msg_count += 1
-
-    # Sort each cid's bucket by (ordinal, seq) and append to sessions.
-    # Pass 1 workspace-ItemTable messages (if any) stay at the head of
-    # sessions[cid]["messages"]; this matches the prior "Pass 1 before
-    # Pass 2" ordering for composers that appear in both stores, while
-    # reordering Pass 2's contribution into Cursor's canonical turn order.
-    for cid, bucket in messages_by_cid.items():
-        bucket.sort(key=lambda item: (item[0], item[1]))
-        sessions[cid]["messages"].extend(msg for _ord, _s, msg in bucket)
-
-    logger.debug("  - Extracted %s messages from global cursorDiskKV bubbles", msg_count)
-
-
-def _collect_global_composers(
-    global_db: pathlib.Path,
-    sessions: Dict[str, Dict[str, Any]],
-    ws_proj: Dict[str, Dict[str, Any]],
-    comp_meta: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    subagent_parent: Dict[str, str],
-    cids: set[str] | None = None,
-) -> None:
-    """Pass 3: extract composerData conversations, merge meta, resolve workspaces.
-
-    For each composer:
-
-    - Remember the ``subagentInfo.parentComposerId`` link so subagents
-      (e.g. ``explore`` tasks) can inherit a parent's project later.
-    - Adopt the composer's ``name`` / timestamps as metadata if we don't
-      already have workspace-scoped metadata for this composer.
-    - Attempt to associate the composer with a real workspace via
-      ``workspaceIdentifier`` first, then fall back to
-      ``_project_from_global_composer_files``. Only override when the
-      current mapping is ``(global)``/absent, so workspace-scoped
-      associations from the earlier workspace pass win.
-    - Append every non-empty message from ``data.conversation`` as a
-      user/assistant message in ``sessions[cid]``.
-
-    When ``cids`` is given, composer rows are fetched via
-    :func:`iter_composer_data_for_cids` (batched IN query on the
-    primary key) instead of the full-table LIKE scan.
-    """
-    if cids is not None:
-        composer_iter = iter_composer_data_for_cids(global_db, cids)
-    else:
-        composer_iter = iter_composer_data(global_db)
-    comp_count = 0
-    for cid, data, db_path in composer_iter:
-        # Record subagent -> parent relationship so an unresolved subagent
-        # can later inherit its parent composer's project. Subagents
-        # (e.g. type "explore") are spawned without their own
-        # workspaceIdentifier or attached-file URIs, so none of the
-        # standard resolution paths find a project for them.
-        si = data.get("subagentInfo") if isinstance(data, dict) else None
-        if isinstance(si, dict):
-            pcid = si.get("parentComposerId")
-            if isinstance(pcid, str) and pcid and pcid != cid:
-                subagent_parent[cid] = pcid
-
-        created_at = data.get("createdAt")
-        last_updated = data.get("lastUpdatedAt")
-        if last_updated is None:
-            last_updated = created_at
-        name = data.get("name")
-        if isinstance(name, str) and name.strip():
-            use_title = name.strip()
-        else:
-            use_title = f"Chat {cid[:8]}"
-
-        if cid not in comp_meta:
-            comp_meta[cid] = {
-                "title": use_title,
-                "createdAt": created_at,
-                "lastUpdatedAt": last_updated,
-            }
-            comp2ws[cid] = "(global)"
-        else:
-            _merge_global_composer_into_meta(comp_meta[cid], cid, data)
-
-        # Record the database path
-        if "db_path" not in sessions[cid]:
-            sessions[cid]["db_path"] = db_path
-
-        # Try to associate this global composer with a real workspace.
-        # 1) Explicit workspaceIdentifier (most reliable)
-        # 2) File URIs in composerData (originalFileStates, attached URIs)
-        # Only override the workspace mapping if it's currently (global) or
-        # absent, so workspace-scoped mappings from step 1 are preserved.
-        current_ws = comp2ws.get(cid)
-        if current_ws in (None, "(global)"):
-            wsid_resolved = _project_from_workspace_identifier(
-                data.get("workspaceIdentifier") if isinstance(data, dict) else None
-            )
-            if wsid_resolved is not None:
-                ws_id, resolved_project = wsid_resolved
-                comp2ws[cid] = ws_id
-                if ws_id not in ws_proj or (ws_proj[ws_id].get("name") in (None, "(unknown)")):
-                    ws_proj[ws_id] = resolved_project
-            else:
-                inferred = _project_from_global_composer_files(data)
-                if inferred and "_inferred_project" not in sessions[cid]:
-                    sessions[cid]["_inferred_project"] = inferred
-
-        # Extract conversation from composer data
-        conversation = data.get("conversation", [])
-        if conversation:
-            msg_count = 0
-            for msg in conversation:
-                msg_type = msg.get("type")
-                if msg_type is None:
-                    continue
-
-                # Type 1 = user, Type 2 = assistant
-                role = "user" if msg_type == 1 else "assistant"
-                content = msg.get("text", "")
-                if content and isinstance(content, str):
-                    sessions[cid]["messages"].append({"role": role, "content": content})
-                    msg_count += 1
-
-            if msg_count > 0:
-                comp_count += 1
-                logger.debug("  - Added %s messages from composer %s", msg_count, cid[:8])
-
-    if comp_count > 0:
-        logger.debug("  - Extracted data from %s composers in global cursorDiskKV", comp_count)
-
-
-def _apply_uri_fallbacks(
-    sessions: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    bubble_file_uris_by_cid: Dict[str, list[str]],
-    bubble_folder_uris_by_cid: Dict[str, list[str]],
-) -> None:
-    """Pass 4: infer a project from bubble URIs for composers still tagged ``(global)``.
-
-    Folder URIs are preferred since they are candidate project roots
-    as-is; file URIs require common-prefix + filename-trim logic and are
-    noisier.
-    """
-    fallback_cids = set(bubble_folder_uris_by_cid) | set(bubble_file_uris_by_cid)
-    for cid in fallback_cids:
-        if comp2ws.get(cid) != "(global)":
-            continue
-        if "_inferred_project" in sessions[cid]:
-            continue
-        inferred = _project_from_folder_uri_list(
-            bubble_folder_uris_by_cid.get(cid, [])
-        ) or _project_from_uri_list(
-            bubble_file_uris_by_cid.get(cid, [])
-        )
-        if inferred:
-            sessions[cid]["_inferred_project"] = inferred
-
-
-def _link_task_subagents_to_parents(
-    sessions: Dict[str, Dict[str, Any]],
-    subagent_parent: Dict[str, str],
-    tool_call_parent: Dict[str, str],
-    cached_tool_call_parent: Dict[str, str] | None = None,
-) -> None:
-    """Pass 5: map ``task-<toolCallId>`` composers to the parent that fired the tool.
-
-    Some subagent composers are persisted with ``subagentInfo: null`` (seen
-    on ``task_v2``-spawned composers), so ``_apply_subagent_inheritance``
-    finds no link. Their composerId is always ``"task-" + toolCallId``,
-    and the parent's bubble carries the same ``toolCallId`` in
-    ``toolFormerData``. Combine the two to recover the parent link so the
-    subsequent inheritance pass can attach the parent's workspace.
-
-    This pass is a dedicated seam rather than part of Pass 3 or Pass 6
-    because of where the two halves of its input live: Pass 3 walks
-    ``composerData`` and never sees bubble ``toolFormerData``, so it
-    cannot populate ``tool_call_parent`` itself, while Pass 6 expects
-    ``subagent_parent`` to be final before it walks. Pass 2 already
-    builds ``tool_call_parent`` cheaply as a side-effect of its bubble
-    iteration, so this pass only has to do an O(sessions) dict join,
-    not a second O(bubbles) scan.
-
-    In scoped mode, the in-memory ``tool_call_parent`` only covers
-    dirty composers' bubbles. ``cached_tool_call_parent`` -- the
-    persisted map from the chat-index cache -- fills in the rest, with
-    the in-memory map winning on conflict so fresh entries from a
-    rescanned parent override stale cached ones.
-    """
-    merged_map = tool_call_parent
-    if cached_tool_call_parent:
-        merged_map = dict(cached_tool_call_parent)
-        merged_map.update(tool_call_parent)
-    # Guard against ``subagent_parent[cid]`` being preset (e.g. genuine
-    # ``subagentInfo.parentComposerId`` from Pass 3) so authentic links win
-    # over reconstructed ones in the rare case both are present for the
-    # same composer.
-    for cid in sessions.keys():
-        if not cid.startswith(_TASK_CID_PREFIX):
-            continue
-        if cid in subagent_parent:
-            continue
-        tcid = cid[len(_TASK_CID_PREFIX):]
-        parent = merged_map.get(tcid)
-        if parent and parent != cid:
-            subagent_parent[cid] = parent
-
-
-def _apply_subagent_inheritance(
-    sessions: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    subagent_parent: Dict[str, str],
-    ancestor_comp2ws: Dict[str, str] | None = None,
-    ancestor_inferred_project: Dict[str, Dict[str, Any]] | None = None,
-) -> None:
-    """Pass 6: make subagent composers inherit a resolved ancestor's project.
-
-    Subagent composers (e.g. ``explore`` tasks) are spawned with no
-    ``workspaceIdentifier``, no attached-file URIs, and no URIs in their
-    bubbles, so they need a parent's workspace to fall back on. By the
-    time this pass runs, ``subagent_parent`` has been populated from two
-    sources:
-
-    - (a) Authentic ``subagentInfo.parentComposerId`` entries recorded
-      by ``_collect_global_composers`` (Pass 3).
-    - (b) Reconstructed ``task-<toolCallId> -> parent_cid`` entries
-      recorded by ``_link_task_subagents_to_parents`` (Pass 5) for
-      composers persisted with ``subagentInfo: null`` (``task_v2``
-      subagents on current Cursor builds).
-
-    Both kinds are treated identically: walk the parent chain up to
-    ``_MAX_PARENT_DEPTH`` hops and inherit the first resolved ancestor's
-    workspace or inferred project. Ordering invariants: must run AFTER
-    every other project-resolution pass so ancestor state is final, and
-    AFTER Pass 5 so its synthetic entries are visible to the walk.
-
-    In scoped mode, ancestors that weren't part of the dirty set have
-    no ``comp2ws`` / ``_inferred_project`` entries of their own because
-    the earlier passes skipped them. ``ancestor_comp2ws`` and
-    ``ancestor_inferred_project`` -- the cache's view of those
-    composers -- are consulted only after the current run's dicts
-    miss, so freshly computed ancestor state always wins over cached.
-    """
-    _MAX_PARENT_DEPTH = 8
-    for child_cid, first_parent in subagent_parent.items():
-        if comp2ws.get(child_cid) not in (None, "(global)"):
-            continue
-        if sessions.get(child_cid, {}).get("_inferred_project"):
-            continue
-        visited: set[str] = {child_cid}
-        ancestor = first_parent
-        depth = 0
-        while ancestor and ancestor not in visited and depth < _MAX_PARENT_DEPTH:
-            visited.add(ancestor)
-            ancestor_ws = comp2ws.get(ancestor)
-            if ancestor_ws is None and ancestor_comp2ws is not None:
-                ancestor_ws = ancestor_comp2ws.get(ancestor)
-            if ancestor_ws and ancestor_ws != "(global)":
-                comp2ws[child_cid] = ancestor_ws
-                break
-            ancestor_project = sessions.get(ancestor, {}).get("_inferred_project")
-            if ancestor_project is None and ancestor_inferred_project is not None:
-                ancestor_project = ancestor_inferred_project.get(ancestor)
-            if ancestor_project:
-                sessions[child_cid]["_inferred_project"] = ancestor_project
-                break
-            ancestor = subagent_parent.get(ancestor)
-            depth += 1
-
-
-def _collect_global_item_table_chats(
-    global_db: pathlib.Path,
-    sessions: Dict[str, Dict[str, Any]],
-    comp_meta: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    cids: set[str] | None = None,
-) -> None:
-    """Pass 7: scrape legacy ``workbench.panel.aichat.view.aichat.chatdata`` tabs.
-
-    This is an older chat storage format that predates the
-    ``cursorDiskKV``/``composerData`` split; wrapped in a broad
-    ``try/except`` so a schema mismatch in this legacy path never takes
-    down the rest of the extraction.
-
-    When ``cids`` is given, the blob is still fully parsed (the legacy
-    value is stored as a single JSON row so there's no SQL-level way to
-    narrow it) but messages are only written for tab ids in the dirty
-    set.
-    """
-    try:
-        con = sqlite3.connect(f"file:{global_db}?mode=ro", uri=True)
-        chat_data = j(con.cursor(), "ItemTable", "workbench.panel.aichat.view.aichat.chatdata")
-        if chat_data:
-            msg_count = 0
-            for tab in chat_data.get("tabs", []):
-                tab_id = tab.get("tabId")
-                if cids is not None and tab_id not in cids:
-                    continue
-                if tab_id and tab_id not in comp_meta:
-                    comp_meta[tab_id] = {
-                        "title": f"Global Chat {tab_id[:8]}",
-                        "createdAt": None,
-                        "lastUpdatedAt": None,
-                    }
-                    comp2ws[tab_id] = "(global)"
-
-                for bubble in tab.get("bubbles", []):
-                    content = ""
-                    if "text" in bubble:
-                        content = bubble["text"]
-                    elif "content" in bubble:
-                        content = bubble["content"]
-
-                    if content and isinstance(content, str):
-                        role = "user" if bubble.get("type") == "user" else "assistant"
-                        sessions[tab_id]["messages"].append({"role": role, "content": content})
-                        msg_count += 1
-            logger.debug("  - Extracted %s messages from global chat data", msg_count)
-        con.close()
-    except Exception as e:
-        logger.debug("Error processing global ItemTable: %s", e)
-
-
-def _finalize_sessions(
-    sessions: Dict[str, Dict[str, Any]],
-    ws_proj: Dict[str, Dict[str, Any]],
-    comp2ws: Dict[str, str],
-    comp_meta: Dict[str, Dict[str, Any]],
-    cids: set[str] | None = None,
-) -> list[Dict[str, Any]]:
-    """Pass 8: drop empty sessions, resolve each one's project, sort by recency.
-
-    Project resolution preference:
-
-    1. The workspace's own project, if named.
-    2. A project inferred from URIs / composer files.
-    3. The workspace project as-is (which may be ``(unknown)``), or the
-       sentinel ``{"name": "(unknown)", ...}`` as a last resort.
-
-    Reaching branch 3 means every upstream pass has failed for this
-    composer: no workspaceIdentifier, no pane-view-key link (Pass 1),
-    no bubble URIs (Pass 4), no ``subagentInfo`` parent and no
-    ``task-<toolCallId>`` reconstruction (Passes 5 + 6). A steady
-    trickle of these is expected (e.g. ephemeral global-only chats),
-    but a sudden spike in ``(unknown)`` counts is an operational
-    signal that Cursor's on-disk schema has shifted again and the
-    pipeline likely needs another heuristic rather than a tweak to
-    an existing pass.
-
-    When ``cids`` is given, only sessions for those composers are
-    emitted; ancestor composers whose state lived in the scratch dicts
-    purely to support Pass 6's walk are dropped here so the output
-    matches the dirty set the caller asked about.
-    """
-    out = []
-    for cid, data in sessions.items():
-        if cids is not None and cid not in cids:
-            continue
-        if not data["messages"]:
-            continue
-        ws_id = comp2ws.get(cid, "(unknown)")
-        ws_project = ws_proj.get(ws_id)
-        inferred_project = data.get("_inferred_project")
-        if ws_project and ws_project.get("name") not in (None, "(unknown)"):
-            project = ws_project
-        elif inferred_project:
-            project = inferred_project
-        else:
-            project = ws_project or {"name": "(unknown)", "rootPath": "(unknown)"}
-        meta = comp_meta.get(cid, {"title": "(untitled)", "createdAt": None, "lastUpdatedAt": None})
-
-        # Create the output object with the db_path included
-        chat_data = {
-            "project": project,
-            "session": {"composerId": cid, **meta},
-            "messages": data["messages"],
-            "workspace_id": ws_id,
-        }
-
-        # Add the database path if available
-        if "db_path" in data:
-            chat_data["db_path"] = data["db_path"]
-
-        out.append(chat_data)
-
-    # Sort by recency (parsed ms) so ordering matches timestamp semantics
-    out.sort(key=lambda s: session_sort_key_ms(s.get("session", {})), reverse=True)
-    logger.debug("Total chat sessions extracted: %s", len(out))
-    return out
+# Per-pass helpers live under :mod:`cursor_view.extraction.passes`. The
+# import is placed AFTER ``_merge_global_composer_into_meta`` is defined
+# because :mod:`cursor_view.extraction.passes.global_composers` pulls
+# that helper back through this module's namespace, and resolving the
+# name during Python's partially-initialized-module phase would fail
+# if the ``def`` had not already executed.
+from cursor_view.extraction.diagnostics import (
+    diagnostics_enabled,
+    dump_workspace_diagnostics,
+)
+from cursor_view.extraction.passes import (
+    _apply_subagent_inheritance,
+    _apply_uri_fallbacks,
+    _collect_global_bubbles,
+    _collect_global_composers,
+    _collect_global_item_table_chats,
+    _collect_workspace_messages,
+    _finalize_sessions,
+    _link_task_subagents_to_parents,
+)
 
 
 def extract_chats(
@@ -682,11 +146,9 @@ def extract_chats(
     root = cursor_root()
     logger.debug("Using Cursor root: %s", root)
 
-    # Diagnostic: Check for AI-related keys in the first workspace
     if diagnostics_enabled():
         dump_workspace_diagnostics(root)
 
-    # map lookups
     ws_proj: Dict[str, Dict[str, Any]] = {}
     comp_meta: Dict[str, Dict[str, Any]] = {}
     comp2ws: Dict[str, str] = {}
@@ -738,8 +200,6 @@ def extract_chats(
             subagent_parent,
             cids=cids,
         )
-        # Tertiary fallback: for composers still tagged (global) without a
-        # project, infer from URIs seen in their bubbles.
         _apply_uri_fallbacks(
             sessions,
             comp2ws,
@@ -756,7 +216,6 @@ def extract_chats(
             tool_call_parent,
             cached_tool_call_parent=(cached_state.tool_call_parent if cached_state else None),
         )
-        # Quaternary fallback: subagent composers inherit an ancestor's project.
         _apply_subagent_inheritance(
             sessions,
             comp2ws,
@@ -766,7 +225,6 @@ def extract_chats(
                 cached_state.ancestor_inferred_project if cached_state else None
             ),
         )
-        # Also try the legacy ItemTable chat storage in the global DB.
         _collect_global_item_table_chats(global_db, sessions, comp_meta, comp2ws, cids=cids)
 
     return _finalize_sessions(sessions, ws_proj, comp2ws, comp_meta, cids=cids)
