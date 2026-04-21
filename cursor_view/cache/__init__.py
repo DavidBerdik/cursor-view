@@ -3,14 +3,13 @@
 Public surface: :class:`DirtySet`, :func:`compute_source_diff`,
 :func:`apply_delta`, and :func:`backfill_incremental_tables`. Internals
 are split between :mod:`cursor_view.cache.diff` (read-only diff pass,
-further decomposed by source-DB type) and
-:mod:`cursor_view.cache.apply_delta` (single-transaction write pass,
-plus the one-shot full-rebuild backfill helper) so
+further decomposed by source-DB type) and :mod:`cursor_view.cache.delta`
+(single-transaction write pass + one-shot full-rebuild backfill) so
 :mod:`cursor_view.chat_index` doesn't grow past the module-size soft
 limit.
 """
 
-from cursor_view.cache.apply_delta import apply_delta, backfill_incremental_tables
+from cursor_view.cache.delta import apply_delta, backfill_incremental_tables
 from cursor_view.cache.diff import DirtySet, compute_source_diff
 
 __all__ = [

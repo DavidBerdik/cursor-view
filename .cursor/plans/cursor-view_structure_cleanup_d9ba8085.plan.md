@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: split_apply_delta
     content: Split cursor_view/cache/apply_delta.py (534 lines) into a cursor_view/cache/delta/ subpackage with cached_state.py, composer_rows.py, project_only.py, metadata.py, engine.py, and backfill.py; delete the old apply_delta.py after updating call sites
-    status: pending
+    status: completed
   - id: split_sources
     content: Split cursor_view/sources/sqlite_data.py (419 lines) into sqlite_util.py (j, _connect_cursor_disk_kv), bubbles.py, composer_data.py, and item_table.py; unify iter_bubbles_from_disk_kv/iter_composer_data on _connect_cursor_disk_kv and swap the nested try/except for contextlib.closing where it shortens the function
     status: pending

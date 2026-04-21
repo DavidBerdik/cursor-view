@@ -166,7 +166,7 @@ class IncrementalRefreshTest(unittest.TestCase):
                 return_value=self.cursor_root,
             ),
             patch(
-                "cursor_view.cache.apply_delta.cursor_root",
+                "cursor_view.cache.delta.project_only.cursor_root",
                 return_value=self.cursor_root,
             ),
             patch("cursor_view.projects.git.cursor_root", return_value=self.cursor_root),
