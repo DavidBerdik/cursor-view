@@ -48,10 +48,10 @@ def _collect_global_bubbles(
     order, which is effectively random for the UUIDv4 bubbleIds Cursor
     uses. Appending messages in that order scrambles the chronological
     turn order and makes ``coalesce_consecutive_messages_by_role`` merge
-    unrelated user prompts. ``bubble_order_by_cid`` -- the
+    unrelated user prompts.     ``bubble_order_by_cid`` -- the
     ``{cid -> {bubbleId -> ordinal}}`` map produced by
-    :func:`cursor_view.sources.sqlite_data.build_bubble_order_map` from
-    each composer's ``composerData.fullConversationHeadersOnly`` --
+    :func:`cursor_view.sources.composer_data.build_bubble_order_map`
+    from each composer's ``composerData.fullConversationHeadersOnly`` --
     supplies Cursor's own canonical ordering. Messages are accumulated
     per cid tagged with their ordinal and sorted before being appended
     to ``sessions[cid]["messages"]``, so the final list matches the

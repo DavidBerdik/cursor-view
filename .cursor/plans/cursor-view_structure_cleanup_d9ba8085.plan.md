@@ -37,7 +37,7 @@ todos:
     status: completed
   - id: comment_hygiene
     content: Strip narrating comments in cursor_view/chat_format.py::format_chat_for_frontend and across the new extraction/passes/*.py modules per .cursor/rules/comments-style.mdc; keep the comments that explain heuristic priority or non-obvious intent
-    status: pending
+    status: completed
   - id: split_context_menu
     content: Split frontend/src/components/AppContextMenu.js (268 lines) by extracting isEditableElement + findSelectionContainer into frontend/src/utils/dom.js and the selection save/restore state into frontend/src/hooks/useSavedSelection.js; reduce AppContextMenu.js to handlers + <Menu> JSX
     status: pending

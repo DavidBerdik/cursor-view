@@ -60,7 +60,6 @@ def messages_for_json_export(messages):
 def format_chat_for_frontend(chat):
     """Format the chat data to match what the frontend expects."""
     try:
-        # Generate a unique ID for this chat if it doesn't have one
         session_id = str(uuid.uuid4())
         if "session" in chat and chat["session"] and isinstance(chat["session"], dict):
             session_id = chat["session"].get("composerId", session_id)
@@ -70,15 +69,11 @@ def format_chat_for_frontend(chat):
         if "session" in chat and chat["session"] and isinstance(chat["session"], dict):
             date = session_display_date_seconds(chat["session"])
 
-        # Ensure project has expected fields
         project = chat.get("project", {})
         if not isinstance(project, dict):
             project = {}
 
-        # Get workspace_id from chat
         workspace_id = chat.get("workspace_id", "unknown")
-
-        # Get the database path information
         db_path = chat.get("db_path", "Unknown database path")
 
         # If project name is a username or unknown, try to extract a better name from rootPath
@@ -86,7 +81,8 @@ def format_chat_for_frontend(chat):
             current_name = project.get("name", "")
             username = os.path.basename(os.path.expanduser("~"))
 
-            # Check if project name is username or unknown or very generic
+            # Only try to improve when the current name looks generic/unhelpful
+            # (username-as-project, literal "(unknown)", or a shallow home path).
             if (
                 current_name == username
                 or current_name == "(unknown)"
@@ -97,10 +93,10 @@ def format_chat_for_frontend(chat):
                 )
             ):
 
-                # Try to extract a better name from the path
                 project_name = extract_project_name_from_path(project.get("rootPath"), debug=False)
 
-                # Only use the new name if it's meaningful
+                # Reject replacements that re-introduce the same generic names
+                # we were trying to move away from.
                 if (
                     project_name
                     and project_name != "Unknown Project"
@@ -111,16 +107,16 @@ def format_chat_for_frontend(chat):
                     logger.debug("Improved project name from '%s' to '%s'", current_name, project_name)
                     project["name"] = project_name
 
-        # If the project doesn't have a rootPath or it's very generic, enhance it with workspace_id
+        # Fall back to a workspace-id-scoped synthetic rootPath when the project has
+        # no real root so the frontend still shows a distinct entry per workspace.
         if not project.get("rootPath") or project.get("rootPath") == "/" or project.get("rootPath") == "/Users":
             if workspace_id != "unknown":
-                # Use workspace_id to create a more specific path
                 if not project.get("rootPath"):
                     project["rootPath"] = f"/workspace/{workspace_id}"
                 elif project.get("rootPath") == "/" or project.get("rootPath") == "/Users":
                     project["rootPath"] = f"{project['rootPath']}/workspace/{workspace_id}"
 
-        # FALLBACK: If project name is still generic, try git repositories
+        # Last-resort: ask SCM (git repos registered in the workspace) for a name.
         pname = project.get("name") or ""
         if pname in ["Home Directory", "(unknown)", "Root"] or (len(pname) <= 2 and pname.endswith(":")):
             git_project_name = extract_project_from_git_repos(workspace_id, debug=True)
@@ -132,26 +128,30 @@ def format_chat_for_frontend(chat):
                 )
                 project["name"] = git_project_name
 
-        # Add workspace_id to the project data explicitly
         project["workspace_id"] = workspace_id
 
-        # Ensure messages exist and are properly formatted
         messages = chat.get("messages", [])
         if not isinstance(messages, list):
             messages = []
 
-        # Create properly formatted chat object
         return {
             "project": project,
             "messages": messages,
             "date": date,
             "session_id": session_id,
             "workspace_id": workspace_id,
-            "db_path": db_path,  # Include the database path in the output
+            "db_path": db_path,
         }
     except Exception as e:
+        # TODO(bug): swallowing every exception and returning a stub with a
+        # fresh ``uuid.uuid4()`` session id breaks the cache's session-id
+        # invariant (``_delete_cid_rows`` deletes by the real cid, so the
+        # stub row lingers and API lookups by the real id 404). The
+        # follow-up bug-fix plan will change this handler to re-raise (or
+        # at minimum fall back to ``chat["session"]["composerId"]``); for
+        # now the behavior is preserved so this refactor stays purely
+        # structural.
         logger.error("Error formatting chat: %s", e)
-        # Return a minimal valid object if there's an error
         return {
             "project": {"name": "Error", "rootPath": "/"},
             "messages": [],
