@@ -1,20 +1,33 @@
-"""Row-hash + JSON-peek helpers used by every diff pass."""
+"""Row-hash + JSON-peek helpers used by every diff pass.
+
+Pane-view parsing (``aichat.view.<cid>`` key extraction and the pane
+container value decode) lives in :mod:`cursor_view.projects.pane_view`;
+this module re-exports those helpers under the underscore-prefixed
+names the sibling diff passes already use so the diff subpackage
+continues to speak in private-helper terms while sharing one
+authoritative implementation with the workspace-scan pass.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import re
 from typing import Any
 
-_COMPOSER_UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+from cursor_view.projects.pane_view import (
+    AICHAT_VIEW_PREFIX as _PANE_VIEW_PREFIX,
+    PANE_CONTAINER_PREFIX as _PANE_CONTAINER_PREFIX,
+    cid_from_pane_view_key as _cid_from_pane_view_key,
+    cids_from_pane_container_value as _cids_from_pane_container_value,
 )
 
-_PANE_VIEW_PREFIX = "workbench.panel.aichat.view."
-_PANE_CONTAINER_PREFIX = "workbench.panel.composerChatViewPane."
-# The legacy-chatdata key shares ``_PANE_VIEW_PREFIX`` so it must be
-# checked before the pane-view classification branch runs.
+# The legacy ``workbench.panel.aichat.view.aichat.chatdata`` row shares
+# :data:`_PANE_VIEW_PREFIX`; :mod:`cursor_view.cache.diff.global_db` reads it
+# as an ordinary ItemTable key, and :mod:`cursor_view.cache.diff.workspace_db`
+# excludes it from the pane-view classification branch. The constant is
+# kept here (rather than imported from :mod:`cursor_view.projects.pane_view`
+# where it is a private exclusion-list member) so the diff subpackage does
+# not reach across a package boundary for a plain string literal.
 _LEGACY_CHATDATA_KEY = "workbench.panel.aichat.view.aichat.chatdata"
 
 
@@ -40,38 +53,6 @@ def _composer_id_from_kv_key(key: str) -> str:
     """Extract ``<cid>`` from ``bubbleId:<cid>:<bid>`` or ``composerData:<cid>``."""
     parts = key.split(":", 2)
     return parts[1] if len(parts) >= 2 else ""
-
-
-def _cid_from_pane_view_key(key: str) -> str:
-    """Return the UUID ``<cid>`` in ``workbench.panel.aichat.view.<cid>`` or ``""``.
-
-    The UUID filter mirrors
-    :func:`cursor_view.projects.pane_view.composer_ids_from_pane_view_state`
-    so we don't pollute the dirty set with pane-instance ids that were
-    never composer ids.
-    """
-    if key == _LEGACY_CHATDATA_KEY or not key.startswith(_PANE_VIEW_PREFIX):
-        return ""
-    seg = key[len(_PANE_VIEW_PREFIX):]
-    return seg if _COMPOSER_UUID_RE.match(seg) else ""
-
-
-def _cids_from_pane_container_value(raw: Any) -> list[str]:
-    """Decode a ``composerChatViewPane.<paneId>`` value to its nested cid sub-keys."""
-    try:
-        data = json.loads(raw) if raw else None
-    except Exception:
-        return []
-    if not isinstance(data, dict):
-        return []
-    out: list[str] = []
-    for sk in data.keys():
-        if not isinstance(sk, str):
-            continue
-        cid = _cid_from_pane_view_key(sk)
-        if cid:
-            out.append(cid)
-    return out
 
 
 def _tool_call_id_from_bubble(raw: Any) -> str | None:
@@ -108,3 +89,20 @@ def _legacy_tab_ids(raw: Any) -> list[str]:
         if isinstance(tid, str) and tid:
             out.append(tid)
     return out
+
+
+# Re-exports for sibling diff passes. Keeping these as module-level names
+# (rather than requiring every importer to reach into
+# :mod:`cursor_view.projects.pane_view`) preserves the ``from .hashing
+# import _cid_from_pane_view_key`` call sites in ``global_db`` / ``workspace_db``.
+__all__ = [
+    "_PANE_CONTAINER_PREFIX",
+    "_PANE_VIEW_PREFIX",
+    "_LEGACY_CHATDATA_KEY",
+    "_cid_from_pane_view_key",
+    "_cids_from_pane_container_value",
+    "_composer_id_from_kv_key",
+    "_hash_value",
+    "_legacy_tab_ids",
+    "_tool_call_id_from_bubble",
+]

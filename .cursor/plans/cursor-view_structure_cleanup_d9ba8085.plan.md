@@ -28,7 +28,7 @@ todos:
     status: completed
   - id: dedupe_pane_view
     content: Delete the pane-view cid parsing duplicated between cursor_view/projects/inference.py and cursor_view/cache/source_diff.py; have cache/diff/hashing.py import cid_from_pane_view_key and cids_from_pane_container_value from cursor_view/projects/pane_view.py
-    status: pending
+    status: completed
   - id: dry_format_on_write
     content: Update ChatIndex._insert_chat to return (formatted_chat, coalesced_messages) (or accept pre-built args) so cursor_view/cache/delta/engine.py and cursor_view/cache/delta/backfill.py no longer re-run format_chat_for_frontend + coalesce_consecutive_messages_by_role on every refreshed composer
     status: pending
