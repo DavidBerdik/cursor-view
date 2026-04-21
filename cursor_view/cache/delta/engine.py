@@ -23,10 +23,6 @@ from cursor_view.cache.delta.project_only import (
     _workspace_db_lookup,
 )
 from cursor_view.cache.diff import DirtySet
-from cursor_view.chat_format import (
-    coalesce_consecutive_messages_by_role,
-    format_chat_for_frontend,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +38,10 @@ def apply_delta(
     dirty: DirtySet,
     source_fingerprint: str,
     sources: list[dict[str, Any]],
-    insert_chat: Callable[[sqlite3.Cursor, dict[str, Any], bool], None],
+    insert_chat: Callable[
+        [sqlite3.Cursor, dict[str, Any], bool],
+        tuple[dict[str, Any], list[dict[str, Any]]],
+    ],
     database_has_fts: Callable[[sqlite3.Connection], bool],
 ) -> None:
     """Apply ``dirty`` to the live cache in a single ``BEGIN IMMEDIATE`` tx.
@@ -51,9 +50,13 @@ def apply_delta(
     existing row-insertion logic (normally
     ``ChatIndex._insert_chat``) without :mod:`cursor_view.cache`
     having to import :mod:`cursor_view.chat_index` and create a
-    cycle. The caller owns the connection lifecycle, concurrency
-    serialization (``_rebuild_build_lock``), and the choice between
-    this path and the full-rebuild fallback.
+    cycle. It must return the ``(formatted_chat, coalesced_messages)``
+    pair produced while writing the content rows; the apply loop hands
+    that pair straight to ``_upsert_composer_state`` so the formatting
+    work is paid exactly once per refreshed composer. The caller owns
+    the connection lifecycle, concurrency serialization
+    (``_rebuild_build_lock``), and the choice between this path and
+    the full-rebuild fallback.
     """
     cur = con.cursor()
     fts_enabled = database_has_fts(con)
@@ -80,11 +83,7 @@ def apply_delta(
                 chat = new_chats.get(cid)
                 if chat is None:
                     continue
-                insert_chat(cur, chat, fts_enabled)
-                formatted = format_chat_for_frontend(chat)
-                messages = coalesce_consecutive_messages_by_role(
-                    formatted.get("messages", [])
-                )
+                formatted, messages = insert_chat(cur, chat, fts_enabled)
                 _upsert_composer_state(cur, chat, formatted, messages)
                 inserted += 1
 

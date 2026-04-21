@@ -312,13 +312,16 @@ class ChatIndex:
 
     def _insert_chat(
         self, cur: sqlite3.Cursor, chat: dict[str, Any], fts_enabled: bool
-    ) -> None:
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Forward to :func:`cursor_view.chat_index.rows._insert_chat`.
 
         Retained as a method so the apply-delta hook protocol
-        (``insert_chat=self._insert_chat``) stays intact.
+        (``insert_chat=self._insert_chat``) stays intact; the returned
+        ``(formatted_chat, coalesced_messages)`` pair lets the apply
+        path reuse the formatted result instead of re-running
+        ``format_chat_for_frontend`` + ``coalesce_consecutive_messages_by_role``.
         """
-        _insert_chat(cur, chat, fts_enabled)
+        return _insert_chat(cur, chat, fts_enabled)
 
     def _database_has_fts(self, con: sqlite3.Connection) -> bool:
         """Forward to :func:`cursor_view.chat_index.rows._database_has_fts`."""

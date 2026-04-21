@@ -31,7 +31,7 @@ todos:
     status: completed
   - id: dry_format_on_write
     content: Update ChatIndex._insert_chat to return (formatted_chat, coalesced_messages) (or accept pre-built args) so cursor_view/cache/delta/engine.py and cursor_view/cache/delta/backfill.py no longer re-run format_chat_for_frontend + coalesce_consecutive_messages_by_role on every refreshed composer
-    status: pending
+    status: completed
   - id: typing_cleanup
     content: Add dict[str, Any] / list[str] / typed return annotations to the composer-URI helpers (_project_from_global_composer_files, _extract_composerdata_context_uris, _project_from_root) that currently take a bare data argument
     status: pending

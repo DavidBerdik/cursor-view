@@ -68,9 +68,18 @@ def _build_index_to_temp(
         cur = con.cursor()
         fts_enabled = _create_fts_table(cur)
         chats = extract_chats()
+        # Collect the (chat, formatted, messages) triples produced by the
+        # insert loop so ``backfill_incremental_tables`` can hand them
+        # straight to ``_upsert_composer_state`` without re-running
+        # ``format_chat_for_frontend`` + ``coalesce_consecutive_messages_by_role``
+        # on every chat.
+        formatted_chats: list[
+            tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]
+        ] = []
         for chat in chats:
-            _insert_chat(cur, chat, fts_enabled)
-        backfill_incremental_tables(con, chats, sources)
+            formatted, messages = _insert_chat(cur, chat, fts_enabled)
+            formatted_chats.append((chat, formatted, messages))
+        backfill_incremental_tables(con, formatted_chats, sources)
         now = str(int(time.time()))
         meta_rows = [
             ("schema_version", str(INDEX_SCHEMA_VERSION)),

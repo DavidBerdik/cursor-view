@@ -54,20 +54,33 @@ def _fts_query(query: str) -> str:
     return " AND ".join(f'"{token}"*' for token in tokens)
 
 
-def _insert_chat(cur: sqlite3.Cursor, chat: dict[str, Any], fts_enabled: bool) -> None:
-    """Write one chat into the content tables of the cache.
+def _insert_chat(
+    cur: sqlite3.Cursor, chat: dict[str, Any], fts_enabled: bool
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Write one chat into the content tables and return ``(formatted, messages)``.
 
     Used by both the full rebuild and the incremental apply path.
     The caller is responsible for having already cleared any prior
     rows for ``session_id`` from the content tables (the full
     rebuild runs against a fresh temp DB; the incremental apply
-    runs :func:`cursor_view.cache.apply_delta._delete_cid_rows`
+    runs :func:`cursor_view.cache.delta.composer_rows._delete_cid_rows`
     first). This method therefore always re-numbers ``position``
     from ``0`` using :func:`enumerate` on the coalesced messages
     list; ``position`` is a per-refresh local index, NOT a globally
     stable identifier. Callers that need a stable per-message id
     should use ``(session_id, position)`` pairs read back after
     the most recent refresh.
+
+    The return value hands the same ``formatted`` dict and
+    ``coalesced_messages`` list produced here back to the caller
+    so the incremental apply path and the full-rebuild backfill
+    can feed them straight into
+    :func:`cursor_view.cache.delta.composer_rows._upsert_composer_state`
+    without re-running :func:`format_chat_for_frontend` +
+    :func:`coalesce_consecutive_messages_by_role` on every refreshed
+    composer. Those are the dominant per-chat costs on the write
+    path; paying them twice per composer wasted roughly half the
+    incremental-refresh wall-time budget.
 
     ``_insert_chat`` relies on ``formatted["messages"]`` already
     being in the correct chronological order produced by
@@ -127,6 +140,7 @@ def _insert_chat(cur: sqlite3.Cursor, chat: dict[str, Any], fts_enabled: bool) -
             "INSERT INTO chat_search_fts(session_id, content) VALUES(?, ?)",
             (session_id, search_blob),
         )
+    return formatted, messages
 
 
 def _count_summaries(con: sqlite3.Connection, query: str) -> int:

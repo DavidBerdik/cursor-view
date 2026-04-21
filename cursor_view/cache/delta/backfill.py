@@ -12,17 +12,13 @@ from cursor_view.cache.delta.metadata import (
     _sync_source_row,
 )
 from cursor_view.cache.diff import compute_source_diff
-from cursor_view.chat_format import (
-    coalesce_consecutive_messages_by_role,
-    format_chat_for_frontend,
-)
 
 logger = logging.getLogger(__name__)
 
 
 def backfill_incremental_tables(
     con: sqlite3.Connection,
-    chats: list[dict[str, Any]],
+    formatted_chats: list[tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]],
     sources: list[dict[str, Any]],
 ) -> None:
     """Populate the delta-only tables during a full rebuild.
@@ -42,6 +38,13 @@ def backfill_incremental_tables(
       map the diff pass builds as a side-effect of hashing
       ``bubbleId:*`` rows.
 
+    ``formatted_chats`` must be the ``(chat, formatted, messages)``
+    triples produced by the caller's insert loop -- ``_insert_chat``
+    already ran :func:`format_chat_for_frontend` +
+    :func:`coalesce_consecutive_messages_by_role` while writing the
+    content rows, so re-deriving them here would double the per-chat
+    formatting cost for every full rebuild.
+
     The diff's ``modified_cids`` / ``deleted_cids`` are intentionally
     discarded: every cid lands in ``modified_cids`` the first time
     because the cache starts empty, but the content tables are
@@ -56,11 +59,7 @@ def backfill_incremental_tables(
     path.
     """
     cur = con.cursor()
-    for chat in chats:
-        formatted = format_chat_for_frontend(chat)
-        messages = coalesce_consecutive_messages_by_role(
-            formatted.get("messages", [])
-        )
+    for chat, formatted, messages in formatted_chats:
         _upsert_composer_state(cur, chat, formatted, messages)
     dirty = compute_source_diff(sources, con)
     _sync_source_row(cur, dirty.source_row_snapshot)
@@ -68,7 +67,7 @@ def backfill_incremental_tables(
     logger.info(
         "Full-rebuild backfill: %s composer_state rows, %s source_row rows, "
         "%s tool_call_parent rows",
-        len(chats),
+        len(formatted_chats),
         len(dirty.source_row_snapshot),
         len(dirty.tool_call_parent_updates),
     )
