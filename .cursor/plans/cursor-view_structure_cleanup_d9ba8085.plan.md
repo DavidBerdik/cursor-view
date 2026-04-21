@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: split_source_diff
     content: Split cursor_view/cache/source_diff.py (629 lines) into a cursor_view/cache/diff/ subpackage with types.py, hashing.py, cache_state.py, global_db.py, workspace_db.py, propagation.py, and engine.py; delete the old source_diff.py after updating call sites
-    status: pending
+    status: completed
   - id: split_apply_delta
     content: Split cursor_view/cache/apply_delta.py (534 lines) into a cursor_view/cache/delta/ subpackage with cached_state.py, composer_rows.py, project_only.py, metadata.py, engine.py, and backfill.py; delete the old apply_delta.py after updating call sites
     status: pending

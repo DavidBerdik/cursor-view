@@ -44,7 +44,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from cursor_view.cache.source_diff import (
+from cursor_view.cache.diff import (
     DirtySet,
     SourceKey,
     SourceRowRecord,
