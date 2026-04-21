@@ -11,9 +11,12 @@ alwaysApply: true
   package counterpart. The old `server.py` was a full implementation
   at the root; that is exactly what this rule exists to prevent.
 - Organize by concern using subpackages, not by file type. Canonical
-  subpackages (extend, don't replace): `cursor_view/extraction/`,
-  `cursor_view/export/`, `cursor_view/projects/`, `cursor_view/sources/`,
-  `cursor_view/desktop/`.
+  subpackages (extend, don't replace, listed alphabetically):
+  `cursor_view/cache/` (with `diff/` and `delta/` sub-subpackages),
+  `cursor_view/chat_index/`, `cursor_view/desktop/`,
+  `cursor_view/export/`, `cursor_view/extraction/` (with a `passes/`
+  sub-subpackage for the per-pass modules),
+  `cursor_view/projects/`, `cursor_view/sources/`.
 - Do not create a new top-level Python file unless it is a shim for an
   existing package entry point. Ad-hoc utilities (e.g. the deleted
   `vscdb_to_sqlite.py`) belong inside a subpackage with a real caller,
@@ -21,6 +24,11 @@ alwaysApply: true
 - Frontend source lives under `frontend/src/` with this fixed structure:
   `theme/`, `contexts/`, `hooks/`, `utils/`, `markdown/`,
   `components/<feature>/`.
+- Tests live under `tests/` at the repo root and use stdlib
+  `unittest`. Any new behavior that touches the chat-index refresh
+  path must land with a synthetic-Cursor-DB regression test in
+  `tests/test_chat_index_incremental.py` or a new sibling; running
+  `python -m unittest discover -s tests` must stay green.
 
 # Dead code and build artifacts
 

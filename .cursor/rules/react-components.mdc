@@ -7,10 +7,14 @@ alwaysApply: false
 # Component size and layout
 
 - One React component per file. Components that exceed ~250 lines must
-  be decomposed into feature-folder siblings. Motivating example:
+  be decomposed into feature-folder siblings. Historical example:
   `ChatList.js` was 670 lines and now lives in `components/chat-list/`
   split into `ChatList`, `SearchBar`, `EmptyState`, `ProjectGroup`,
-  `ChatCard`.
+  `ChatCard`. Contemporary example: `AppContextMenu.js` was 268
+  lines and now delegates its save/restore selection state to the
+  `useSavedSelection` hook and its DOM helpers (`isEditableElement`,
+  `findSelectionContainer`) to `utils/dom.js`, leaving the component
+  at ~180 lines of handlers + `<Menu>` JSX.
 - Duplicated UI across pages (dialogs, toolbars, cards) is extracted
   into `components/<shared-area>/`. The export format + warning
   dialogs lived twice in the codebase before the refactor and must
@@ -19,12 +23,14 @@ alwaysApply: false
 # Shared logic and helpers
 
 - Duplicated logic across pages (fetch + cancel effects, cookie
-  read/write, event state machines) lives in `src/hooks/`. Current
-  examples: `useChatSummaries`, `useExportFlow`,
-  `useExportWarningPreference`.
-- Pure helpers (`formatDate`, `dbPathLabel`, cookie parsing) live in
-  `src/utils/`. A helper may not be copied into two components;
-  promote it on sight.
+  read/write, event state machines, selection save/restore) lives in
+  `src/hooks/`. Current examples: `useChatSummaries`, `useExportFlow`,
+  `useExportWarningPreference`, `useSavedSelection`. Hooks have
+  additional discipline of their own — see
+  [frontend-hooks.mdc](frontend-hooks.mdc).
+- Pure helpers (`formatDate`, `dbPathLabel`, cookie parsing, DOM
+  inspection) live in `src/utils/`. A helper may not be copied into
+  two components; promote it on sight.
 
 ```jsx
 // Wrong: duplicated at the top of ChatCard and ChatMetaPanel

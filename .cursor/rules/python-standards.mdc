@@ -7,13 +7,26 @@ alwaysApply: false
 # Module and function size
 
 - Soft limit: any single Python module over ~400 lines must be split
-  into a subpackage. Motivating examples: the original 377-line
-  `cursor_view/extraction.py` and 547-line `cursor_view/export_html.py`,
-  both of which became subpackages with a slim `__init__.py` re-export.
+  into a subpackage. Motivating examples from the current tree: the
+  819-line pre-split `cursor_view/chat_index.py` became
+  `cursor_view/chat_index/` (schema / fingerprint / rebuild / rows /
+  index); the 716-line pre-split `cursor_view/extraction/core.py`
+  became `cursor_view/extraction/core.py` (thin orchestrator) +
+  `cursor_view/extraction/passes/` (one module per pass); the
+  629-line pre-split `cursor_view/cache/source_diff.py` became
+  `cursor_view/cache/diff/` (types / hashing / cache_state /
+  global_db / workspace_db / propagation / engine). Historical
+  offenders (pre-refactor `cursor_view/extraction.py` at 377 lines
+  and `cursor_view/export_html.py` at 547 lines) are preserved in
+  git history; cite the current tree when documenting new splits.
 - Soft limit: no function longer than ~100 lines. Break long functions
   into private `_named_helper` functions that describe the pass they
-  perform, and keep the top-level function as a short recipe. See
-  `extract_chats` in `cursor_view/extraction/core.py`.
+  perform, and keep the top-level function as a short recipe. Recent
+  example: `cursor_view/projects/name.py::extract_project_name_from_path`
+  (93 lines pre-split) decomposes into `_strip_windows_drive_prefix`,
+  `_locate_user_home_dir`, `_choose_project_name_after_home`, and
+  `_reject_project_container_names` so the top-level recipe stays
+  auditable.
 
 # Docstrings and typing
 
@@ -23,6 +36,43 @@ alwaysApply: false
 - Prefer typed signatures (`dict[str, Any]`, `list[str]`,
   `pathlib.Path`) over bare `dict` / `list`. `Any` is acceptable for
   heterogeneous JSON pass-through.
+
+# Cross-package imports
+
+Do not import underscore-prefixed helpers across package boundaries.
+If a helper is needed by another subpackage, drop the leading
+underscore and re-export it through its owning package's
+`__init__.py`.
+
+Motivating example: `cursor_view/extraction/core.py` used to import
+`_project_from_folder_uri_list`, `_project_from_global_composer_files`,
+`_project_from_uri_list`, and `_project_from_workspace_identifier`
+straight out of `cursor_view/projects/inference.py`. The
+structure-cleanup plan dropped the leading underscores and
+re-exported them through `cursor_view.projects` as
+`project_from_folder_uri_list` / `project_from_global_composer_files`
+/ etc., so `extraction/passes/global_composers.py` and
+`extraction/passes/uri_fallbacks.py` now import the public aliases.
+Underscore-prefixed helpers are a signal to readers that the name is
+package-private; crossing that boundary hides a de-facto public API.
+
+# Import-time side effects
+
+Module-load must be free of external side effects: no filesystem
+sweeps, no network, no Flask app construction, no cache-directory
+mutation. Side-effecting work belongs inside a `main()` /
+`run_*()` function that the CLI or test harness calls explicitly.
+Merely importing a module to read a symbol out of it must never
+touch the user's disk or process state.
+
+Motivating example: the pre-refactor `cursor_view/terminal.py` ran
+`cleanup_orphan_temp_files()` and `app = create_app()` at the top
+level, so anything that imported the module for `run_server`'s
+signature (including introspection tools) would trigger a
+cache-directory sweep and Flask construction as a side effect.
+(Filed as bug #12 in the structure-cleanup plan; the fix is deferred
+to the follow-up bug-fix plan, but new code must not repeat the
+pattern.)
 
 # Logging
 

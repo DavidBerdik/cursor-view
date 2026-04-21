@@ -1,0 +1,124 @@
+---
+description: Discipline for custom hooks under frontend/src/hooks/
+globs: frontend/src/hooks/**/*.{js,jsx}
+alwaysApply: false
+---
+
+# Hooks under `frontend/src/hooks/`
+
+Custom hooks live in this directory when logic is shared between
+pages or when a component needs to outsource non-UI state (fetch +
+cancel, cookie read/write, event state machines, DOM selection
+save/restore). Component-size and shared-logic rules for the
+consumers are in
+[react-components.mdc](react-components.mdc); the discipline below
+applies to the hooks themselves.
+
+# Cancellation on every awaited effect
+
+Any hook with a `useEffect` that `await`s a network request (or any
+promise that races with the hook's inputs) must respect a local
+`cancelled` flag after each `await` boundary and ignore the result
+when cancelled. The dual of `useEffect`'s cancellation — a
+manual-trigger action like `refresh()` — must participate in the
+same flag (typically via a ref to the latest request id) so a slow
+response from a stale call cannot overwrite fresh state with older
+data.
+
+```jsx
+// Wrong: refresh() has no cancellation; a slow response that lands
+// after the user typed a new query overwrites the fresh results.
+function useChatSummaries(query) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchSummaries(query).then((d) => { if (!cancelled) setData(d); });
+    return () => { cancelled = true; };
+  }, [query]);
+  const refresh = async () => {
+    setData(await fetchSummaries(query));
+  };
+  return { data, refresh };
+}
+
+// Right: a shared latest-id ref gates both the effect and refresh().
+function useChatSummaries(query) {
+  const [data, setData] = useState(null);
+  const latestRef = useRef(0);
+  useEffect(() => {
+    const id = ++latestRef.current;
+    fetchSummaries(query).then((d) => {
+      if (id === latestRef.current) setData(d);
+    });
+  }, [query]);
+  const refresh = useCallback(async () => {
+    const id = ++latestRef.current;
+    const d = await fetchSummaries(query);
+    if (id === latestRef.current) setData(d);
+  }, [query]);
+  return { data, refresh };
+}
+```
+
+`useChatSummaries` is the canonical example and is also the hook the
+follow-up bug-fix plan's bug #11 targets; the pattern above is the
+required shape once that fix lands.
+
+# Stable callback references
+
+Any callback a hook returns that is likely to be passed to a
+memoized child or used in another hook's dependency list must be
+wrapped in `useCallback` with an accurate dependency list. Returning
+a fresh closure every render defeats memoization and silently
+inflates re-renders; it also makes consumers that put the callback
+in an effect's dep array re-run that effect on every render.
+
+`useSavedSelection` is the canonical counterexample (done right): it
+returns four callbacks (`save`, `restore`, `reset`,
+`scheduleRestore`), all wrapped in `useCallback` with accurate
+deps, and `AppContextMenu` hands them directly to `useEffect` dep
+arrays and to MUI's `TransitionProps.onEntered` without re-binding
+per render.
+
+# One concern per hook
+
+Hooks that combine unrelated concerns (e.g. both "fetch data" and
+"drive a multi-step dialog machine") must be split. The existing
+split between `useExportFlow` (dialog state machine) and
+`useExportWarningPreference` (cookie read/write) is the canonical
+shape. A hook whose return object has more than ~8 keys is usually
+doing too much and should be decomposed.
+
+# Expose minimal state
+
+Prefer narrow return shapes (`{ data, loading, error, refresh }`)
+over returning internal refs or raw `setState` functions. The
+setter belongs to the hook; the consumer gets a named action that
+can include invariants (e.g. `refresh()` bumping the latest-id
+ref) the bare setter cannot.
+
+```jsx
+// Wrong: leaks the ref and the raw setter
+function useSelection() {
+  const rangesRef = useRef([]);
+  const [selText, setSelText] = useState('');
+  return { rangesRef, selText, setSelText };
+}
+
+// Right: actions only
+function useSelection() {
+  const rangesRef = useRef([]);
+  const [selText, setSelText] = useState('');
+  const capture = useCallback((target) => { /* ...writes rangesRef */ }, []);
+  const reset = useCallback(() => { rangesRef.current = []; setSelText(''); }, []);
+  return { selText, capture, reset };
+}
+```
+
+# Canonical hooks to read when writing a new one
+
+- `useChatSummaries` — fetch + cancellation + query refresh.
+- `useExportFlow` — multi-step dialog state machine.
+- `useExportWarningPreference` — cookie-backed preference.
+- `useSavedSelection` — DOM-state capture / restore with an
+  `rAF`-driven replay hook.
