@@ -40,7 +40,7 @@ todos:
     status: completed
   - id: split_context_menu
     content: Split frontend/src/components/AppContextMenu.js (268 lines) by extracting isEditableElement + findSelectionContainer into frontend/src/utils/dom.js and the selection save/restore state into frontend/src/hooks/useSavedSelection.js; reduce AppContextMenu.js to handlers + <Menu> JSX
-    status: pending
+    status: completed
   - id: update_readme
     content: Refresh the README Project-layout section to reflect the new chat_index/, extraction/passes/, projects/ submodules, cache/diff/ and cache/delta/ subpackages, split sources/ modules, and the new useSavedSelection hook + utils/dom.js helpers
     status: pending

@@ -5,67 +5,21 @@ import ContentCutIcon from '@mui/icons-material/ContentCut';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 
-const isEditableElement = (el) => {
-  if (!el || el.nodeType !== 1) return false;
-  const tag = el.tagName;
-  if (tag === 'INPUT') {
-    const type = (el.getAttribute('type') || 'text').toLowerCase();
-    const textLike = [
-      'text', 'search', 'url', 'tel', 'email', 'password', 'number',
-    ];
-    return !el.disabled && !el.readOnly && textLike.includes(type);
-  }
-  if (tag === 'TEXTAREA') {
-    return !el.disabled && !el.readOnly;
-  }
-  return el.isContentEditable === true;
-};
-
-const findSelectionContainer = (el) => {
-  let node = el;
-  while (node && node.nodeType === 1) {
-    const style = window.getComputedStyle(node);
-    if (style.display === 'block' || style.display === 'flex' || style.display === 'grid') {
-      return node;
-    }
-    node = node.parentElement;
-  }
-  return el || document.body;
-};
+import { findSelectionContainer, isEditableElement } from '../utils/dom';
+import { useSavedSelection } from '../hooks/useSavedSelection';
 
 const AppContextMenu = () => {
   const [anchorPos, setAnchorPos] = useState(null);
   const [selectionText, setSelectionText] = useState('');
   const [editable, setEditable] = useState(false);
   const targetRef = useRef(null);
-  const savedRangesRef = useRef([]);
-  const savedInputSelectionRef = useRef(null);
-
-  const restoreSelection = useCallback(() => {
-    const inputSel = savedInputSelectionRef.current;
-    if (inputSel) {
-      const { el, start, end, direction } = inputSel;
-      try {
-        el.setSelectionRange(start, end, direction || 'none');
-      } catch (_) { /* noop */ }
-      return;
-    }
-    const ranges = savedRangesRef.current;
-    if (!ranges.length) return;
-    const sel = window.getSelection();
-    if (!sel) return;
-    try {
-      sel.removeAllRanges();
-      ranges.forEach((r) => sel.addRange(r));
-    } catch (_) { /* noop */ }
-  }, []);
+  const { save, restore, reset, scheduleRestore } = useSavedSelection();
 
   const handleClose = useCallback(() => {
     setAnchorPos(null);
     targetRef.current = null;
-    savedRangesRef.current = [];
-    savedInputSelectionRef.current = null;
-  }, []);
+    reset();
+  }, [reset]);
 
   useEffect(() => {
     const onContextMenu = (event) => {
@@ -77,31 +31,20 @@ const AppContextMenu = () => {
       const isEditable = isEditableElement(target);
       setEditable(isEditable);
 
+      save(target);
+
       const sel = window.getSelection();
       const docText = sel ? sel.toString() : '';
-
-      savedRangesRef.current = [];
-      savedInputSelectionRef.current = null;
-
       if (isEditable && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
         const start = target.selectionStart ?? 0;
         const end = target.selectionEnd ?? 0;
-        savedInputSelectionRef.current = {
-          el: target,
-          start,
-          end,
-          direction: target.selectionDirection,
-        };
+        // When the user right-clicks inside an INPUT/TEXTAREA with a
+        // live selection we prefer that selection's text over whatever
+        // ``window.getSelection()`` reports (the document-level API is
+        // blind to form-control selections on most browsers).
         const inputText = start !== end ? target.value.slice(start, end) : '';
         setSelectionText(inputText || docText);
       } else {
-        if (sel) {
-          const ranges = [];
-          for (let i = 0; i < sel.rangeCount; i += 1) {
-            ranges.push(sel.getRangeAt(i).cloneRange());
-          }
-          savedRangesRef.current = ranges;
-        }
         setSelectionText(docText);
       }
 
@@ -110,16 +53,12 @@ const AppContextMenu = () => {
 
     document.addEventListener('contextmenu', onContextMenu);
     return () => document.removeEventListener('contextmenu', onContextMenu);
-  }, []);
+  }, [save]);
 
   useEffect(() => {
     if (anchorPos === null) return undefined;
-    const raf1 = requestAnimationFrame(() => {
-      restoreSelection();
-      requestAnimationFrame(restoreSelection);
-    });
-    return () => cancelAnimationFrame(raf1);
-  }, [anchorPos, restoreSelection]);
+    return scheduleRestore();
+  }, [anchorPos, scheduleRestore]);
 
   const open = anchorPos !== null;
   const hasSelection = selectionText.length > 0;
@@ -242,7 +181,7 @@ const AppContextMenu = () => {
       disableRestoreFocus
       slotProps={{ paper: { sx: { minWidth: 180 } } }}
       MenuListProps={{ dense: true, autoFocus: false, autoFocusItem: false }}
-      TransitionProps={{ onEntered: restoreSelection }}
+      TransitionProps={{ onEntered: restore }}
     >
       <MenuItem onClick={handleCopy} disabled={!hasSelection}>
         <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
