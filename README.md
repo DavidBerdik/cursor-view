@@ -52,14 +52,6 @@ Top-level modules:
 
 - `app_factory.py`, `routes.py` &mdash; Flask app construction and the
   HTTP API.
-- `chat_index.py` &mdash; persistent SQLite cache of chat summaries
-  plus FTS search. Two-stage invalidation: a coarse
-  `(mtime, size, wal_mtime, wal_size)` fingerprint short-circuits
-  idle reads; on a miss, the cache runs a row-hash diff against the
-  Cursor source DBs (see `cache/` below) and applies the resulting
-  per-composer delta in a single transaction, falling back to a full
-  rebuild only on `force_refresh`, schema drift, `DatabaseError`, or
-  a missing cache file.
 - `chat_format.py` &mdash; shapes extracted chat data for the frontend.
 - `terminal.py`, `__main__.py` &mdash; terminal-mode entry point and
   the `python -m cursor_view` dispatcher.
@@ -68,46 +60,97 @@ Top-level modules:
 
 Subpackages:
 
+- `chat_index/` &mdash; persistent SQLite cache of chat summaries plus
+  FTS search, split by concern. `index.py` hosts the `ChatIndex`
+  orchestrator (refresh routing, connection lifecycle, the
+  stale-while-revalidate background worker). `schema.py` owns
+  `INDEX_SCHEMA_VERSION` and the DDL. `fingerprint.py` produces the
+  coarse `(mtime, size, wal_mtime, wal_size)` fingerprint that
+  short-circuits idle reads. `rebuild.py` is the full-rebuild path
+  (build-to-temp, atomic swap). `rows.py` holds the row-shaping
+  helpers (`_insert_chat`, `_count_summaries`, `_fetch_summaries`,
+  FTS / LIKE search, preview / search-blob derivation) shared by the
+  rebuild and incremental paths. On a fingerprint miss, the cache
+  runs a row-hash diff against the Cursor source DBs (see `cache/`
+  below) and applies the resulting per-composer delta in a single
+  transaction, falling back to a full rebuild only on
+  `force_refresh`, schema drift, `DatabaseError`, or a missing cache
+  file.
 - `extraction/` &mdash; pipeline that scans Cursor's SQLite databases
-  and produces chat sessions. `core.py` holds the orchestrator and the
-  per-pass helpers; `diagnostics.py` holds the optional probe gated by
-  the `CURSOR_CHAT_DIAGNOSTICS` environment variable. `extract_chats`
-  also accepts an optional `cids` set so the cache's incremental
-  refresh can re-extract only the composers whose source rows
-  actually changed.
+  and produces chat sessions. `core.py` holds the `extract_chats`
+  orchestrator, the `CachedExtractionState` helper dataclass, and
+  `_merge_global_composer_into_meta`. The eight ordered passes live
+  under `passes/` (`workspace_messages.py`, `global_bubbles.py`,
+  `global_composers.py`, `uri_fallbacks.py`, `task_subagents.py`,
+  `subagent_inheritance.py`, `item_table_chats.py`, `finalize.py`)
+  so each pass reads as a unit. `diagnostics.py` holds the optional
+  probe gated by the `CURSOR_CHAT_DIAGNOSTICS` environment variable.
+  `extract_chats` also accepts an optional `cids` set so the cache's
+  incremental refresh can re-extract only the composers whose source
+  rows actually changed.
 - `cache/` &mdash; incremental-refresh helpers invoked by
-  `chat_index.py`. `source_diff.py` computes a `DirtySet` by hashing
-  the exact `cursorDiskKV` and `ItemTable` rows extraction reads
-  (`bubbleId:*`, `composerData:*`, the workspace pane-view keys,
-  `treeViewState`, `history.entries`, `debug.selectedroot`, etc.) and
-  comparing against the cached hashes; `apply_delta.py` replays that
-  `DirtySet` against the live cache in one `BEGIN IMMEDIATE`
-  transaction and also owns the one-shot full-rebuild backfill that
-  populates the delta tables below.
+  `chat_index/`. Split into two subpackages:
+  - `cache/diff/` &mdash; the read-only diff pass. `engine.py`
+    orchestrates; `types.py` owns `DirtySet` / `SourceKey` /
+    `SourceRowRecord`; `hashing.py` is the row-hash + JSON-peek
+    helpers; `cache_state.py` snapshots the cache's own tables;
+    `global_db.py` and `workspace_db.py` split the per-source-DB
+    scans (`cursorDiskKV` / legacy chatdata vs. workspace
+    `ItemTable` + `workspace.json`); `propagation.py` runs the
+    post-hash classification (deletions, subagent-parent-chain
+    propagation, observability trimming).
+  - `cache/delta/` &mdash; the single-transaction write pass.
+    `engine.py` holds the `apply_delta` orchestrator;
+    `cached_state.py` seeds scoped extraction with ancestor +
+    `tool_call_parent` state; `composer_rows.py` does per-composer
+    delete / re-extract / upsert; `project_only.py` is the
+    workspace-scoped project refresh for `workspace_project_dirty`
+    entries; `metadata.py` reconciles `tool_call_parent`,
+    `source_row`, and the `meta` book-keeping rows; `backfill.py`
+    runs the one-shot full-rebuild backfill that populates the delta
+    tables below.
 - `export/` &mdash; chat export generators: `themes.py` (palette),
   `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
   normalization), `html.py` (standalone HTML + inline CSS template).
-- `projects/` &mdash; project-name resolution. `inference.py` walks
-  workspace storage, tree view state, and history entries;
-  `git.py` is the SCM (git repo) fallback.
-- `sources/` &mdash; raw access to Cursor's on-disk data.
-  `sqlite_data.py` holds the iterators over `cursorDiskKV` and
-  `ItemTable`, including the cid-scoped forms
-  (`iter_bubbles_for_cids`, `iter_composer_data_for_cids`) that
-  range-scan a single composer's rows without touching the rest of
-  the corpus.
+- `projects/` &mdash; project-name resolution, split by heuristic.
+  `inference.py` is the slim `workspace_info` orchestrator.
+  `name.py` derives a display name from a resolved root path.
+  `uris.py` decodes file / vscode-remote URIs and normalizes paths.
+  `workspace_json.py` reads the `workspaceStorage/<id>/workspace.json`
+  sidecar. `workspace_sources.py` pulls project roots from the
+  `treeViewState` and `history.entries` keys. `workspace_identifier.py`
+  resolves a composer's `workspaceIdentifier` block.
+  `composer_uris.py` mines composerData for file/folder URIs.
+  `pane_view.py` is the single home for `aichat.view.<cid>` key
+  parsing (shared with the cache's row-hash pass). `git.py` is the
+  SCM (git repo) fallback. Public helpers are re-exported from the
+  package `__init__.py` so cross-package callers don't reach for
+  underscore-prefixed names.
+- `sources/` &mdash; raw access to Cursor's on-disk data, split by
+  source table. `sqlite_util.py` holds the `j()` JSON loader and the
+  `_connect_cursor_disk_kv` open-and-probe helper. `bubbles.py` owns
+  `iter_bubbles_from_disk_kv` and the cid-scoped
+  `iter_bubbles_for_cids` (range-scans a single composer's rows
+  without touching the rest of the corpus). `composer_data.py` owns
+  `iter_composer_data`, `iter_composer_data_for_cids`, and
+  `build_bubble_order_map` (reads each composer's
+  `fullConversationHeadersOnly` so extraction can sort bubbles into
+  Cursor's canonical turn order instead of the alphabetical
+  bubbleId order SQLite returns). `item_table.py` owns
+  `iter_chat_from_item_table` and `iter_global_legacy_chatdata`.
 - `desktop/` &mdash; pywebview launcher. `__init__.py` hosts
   `run_desktop`; `api.py` is the JS &harr; Python bridge;
   `window_state.py` persists window geometry across launches.
 
 The cache SQLite layout has two kinds of tables, owned by
-`ChatIndex._create_schema`:
+`cursor_view/chat_index/schema.py`:
 
 - **Content tables** serve the HTTP API: `chat_summary`,
   `chat_message`, `chat_search_text`, `chat_search_fts`. Both the
   full rebuild and the per-cid delete-then-insert in
-  `cache/apply_delta.py` go through `ChatIndex._insert_chat`, so the
-  row shape is identical between the rebuild and delta paths.
+  `cache/delta/engine.py` go through
+  `cursor_view.chat_index.rows._insert_chat`, so the row shape is
+  identical between the rebuild and delta paths.
 - **Delta tables** exist only to support the row-hash diff and are
   never read by the API:
   - `composer_state` &mdash; per-composer watermark
@@ -151,9 +194,12 @@ and pane-view key promotion from `(global)` to a workspace.
 - `contexts/` &mdash; `ColorContext.js` and `ThemeModeContext.js`, one
   React context per file.
 - `hooks/` &mdash; shared custom hooks: `useChatSummaries`,
-  `useExportFlow`, `useExportWarningPreference`.
+  `useExportFlow`, `useExportWarningPreference`, `useSavedSelection`
+  (captures + restores the user's text selection across the
+  context-menu open cycle).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
-  `exportChat`.
+  `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
+  consumed by `AppContextMenu`).
 - `markdown/` &mdash; the unified/remark/rehype pipeline that
   pre-renders chat messages to HTML.
 - `components/`

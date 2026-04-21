@@ -43,7 +43,7 @@ todos:
     status: completed
   - id: update_readme
     content: Refresh the README Project-layout section to reflect the new chat_index/, extraction/passes/, projects/ submodules, cache/diff/ and cache/delta/ subpackages, split sources/ modules, and the new useSavedSelection hook + utils/dom.js helpers
-    status: pending
+    status: completed
   - id: review_cursor_rules
     content: Review every .cursor/rules/*.mdc against the post-refactor reality; refresh motivating examples in project-layout/python-standards/react-components, add a "tests/" bullet to project-layout, add a "no cross-package private imports" clause to python-standards, add a "no import-time side effects at module load" clause, and author a new .cursor/rules/frontend-hooks.mdc capturing the useChatSummaries-style cancellation-and-useCallback discipline
     status: pending
