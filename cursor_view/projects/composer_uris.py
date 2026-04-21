@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, Iterable
+from typing import Any, Dict, Iterable
 
 from cursor_view.projects.name import _project_from_root
 from cursor_view.projects.uris import _normalize_uri_to_path, _path_group_key
 from cursor_view.projects.workspace_sources import _project_root_from_history
 
 
-def _extract_composerdata_context_uris(data) -> tuple[list[str], list[str]]:
+def _extract_composerdata_context_uris(data: Any) -> tuple[list[str], list[str]]:
     """Return ``(file_uris, folder_uris)`` from ``composerData.context.mentions``.
 
     Newer Cursor versions record user-mentioned files and folders under
@@ -55,7 +55,7 @@ def _extract_composerdata_context_uris(data) -> tuple[list[str], list[str]]:
     return file_uris, folder_uris
 
 
-def _project_from_folder_uri_list(uris: Iterable[str]) -> dict | None:
+def _project_from_folder_uri_list(uris: Iterable[str]) -> dict[str, Any] | None:
     """Infer a project from URIs that point at folders (not files).
 
     Folder URIs are candidate project roots as-is. If multiple distinct
@@ -91,7 +91,7 @@ def _project_from_folder_uri_list(uris: Iterable[str]) -> dict | None:
     return _project_from_root(common)
 
 
-def _project_from_uri_list(uris: Iterable[str]) -> dict | None:
+def _project_from_uri_list(uris: Iterable[str]) -> dict[str, Any] | None:
     """Infer a project from a flat list of *file* URIs.
 
     The last path segment is treated as a filename and stripped before
@@ -100,7 +100,7 @@ def _project_from_uri_list(uris: Iterable[str]) -> dict | None:
     """
     if not uris:
         return None
-    paths = []
+    paths: list[str] = []
     for u in uris:
         p = _normalize_uri_to_path(u)
         if p:
@@ -111,7 +111,7 @@ def _project_from_uri_list(uris: Iterable[str]) -> dict | None:
     return _project_from_root(root) if root else None
 
 
-def _project_from_global_composer_files(data) -> dict | None:
+def _project_from_global_composer_files(data: Any) -> dict[str, Any] | None:
     """Infer a project from composer-level file/folder signals.
 
     Sources mined:

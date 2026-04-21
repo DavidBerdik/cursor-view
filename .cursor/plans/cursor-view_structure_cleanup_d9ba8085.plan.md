@@ -34,7 +34,7 @@ todos:
     status: completed
   - id: typing_cleanup
     content: Add dict[str, Any] / list[str] / typed return annotations to the composer-URI helpers (_project_from_global_composer_files, _extract_composerdata_context_uris, _project_from_root) that currently take a bare data argument
-    status: pending
+    status: completed
   - id: comment_hygiene
     content: Strip narrating comments in cursor_view/chat_format.py::format_chat_for_frontend and across the new extraction/passes/*.py modules per .cursor/rules/comments-style.mdc; keep the comments that explain heuristic priority or non-obvious intent
     status: pending

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,7 @@ def _normalize_root_path_field(project_root: str) -> str:
     return "/" + project_root.lstrip("/")
 
 
-def _project_from_root(project_root: str) -> dict | None:
+def _project_from_root(project_root: str) -> dict[str, Any] | None:
     """Build a ``{name, rootPath}`` project dict from a resolved root, or ``None``."""
     if not project_root:
         return None
