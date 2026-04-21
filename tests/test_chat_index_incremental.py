@@ -157,7 +157,10 @@ class IncrementalRefreshTest(unittest.TestCase):
         # patch each binding rather than the definition so every caller
         # resolves to the synthetic root we built above.
         self._patches = [
-            patch("cursor_view.chat_index.cursor_root", return_value=self.cursor_root),
+            patch(
+                "cursor_view.chat_index.fingerprint.cursor_root",
+                return_value=self.cursor_root,
+            ),
             patch(
                 "cursor_view.extraction.core.cursor_root",
                 return_value=self.cursor_root,

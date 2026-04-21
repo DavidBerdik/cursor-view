@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: split_chat_index
     content: Split cursor_view/chat_index.py (819 lines) into a cursor_view/chat_index/ subpackage with schema.py, fingerprint.py, rebuild.py, rows.py, and index.py (the ChatIndex orchestrator)
-    status: pending
+    status: completed
   - id: split_extraction_core
     content: Split cursor_view/extraction/core.py (716 lines) into a cursor_view/extraction/passes/ subpackage with one module per pass (workspace_messages, global_bubbles, global_composers, uri_fallbacks, task_subagents, subagent_inheritance, item_table_chats, finalize); keep core.py as the orchestrator only
     status: pending
