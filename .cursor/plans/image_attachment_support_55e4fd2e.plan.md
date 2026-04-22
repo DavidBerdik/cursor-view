@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: extraction-global-bubbles
     content: Thread image_refs through cursor_view/extraction/passes/global_bubbles.py so each message dict carries an images list in the same ordinal/turn order as text.
-    status: pending
+    status: completed
   - id: chat-format-coalesce
     content: Update coalesce_consecutive_messages_by_role and messages_for_json_export in cursor_view/chat_format.py to preserve and concatenate message.images; adjust the 'Content unavailable' placeholder for image-only turns.
     status: pending

@@ -7,6 +7,7 @@ import pathlib
 from collections import defaultdict
 from typing import Any, Dict
 
+from cursor_view.images import image_ref_to_transport_dict
 from cursor_view.sources.bubbles import (
     iter_bubbles_for_cids,
     iter_bubbles_from_disk_kv,
@@ -80,7 +81,17 @@ def _collect_global_bubbles(
     messages_by_cid: Dict[str, list[tuple[int, int, dict]]] = defaultdict(list)
     msg_count = 0
     seq = 0
-    for cid, bubble_id, role, text, db_path, file_uris, folder_uris, tool_call in bubble_iter:
+    for (
+        cid,
+        bubble_id,
+        role,
+        text,
+        db_path,
+        file_uris,
+        folder_uris,
+        tool_call,
+        image_refs,
+    ) in bubble_iter:
         if "db_path" not in sessions[cid]:
             sessions[cid]["db_path"] = db_path
         if file_uris:
@@ -98,11 +109,24 @@ def _collect_global_bubbles(
         if cid not in comp_meta:
             comp_meta[cid] = {"title": f"Chat {cid[:8]}", "createdAt": None, "lastUpdatedAt": None}
             comp2ws[cid] = "(global)"
-        if not text:
+        # Image-only bubbles become empty-text messages so the attached
+        # image still renders in the correct turn; a truly empty bubble
+        # (no text, no images) has no user signal and is dropped.
+        if not text and not image_refs:
             continue
         ordinal_map = bubble_order_by_cid.get(cid) or {}
         ordinal = ordinal_map.get(bubble_id, _UNMAPPED_BUBBLE_ORDINAL)
-        messages_by_cid[cid].append((ordinal, seq, {"role": role, "content": text}))
+        messages_by_cid[cid].append(
+            (
+                ordinal,
+                seq,
+                {
+                    "role": role,
+                    "content": text,
+                    "images": [image_ref_to_transport_dict(r) for r in image_refs],
+                },
+            )
+        )
         seq += 1
         msg_count += 1
 
