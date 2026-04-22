@@ -37,7 +37,7 @@ todos:
     status: completed
   - id: frontend-gallery
     content: Add frontend/src/components/chat-detail/MessageImageGallery.js rendering <img src=/api/chat/:id/image/:uuid> with MUI theme tokens (no hard-coded colors).
-    status: pending
+    status: completed
   - id: tests-images
     content: "Add tests/test_chat_index_images.py with five cache-path cases (modern-image rebuild, legacy-image rebuild, image modification via incremental apply, missing-disk-image graceful skip, multiple-images-per-message end-to-end) plus two coalescer unit cases (same-role image concatenation, image-only turn avoids 'Content unavailable' placeholder)."
     status: pending
