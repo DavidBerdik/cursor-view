@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: delta-delete-images
     content: Extend _delete_cid_rows in cursor_view/cache/delta/composer_rows.py with DELETE FROM chat_image; confirm _composer_hash stays image-bytes-free and document why.
-    status: pending
+    status: completed
   - id: index-get-chat-and-image
     content: Extend ChatIndex.get_chat with include_image_bytes; add ChatIndex.get_image for the image route; keep read-only connection guard intact.
     status: pending

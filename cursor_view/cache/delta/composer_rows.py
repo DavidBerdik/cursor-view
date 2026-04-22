@@ -24,10 +24,15 @@ def _delete_cid_rows(cur: sqlite3.Cursor, cid: str, fts_enabled: bool) -> None:
     """Drop every cache row tied to one composer id.
 
     Includes ``composer_state`` so a subsequently-deleted cid does not
-    linger as a ghost ancestor for Pass 6 on the next refresh.
+    linger as a ghost ancestor for Pass 6 on the next refresh. Also
+    includes ``chat_image`` so a re-inserted composer's images cannot
+    shadow stale rows from the previous refresh -- the re-insert runs
+    under the same ``(session_id, position, image_index)`` PK, so
+    without the delete an attachment removed upstream would linger.
     """
     cur.execute("DELETE FROM chat_summary WHERE session_id=?", (cid,))
     cur.execute("DELETE FROM chat_message WHERE session_id=?", (cid,))
+    cur.execute("DELETE FROM chat_image WHERE session_id=?", (cid,))
     cur.execute("DELETE FROM chat_search_text WHERE session_id=?", (cid,))
     if fts_enabled:
         cur.execute("DELETE FROM chat_search_fts WHERE session_id=?", (cid,))
@@ -43,6 +48,14 @@ def _composer_hash(
     caller that only reads ``composer_state`` can compare this column
     against a freshly derived payload to detect drift without joining
     back to ``chat_message``.
+
+    Image BLOBs are intentionally excluded from the payload: the
+    source-row hash already flips when a bubble's images change (the
+    image refs are part of the value hashed by
+    :func:`cursor_view.cache.diff.hashing._hash_value`), so folding
+    megabyte-scale bytes into ``composer_hash`` would defeat the
+    purpose of this lightweight watermark column without adding any
+    new detection capability.
     """
     payload = {
         "project_name": chat_formatted.get("project", {}).get("name", ""),
