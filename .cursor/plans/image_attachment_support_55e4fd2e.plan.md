@@ -40,7 +40,7 @@ todos:
     status: completed
   - id: tests-images
     content: "Add tests/test_chat_index_images.py with five cache-path cases (modern-image rebuild, legacy-image rebuild, image modification via incremental apply, missing-disk-image graceful skip, multiple-images-per-message end-to-end) plus two coalescer unit cases (same-role image concatenation, image-only turn avoids 'Content unavailable' placeholder)."
-    status: pending
+    status: completed
   - id: review-and-author-rules
     content: "Audit every .cursor/rules/*.mdc against the post-implementation tree per §14. Update motivating examples / canonical lists that drifted; confirm no new TODO(bug): markers slipped in; verify _insert_chat stayed under the 100-line limit and MessageBubble.js under 250 lines. Author a new .cursor/rules/image-attachments.mdc capturing (a) the two Cursor storage formats and the always-parse-both rule, (b) MIME sniffing via magic bytes rather than file extension, (c) BLOBs live only in chat_image (never in chat_search_* and never in _composer_hash), (d) image bytes flow only through the dedicated image route or include_image_bytes=True for exports (never in the chat-detail JSON), (e) graceful skip with lazy %s logging rather than raising or TODO(bug):. If the BLOB-handling bullets read better as an extension to sqlite-cursor-db.mdc than as a standalone rule, fold them there instead per §14.2. Rule edits ship in the same PR as the feature per the Rule drift clause."
     status: pending
