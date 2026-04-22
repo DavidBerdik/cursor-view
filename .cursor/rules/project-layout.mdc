@@ -15,7 +15,7 @@ alwaysApply: true
   `cursor_view/cache/` (with `diff/` and `delta/` sub-subpackages),
   `cursor_view/chat_index/`, `cursor_view/desktop/`,
   `cursor_view/export/`, `cursor_view/extraction/` (with a `passes/`
-  sub-subpackage for the per-pass modules),
+  sub-subpackage for the per-pass modules), `cursor_view/images/`,
   `cursor_view/projects/`, `cursor_view/sources/`.
 - Do not create a new top-level Python file unless it is a shim for an
   existing package entry point. Ad-hoc utilities (e.g. the deleted

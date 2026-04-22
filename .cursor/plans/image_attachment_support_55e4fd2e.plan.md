@@ -46,7 +46,7 @@ todos:
     status: completed
   - id: docs-and-rules
     content: Update README.md Project layout (add cursor_view/images/, add chat_image to content tables), .cursor/rules/project-layout.mdc (add images/ to alphabetical subpackage list), and .cursor/rules/sqlite-cursor-db.mdc (append chat_image to the content tables bullet list and extend the v2 schema-history entry to note the new table).
-    status: pending
+    status: completed
 isProject: false
 ---
 

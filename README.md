@@ -112,6 +112,17 @@ Subpackages:
 - `export/` &mdash; chat export generators: `themes.py` (palette),
   `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
   normalization), `html.py` (standalone HTML + inline CSS template).
+  Both `markdown.py` and `html.py` inline image attachments as
+  `data:<mime>;base64,...` URIs so the exported file is self-contained.
+- `images/` &mdash; image attachment parsing and byte loading shared
+  between extraction and the cache write path. `refs.py` owns the
+  `ImageRef` dataclass and `parse_bubble_images` (walks both the
+  modern `context.selectedImages` on-disk-path shape and the legacy
+  top-level `images` inline-byte-dict shape, dedups by uuid with disk
+  preferred). `loading.py` owns `load_image_bytes` and
+  `_sniff_mime` (stdlib-only magic-byte sniffing for PNG / JPEG / GIF
+  / WEBP) with a graceful skip + lazy `%s` warning for missing or
+  malformed sources.
 - `projects/` &mdash; project-name resolution, split by heuristic.
   `inference.py` is the slim `workspace_info` orchestrator.
   `name.py` derives a display name from a resolved root path.
@@ -146,11 +157,20 @@ The cache SQLite layout has two kinds of tables, owned by
 `cursor_view/chat_index/schema.py`:
 
 - **Content tables** serve the HTTP API: `chat_summary`,
-  `chat_message`, `chat_search_text`, `chat_search_fts`. Both the
-  full rebuild and the per-cid delete-then-insert in
+  `chat_message`, `chat_search_text`, `chat_search_fts`, `chat_image`.
+  Both the full rebuild and the per-cid delete-then-insert in
   `cache/delta/engine.py` go through
   `cursor_view.chat_index.rows._insert_chat`, so the row shape is
-  identical between the rebuild and delta paths.
+  identical between the rebuild and delta paths. `chat_image`
+  materializes one BLOB row per attached image (keyed by
+  `(session_id, position, image_index)`) so the chat-index is the
+  single cache of record &mdash; Cursor's on-disk image files may be
+  deleted without data loss once a composer has been indexed. Bytes
+  flow to the browser through the dedicated
+  `GET /api/chat/<session_id>/image/<image_uuid>` route (keeping the
+  chat-detail JSON small) or, for exports, through
+  `ChatIndex.get_chat(..., include_image_bytes=True)` which inlines
+  `data:<mime>;base64,...` URIs.
 - **Delta tables** exist only to support the row-hash diff and are
   never read by the API:
   - `composer_state` &mdash; per-composer watermark
@@ -184,6 +204,14 @@ python -m unittest discover -s tests
 delta path is specifically designed for: single-bubble mutation,
 workspace `treeViewState` churn, first-time `task_v2` subagent spawn,
 and pane-view key promotion from `(global)` to a workspace.
+`tests/test_chat_index_images.py` covers the image attachment path:
+modern-shape (on-disk) and legacy-shape (inline byte dict) rebuilds,
+image modification via incremental apply, graceful skip on a missing
+disk file, and multiple images per message round-tripping through
+`chat_image` &rarr; `_fetch_images_for_session` &rarr;
+`ChatIndex.get_chat` / `get_image`, plus two coalescer unit cases for
+same-role image concatenation and the image-only-turn "Content
+unavailable" placeholder fix.
 
 ### Frontend (`frontend/src/`)
 
@@ -208,7 +236,9 @@ and pane-view key promotion from `(global)` to a workspace.
   - `chat-list/` &mdash; the list page split into `ChatList`,
     `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
   - `chat-detail/` &mdash; the detail page split into `ChatDetail`,
-    `ChatMetaPanel`, `MessageList`, `MessageBubble`.
+    `ChatMetaPanel`, `MessageList`, `MessageBubble`,
+    `MessageImageGallery` (renders attached images via
+    `GET /api/chat/:id/image/:uuid`).
   - `export/` &mdash; shared `ExportFormatDialog` and
     `ExportWarningDialog` used by both pages.
 

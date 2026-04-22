@@ -89,16 +89,32 @@ in `cursor_view/cache/diff/global_db.py` or
 `cursor_view/chat_index/schema.py::_create_schema` owns the cache's
 on-disk layout. Bumping `INDEX_SCHEMA_VERSION` (defined in the same
 module) forces one full rebuild on first launch; subsequent launches
-take the incremental path. The tables split into two roles:
+take the incremental path. The per-version history lives in the
+`INDEX_SCHEMA_VERSION` block comment in that same module — including
+why the `chat_image` content table landed under v2 without a bump
+(no shipped caches to invalidate; developers with stale local caches
+delete `chat-index.sqlite3` or hit the UI's Refresh button). The
+tables split into two roles:
 
 - **Content tables** serve reads: `chat_summary`, `chat_message`,
-  `chat_search_text`, `chat_search_fts`. The full rebuild and the
-  per-cid delete-then-insert in `cursor_view/cache/delta/engine.py`
-  both go through `cursor_view.chat_index.rows._insert_chat`, so the
-  row shape is identical between paths. `_insert_chat` also returns
-  the `(formatted_chat, coalesced_messages)` pair it derived so the
-  apply / backfill callers can feed them straight to
+  `chat_search_text`, `chat_search_fts`, `chat_image`. The full rebuild
+  and the per-cid delete-then-insert in
+  `cursor_view/cache/delta/engine.py` both go through
+  `cursor_view.chat_index.rows._insert_chat`, so the row shape is
+  identical between paths. `_insert_chat` also returns the
+  `(formatted_chat, coalesced_messages)` pair it derived so the apply /
+  backfill callers can feed them straight to
   `_upsert_composer_state` without re-running the formatting.
+  `chat_image` specifically holds one BLOB row per attached image,
+  keyed by `(session_id, position, image_index)` with `position`
+  matching the owning `chat_message` row; the write path is
+  `cursor_view/chat_index/rows.py::_insert_chat_images` and the read
+  paths are `_fetch_images_for_session` (for chat-detail JSON and
+  exports) plus `ChatIndex.get_image` (for the
+  `GET /api/chat/<id>/image/<uuid>` route). See
+  [`image-attachments.mdc`](image-attachments.mdc) for the BLOB-vs-FTS
+  placement discipline and the deliberate lack of a
+  `UNIQUE (session_id, uuid)` constraint.
 - **Delta tables** support the diff and never appear in API output:
   - `composer_state(session_id PK, workspace_id, db_path,
     last_updated_ms, composer_hash, bubble_count)` — per-composer
