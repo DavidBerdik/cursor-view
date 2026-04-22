@@ -4,7 +4,7 @@ overview: Add support for displaying, caching, and exporting image attachments t
 todos:
   - id: images-subpackage
     content: Create cursor_view/images/ subpackage (refs.py, loading.py, __init__.py) with ImageRef dataclass, parse_bubble_images, and load_image_bytes + MIME sniffing.
-    status: pending
+    status: completed
   - id: sources-bubbles
     content: Widen iter_bubbles_from_disk_kv and iter_bubbles_for_cids in cursor_view/sources/bubbles.py with a 9th list[ImageRef] field; extend the no-signal early-return filter to keep image-only bubbles.
     status: pending
