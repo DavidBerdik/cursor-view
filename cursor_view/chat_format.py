@@ -12,33 +12,61 @@ logger = logging.getLogger(__name__)
 
 
 def coalesce_consecutive_messages_by_role(messages):
-    """Merge consecutive messages from the same speaker (user vs assistant)."""
+    """Merge consecutive messages from the same speaker (user vs assistant).
+
+    Each output record carries ``{"role", "content", "images"}`` with
+    ``images`` always a list (never missing or ``None``) so downstream
+    consumers can iterate without a guard. Image-only turns keep empty
+    text so the UI does not stamp "Content unavailable" next to the
+    gallery; the placeholder is reserved for segments with neither text
+    nor images.
+    """
     if not isinstance(messages, list) or not messages:
         return []
 
-    def segment_content(msg):
-        """Return trimmed message text, or a placeholder when missing or blank."""
+    def segment_text(msg):
+        """Return trimmed message text, or empty string when missing or blank."""
         c = msg.get("content", "") if isinstance(msg, dict) else ""
         if isinstance(c, str) and c.strip():
             return c.rstrip()
-        return "Content unavailable"
+        return ""
+
+    def segment_images(msg):
+        """Return a defensive copy of the message's images list, or an empty list when missing."""
+        imgs = msg.get("images") if isinstance(msg, dict) else None
+        return list(imgs) if isinstance(imgs, list) else []
 
     out = []
     for msg in messages:
         if not isinstance(msg, dict):
             continue
         role = "user" if msg.get("role") == "user" else "assistant"
-        segment = segment_content(msg)
+        text = segment_text(msg)
+        images = segment_images(msg)
         if out and out[-1]["role"] == role:
-            prev = out[-1]["content"]
-            if prev == "Content unavailable":
-                out[-1]["content"] = segment
-            elif segment == "Content unavailable":
-                pass
-            else:
-                out[-1]["content"] = prev + "\n\n" + segment
+            prev_content = out[-1]["content"]
+            prev_had_no_text = prev_content in ("", "Content unavailable")
+            if text and prev_had_no_text:
+                out[-1]["content"] = text
+            elif text:
+                out[-1]["content"] = prev_content + "\n\n" + text
+            out[-1]["images"] = out[-1]["images"] + images
         else:
-            out.append({"role": role, "content": segment})
+            if text:
+                content = text
+            elif images:
+                content = ""
+            else:
+                content = "Content unavailable"
+            out.append({"role": role, "content": content, "images": images})
+
+    # An earlier truly-empty segment emits "Content unavailable" and may
+    # then merge with a same-role image-only segment that concatenates
+    # images. Clear the placeholder on those merged records so the
+    # gallery is not visually paired with a misleading label.
+    for m in out:
+        if m["content"] == "Content unavailable" and m["images"]:
+            m["content"] = ""
     return out
 
 
