@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: rows-insert-images
     content: Extract _insert_chat_images from _insert_chat in cursor_view/chat_index/rows.py; materialize bytes via cursor_view.images.loading.load_image_bytes; add _fetch_images_for_session with optional data URI encoding.
-    status: pending
+    status: completed
   - id: delta-delete-images
     content: Extend _delete_cid_rows in cursor_view/cache/delta/composer_rows.py with DELETE FROM chat_image; confirm _composer_hash stays image-bytes-free and document why.
     status: pending

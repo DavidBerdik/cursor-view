@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import logging
 import re
 import sqlite3
 from typing import Any
@@ -10,7 +12,10 @@ from cursor_view.chat_format import (
     coalesce_consecutive_messages_by_role,
     format_chat_for_frontend,
 )
+from cursor_view.images import image_ref_from_transport_dict, load_image_bytes
 from cursor_view.timestamps import session_sort_key_ms
+
+logger = logging.getLogger(__name__)
 
 
 def _trim_preview(text: str, limit: int = 240) -> str:
@@ -87,6 +92,11 @@ def _insert_chat(
     :func:`cursor_view.extraction.extract_chats`; it does no
     sorting of its own and trusts the upstream pipeline, so the
     bubble-order fix lives there rather than here.
+
+    Image BLOBs are materialized here via
+    :func:`_insert_chat_images` so the chat-index is the single
+    cache of record -- Cursor's original on-disk files may be
+    deleted without data loss once a composer has been indexed.
     """
     formatted = format_chat_for_frontend(chat)
     messages = coalesce_consecutive_messages_by_role(formatted.get("messages", []))
@@ -131,6 +141,7 @@ def _insert_chat(
             for index, msg in enumerate(messages)
         ),
     )
+    _insert_chat_images(cur, session_id, messages)
     cur.execute(
         "INSERT INTO chat_search_text(session_id, content) VALUES(?, ?)",
         (session_id, search_blob),
@@ -141,6 +152,101 @@ def _insert_chat(
             (session_id, search_blob),
         )
     return formatted, messages
+
+
+_INSERT_CHAT_IMAGE_SQL = (
+    "INSERT INTO chat_image("
+    "session_id, position, image_index, uuid, mime_type, width, height, data"
+    ") VALUES(?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+
+def _insert_chat_images(
+    cur: sqlite3.Cursor,
+    session_id: str,
+    messages: list[dict[str, Any]],
+) -> None:
+    """Materialize ``messages`` image attachments into ``chat_image``.
+
+    ``position`` matches the owning ``chat_message`` row's position
+    (both come from the same :func:`enumerate` over the coalesced
+    ``messages``), so a later join on ``(session_id, position)``
+    lines images up with their message without a separate ordinal.
+    Missing / malformed sources are logged by
+    :func:`cursor_view.images.load_image_bytes` and silently skipped
+    so one broken attachment never drops a whole message.
+    """
+    for position, msg in enumerate(messages):
+        for image_index, image_dict in enumerate(msg.get("images") or []):
+            if not isinstance(image_dict, dict):
+                continue
+            ref = image_ref_from_transport_dict(image_dict)
+            if ref is None:
+                logger.debug(
+                    "Skipping malformed image transport dict at %s/%s: %r",
+                    session_id, position, image_dict,
+                )
+                continue
+            loaded = load_image_bytes(ref)
+            if loaded is None:
+                continue
+            data, mime = loaded
+            cur.execute(
+                _INSERT_CHAT_IMAGE_SQL,
+                (session_id, position, image_index, ref.uuid,
+                 mime, ref.width, ref.height, data),
+            )
+
+
+_FETCH_IMAGES_WITH_BYTES_SQL = (
+    "SELECT position, image_index, uuid, mime_type, width, height, data "
+    "FROM chat_image WHERE session_id = ? "
+    "ORDER BY position ASC, image_index ASC"
+)
+_FETCH_IMAGES_METADATA_SQL = (
+    "SELECT position, image_index, uuid, mime_type, width, height "
+    "FROM chat_image WHERE session_id = ? "
+    "ORDER BY position ASC, image_index ASC"
+)
+
+
+def _fetch_images_for_session(
+    con: sqlite3.Connection,
+    session_id: str,
+    *,
+    include_bytes: bool,
+) -> list[dict[str, Any]]:
+    """Return image metadata (and optionally bytes) for ``session_id``.
+
+    Rows come back ordered by ``(position, image_index)`` so callers
+    can bucket them straight into per-message groups without a
+    secondary sort. ``include_bytes`` is opt-in: the chat-detail JSON
+    served to the browser stays small by defaulting to metadata only,
+    while exports flip it on and pay the base64 cost once to inline
+    ``data:<mime>;base64,...`` URIs. The two SQL strings are distinct
+    constants so a typo in one cannot silently inherit a bad column
+    list from the other.
+    """
+    cur = con.cursor()
+    cur.execute(
+        _FETCH_IMAGES_WITH_BYTES_SQL if include_bytes else _FETCH_IMAGES_METADATA_SQL,
+        (session_id,),
+    )
+    out: list[dict[str, Any]] = []
+    for row in cur.fetchall():
+        entry: dict[str, Any] = {
+            "position": row["position"],
+            "image_index": row["image_index"],
+            "uuid": row["uuid"],
+            "mime_type": row["mime_type"],
+            "width": row["width"],
+            "height": row["height"],
+        }
+        if include_bytes:
+            encoded = base64.b64encode(bytes(row["data"])).decode("ascii")
+            entry["data_uri"] = f"data:{row['mime_type']};base64,{encoded}"
+        out.append(entry)
+    return out
 
 
 def _count_summaries(con: sqlite3.Connection, query: str) -> int:
