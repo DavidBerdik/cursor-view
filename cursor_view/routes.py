@@ -77,6 +77,34 @@ def get_chat(session_id):
         return jsonify({"error": str(e)}), 500
 
 
+@bp.route("/api/chat/<session_id>/image/<image_uuid>", methods=["GET"])
+def get_chat_image(session_id, image_uuid):
+    """Serve one attached image's raw bytes with the correct ``Content-Type``.
+
+    Kept off the chat-detail JSON path so ``GET /api/chat/<id>`` stays
+    small: the frontend gallery issues one request per image to this
+    route, and the browser caches each response via ``Cache-Control:
+    immutable`` (the image uuid is Cursor-assigned and stable for the
+    lifetime of the bubble).
+    """
+    try:
+        result = get_chat_index().get_image(session_id, image_uuid)
+        if result is None:
+            logger.warning(
+                "Image %s not found for chat %s", image_uuid, session_id
+            )
+            return jsonify({"error": "Image not found"}), 404
+        data, mime = result
+        return Response(
+            data,
+            mimetype=mime,
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
+    except Exception as e:
+        logger.error("Error in get_chat_image: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @bp.route("/api/chat/<session_id>/export", methods=["GET"])
 def export_chat(session_id):
     """Export a specific chat session as HTML, JSON, or Markdown."""
@@ -90,6 +118,7 @@ def export_chat(session_id):
         chat_for_export = get_chat_index().get_chat(
             session_id,
             force_refresh=_should_force_refresh(),
+            include_image_bytes=True,
         )
         if chat_for_export is None:
             logger.warning("Chat with ID %s not found for export", session_id)
