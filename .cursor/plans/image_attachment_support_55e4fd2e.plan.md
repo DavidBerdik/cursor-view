@@ -34,7 +34,7 @@ todos:
     status: completed
   - id: frontend-plumbing
     content: Thread sessionId through ChatDetail -> MessageList -> MessageBubble; preserve message.images in the prepared-messages map; render new MessageImageGallery under each bubble when images exist.
-    status: pending
+    status: completed
   - id: frontend-gallery
     content: Add frontend/src/components/chat-detail/MessageImageGallery.js rendering <img src=/api/chat/:id/image/:uuid> with MUI theme tokens (no hard-coded colors).
     status: pending

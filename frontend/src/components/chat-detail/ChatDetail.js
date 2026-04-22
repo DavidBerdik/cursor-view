@@ -55,12 +55,14 @@ const ChatDetail = () => {
         const rawMessages = Array.isArray(fetchedChat.messages) ? fetchedChat.messages : [];
         const preparedMessages = await Promise.all(
           rawMessages.map(async (message) => {
+            const images = Array.isArray(message.images) ? message.images : [];
             if (typeof message.content !== 'string') {
-              return message;
+              return { ...message, images };
             }
             return {
               ...message,
               renderedContent: await prepareMarkdownHtml(message.content),
+              images,
             };
           }),
         );
@@ -178,7 +180,7 @@ const ChatDetail = () => {
         Conversation History
       </Typography>
 
-      <MessageList messages={messages} />
+      <MessageList sessionId={sessionId} messages={messages} />
     </Container>
   );
 };

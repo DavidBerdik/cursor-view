@@ -3,6 +3,7 @@ import { alpha, Avatar, Box, Paper, Typography } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MessageMarkdown from '../MessageMarkdown';
+import MessageImageGallery from './MessageImageGallery';
 import { ColorContext } from '../../contexts/ColorContext';
 
 // One user/assistant bubble: avatar + role label in the header row,
@@ -10,10 +11,14 @@ import { ColorContext } from '../../contexts/ColorContext';
 // ChatDetail's effect via `prepareMarkdownHtml`). The Box around
 // MessageMarkdown owns the in-chat styling for links, tables, lists,
 // and images so the markdown output blends with the chat theme.
-export default function MessageBubble({ message }) {
+// Image attachments render beneath the Paper via MessageImageGallery
+// so the gallery's flex layout does not have to fight the markdown
+// theming inside the Paper.
+export default function MessageBubble({ sessionId, message }) {
   const colors = useContext(ColorContext);
   const isUser = message.role === 'user';
   const accent = isUser ? colors.highlightColor : colors.secondary.main;
+  const images = Array.isArray(message.images) ? message.images : [];
 
   return (
     <Box sx={{ mb: 3.5 }}>
@@ -88,6 +93,13 @@ export default function MessageBubble({ message }) {
           )}
         </Box>
       </Paper>
+      {images.length > 0 && (
+        <MessageImageGallery
+          sessionId={sessionId}
+          images={images}
+          role={message.role}
+        />
+      )}
     </Box>
   );
 }
