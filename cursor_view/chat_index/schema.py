@@ -27,7 +27,10 @@ logger = logging.getLogger(__name__)
 #        users, so there is no on-first-launch rebuild to force.
 #        Developers with a stale local cache can delete
 #        ``chat-index.sqlite3`` or hit the UI's Refresh button to
-#        regenerate it.
+#        regenerate it. The later ``chat_image`` content table also
+#        landed under v2 for the same reason -- no shipped caches to
+#        invalidate, and the same delete-or-Refresh escape hatch
+#        covers developers who need to pick up the new table.
 INDEX_SCHEMA_VERSION = 2
 
 
@@ -64,6 +67,29 @@ def _create_schema(con: sqlite3.Connection) -> None:
         CREATE TABLE chat_search_text (
             session_id TEXT PRIMARY KEY,
             content TEXT NOT NULL
+        );
+
+        -- Image attachments materialized from the bubble stream. Bytes
+        -- live here (never in chat_search_* / chat_search_fts, which
+        -- would break FTS5 tokenization, and never in composer_hash,
+        -- which would inflate the watermark column). ``uuid`` is
+        -- intentionally NOT unique per session: a single image can
+        -- legitimately be attached to multiple turns -- Cursor
+        -- represents that as two bubbles that both reference the same
+        -- uuid -- so ``get_image`` uses ``LIMIT 1`` (the bytes are
+        -- identical regardless of which row it picks). Do NOT add a
+        -- UNIQUE constraint on (session_id, uuid) or repeat-attachment
+        -- chats will fail to insert.
+        CREATE TABLE chat_image (
+            session_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            image_index INTEGER NOT NULL,
+            uuid TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            data BLOB NOT NULL,
+            PRIMARY KEY (session_id, position, image_index)
         );
 
         -- Per-composer watermark used by the incremental refresh path.
@@ -114,6 +140,16 @@ def _create_schema(con: sqlite3.Connection) -> None:
 
         CREATE INDEX idx_chat_message_session
         ON chat_message(session_id, position);
+
+        -- Delete-by-session scan used by _delete_cid_rows on the
+        -- incremental-refresh path; the (session_id, uuid) index
+        -- supports the GET /api/chat/<id>/image/<uuid> lookup without
+        -- a composite-PK scan.
+        CREATE INDEX idx_chat_image_session
+        ON chat_image(session_id);
+
+        CREATE INDEX idx_chat_image_uuid
+        ON chat_image(session_id, uuid);
 
         CREATE INDEX idx_composer_state_workspace
         ON composer_state(workspace_id);

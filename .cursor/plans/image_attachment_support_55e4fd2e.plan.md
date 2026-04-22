@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: schema-chat-image
     content: Add chat_image table + indexes to cursor_view/chat_index/schema.py; leave INDEX_SCHEMA_VERSION at 2 and extend the v2 history comment to note the new table (developers with stale caches delete chat-index.sqlite3 or hit Refresh).
-    status: pending
+    status: completed
   - id: rows-insert-images
     content: Extract _insert_chat_images from _insert_chat in cursor_view/chat_index/rows.py; materialize bytes via cursor_view.images.loading.load_image_bytes; add _fetch_images_for_session with optional data URI encoding.
     status: pending
