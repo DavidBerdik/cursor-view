@@ -31,7 +31,7 @@ todos:
     status: completed
   - id: export-markdown-html
     content: Inline base64 data URIs in cursor_view/export/markdown.py and cursor_view/export/html.py; add a .message-images CSS block to _HTML_STYLE_TEMPLATE reusing --image-border.
-    status: pending
+    status: completed
   - id: frontend-plumbing
     content: Thread sessionId through ChatDetail -> MessageList -> MessageBubble; preserve message.images in the prepared-messages map; render new MessageImageGallery under each bubble when images exist.
     status: pending

@@ -2,8 +2,27 @@
 
 import datetime
 import logging
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _render_message_images_markdown(images: list[dict[str, Any]]) -> list[str]:
+    """Render each image attachment as a raw HTML ``<img>`` line.
+
+    Uses raw HTML rather than ``![alt](uri)`` because markdown
+    data-URI references in ``![]()`` are not uniformly supported
+    across renderers (GitHub / GitLab / VS Code preview all handle
+    raw HTML verbatim, which guarantees the exported file renders
+    the same everywhere).
+    """
+    if not images:
+        return []
+    return [
+        f'<img src="{img.get("data_uri", "")}" alt="Image {img.get("uuid", "")}" />'
+        for img in images
+        if isinstance(img, dict)
+    ]
 
 
 def generate_markdown(chat):
@@ -40,11 +59,17 @@ def generate_markdown(chat):
         for i, msg in enumerate(messages):
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            if not content or not isinstance(content, str):
+            images = msg.get("images") or []
+            if not isinstance(content, str):
                 logger.warning("Message %s has invalid content", i + 1)
                 content = "Content unavailable"
+            elif not content and not images:
+                # Truly empty turn: mirror the coalescer's fallback.
+                content = "Content unavailable"
             heading = "**User**" if role == "user" else "**Cursor**"
-            lines.extend([heading, "", content.rstrip(), "", "---", ""])
+            lines.extend([heading, "", content.rstrip(), ""])
+            lines.extend(_render_message_images_markdown(images))
+            lines.extend(["---", ""])
 
     lines.append("")
     lines.append(

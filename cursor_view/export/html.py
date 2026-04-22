@@ -13,6 +13,7 @@ import datetime
 import html
 import logging
 import re
+from typing import Any
 
 import markdown
 
@@ -172,6 +173,16 @@ _HTML_STYLE_TEMPLATE = """\
             border-radius: 6px;
             border: 1px solid var(--image-border);
         }}
+        .message-content .message-images {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 12px;
+        }}
+        .message-content .message-images img {{
+            border: 1px solid var(--image-border);
+            border-radius: 6px;
+        }}
         .message-content blockquote {{
             margin: 0.75rem 0;
             padding: 0.25rem 0 0.25rem 1rem;
@@ -248,6 +259,114 @@ _HTML_STYLE_TEMPLATE = """\
         }}"""
 
 
+def _render_message_images_html(
+    images: list[dict[str, Any]],
+    role: str,
+    theme: dict[str, Any],
+) -> str:
+    """Return a ``<div class="message-images">`` block for one message.
+
+    ``theme`` is reserved for a future tinted-placeholder fallback
+    that will need access to palette tokens without re-importing
+    :data:`EXPORT_HTML_THEMES`; v1 does not consume it. Sizing is
+    inherited from the pre-existing ``.message-content img`` ruleset
+    so this helper does not re-declare ``max-width``.
+    """
+    del theme  # intentionally unused in v1; documented above
+    if not images:
+        return ""
+    who = "user" if role == "user" else "Cursor"
+    alt = html.escape(f"Image attached by {who}")
+    tags = [
+        f'<img src="{img.get("data_uri", "")}" alt="{alt}" />'
+        for img in images
+        if isinstance(img, dict)
+    ]
+    if not tags:
+        return ""
+    return '<div class="message-images">\n' + "\n".join(tags) + '\n</div>'
+
+
+def _build_messages_html(messages: list[dict[str, Any]], theme: dict[str, Any]) -> str:
+    """Render every message dict into the ``.messages`` container body.
+
+    Extracted from :func:`generate_standalone_html` so the parent
+    function stays under the 100-line function soft limit and the
+    per-message rendering pass has a single responsibility. Preserves
+    the pre-refactor byte-for-byte output: same inline styles, same
+    avatar codepoints, same ``_render_message_images_html`` hook.
+    """
+    if not messages:
+        logger.warning("No messages found in the chat object to generate HTML.")
+        return "<p>No messages found in this conversation.</p>"
+    parts: list[str] = []
+    for i, msg in enumerate(messages):
+        role = msg.get('role', 'unknown')
+        content = msg.get('content', '')
+        images = msg.get("images") or []
+        logger.debug(
+            "Processing message %s/%s - Role: %s, Content length: %s",
+            i + 1, len(messages), role, len(content),
+        )
+
+        if not isinstance(content, str):
+            logger.warning("Message %s has invalid content: %s", i + 1, content)
+            content = "Content unavailable"
+        elif not content and not images:
+            content = "Content unavailable"
+
+        normalized_content = normalize_markdown_for_html_export(content)
+        # Escape raw HTML first, then let the Markdown library convert markdown syntax.
+        rendered_content = markdown.markdown(
+            normalized_content,
+            extensions=['fenced_code', 'codehilite', 'sane_lists', 'tables'],
+            extension_configs={
+                'codehilite': {
+                    'guess_lang': False,
+                    'noclasses': True,
+                    'pygments_style': theme['pygments_style'],
+                }
+            },
+            tab_length=2,
+            output_format='html5',
+        )
+        # Python-Markdown's tables extension keeps escaped pipes (\|) literal
+        # inside code spans, unlike remark-gfm which unescapes them. Fix by
+        # replacing \| with | only within <td>/<th> elements after rendering.
+        rendered_content = re.sub(
+            r'(<t[dh]\b[^>]*>)(.*?)(</t[dh]>)',
+            lambda m: m.group(1) + m.group(2).replace('\\|', '|') + m.group(3),
+            rendered_content,
+        )
+        rendered_content += _render_message_images_html(images, role, theme)
+
+        avatar = "\U0001f464" if role == "user" else "\U0001f916"
+        name = "User" if role == "user" else "Cursor"
+        bg_color = (
+            theme['user_message_bg'] if role == "user" else theme['assistant_message_bg']
+        )
+        border_color = (
+            theme['user_message_border']
+            if role == "user"
+            else theme['assistant_message_border']
+        )
+
+        parts.append(f"""
+                <div class="message" style="margin-bottom: 20px;">
+                    <div class="message-header" style="display: flex; align-items: center; margin-bottom: 8px;">
+                        <div class="avatar" style="width: 32px; height: 32px; border-radius: 50%; background-color: {border_color}; color: #ffffff; display: flex; justify-content: center; align-items: center; margin-right: 10px;">
+                            {avatar}
+                        </div>
+                        <div class="sender" style="font-weight: bold;">{name}</div>
+                    </div>
+                    <div class="message-content" style="padding: 15px; border-radius: 8px; background-color: {bg_color}; border-left: 4px solid {border_color}; margin-left: {0 if role == 'user' else '40px'}; margin-right: {0 if role == 'assistant' else '40px'};">
+                        {rendered_content}
+                    </div>
+                </div>
+                """)
+    return "".join(parts)
+
+
 def generate_standalone_html(chat, theme_mode: str = "dark"):
     """Generate a standalone HTML representation of the chat."""
     resolved_theme_mode = theme_mode if theme_mode in EXPORT_HTML_THEMES else "dark"
@@ -276,82 +395,9 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
         safe_session_id = html.escape(chat.get('session_id', 'Unknown'))
         logger.info("Project: %s, Path: %s, Date: %s", project_name, project_path, date_display)
 
-        # Build the HTML content
-        messages_html = ""
         messages = chat.get('messages', [])
         logger.info("Found %s messages for the chat.", len(messages))
-
-        if not messages:
-            logger.warning("No messages found in the chat object to generate HTML.")
-            messages_html = "<p>No messages found in this conversation.</p>"
-        else:
-            for i, msg in enumerate(messages):
-                role = msg.get('role', 'unknown')
-                content = msg.get('content', '')
-                logger.debug(
-                    "Processing message %s/%s - Role: %s, Content length: %s",
-                    i + 1,
-                    len(messages),
-                    role,
-                    len(content),
-                )
-
-                if not content or not isinstance(content, str):
-                    logger.warning("Message %s has invalid content: %s", i + 1, content)
-                    content = "Content unavailable"
-
-                normalized_content = normalize_markdown_for_html_export(content)
-
-                # Escape raw HTML first, then let the Markdown library convert markdown syntax.
-                rendered_content = markdown.markdown(
-                    normalized_content,
-                    extensions=['fenced_code', 'codehilite', 'sane_lists', 'tables'],
-                    extension_configs={
-                        'codehilite': {
-                            'guess_lang': False,
-                            'noclasses': True,
-                            'pygments_style': theme['pygments_style'],
-                        }
-                    },
-                    tab_length=2,
-                    output_format='html5',
-                )
-
-                # Python-Markdown's tables extension keeps escaped pipes (\|) literal
-                # inside code spans, unlike remark-gfm which unescapes them. Fix by
-                # replacing \| with | only within <td>/<th> elements after rendering.
-                rendered_content = re.sub(
-                    r'(<t[dh]\b[^>]*>)(.*?)(</t[dh]>)',
-                    lambda m: m.group(1) + m.group(2).replace('\\|', '|') + m.group(3),
-                    rendered_content,
-                )
-
-                avatar = "\U0001f464" if role == "user" else "\U0001f916"
-                name = "User" if role == "user" else "Cursor"
-                bg_color = (
-                    theme['user_message_bg']
-                    if role == "user"
-                    else theme['assistant_message_bg']
-                )
-                border_color = (
-                    theme['user_message_border']
-                    if role == "user"
-                    else theme['assistant_message_border']
-                )
-
-                messages_html += f"""
-                <div class="message" style="margin-bottom: 20px;">
-                    <div class="message-header" style="display: flex; align-items: center; margin-bottom: 8px;">
-                        <div class="avatar" style="width: 32px; height: 32px; border-radius: 50%; background-color: {border_color}; color: #ffffff; display: flex; justify-content: center; align-items: center; margin-right: 10px;">
-                            {avatar}
-                        </div>
-                        <div class="sender" style="font-weight: bold;">{name}</div>
-                    </div>
-                    <div class="message-content" style="padding: 15px; border-radius: 8px; background-color: {bg_color}; border-left: 4px solid {border_color}; margin-left: {0 if role == 'user' else '40px'}; margin-right: {0 if role == 'assistant' else '40px'};">
-                        {rendered_content}
-                    </div>
-                </div>
-                """
+        messages_html = _build_messages_html(messages, theme)
 
         style_block = _HTML_STYLE_TEMPLATE.format_map(theme)
         html_document = f"""<!DOCTYPE html>
