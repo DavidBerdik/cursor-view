@@ -9,6 +9,7 @@ import sqlite3
 from contextlib import closing
 from typing import Iterable
 
+from cursor_view.images import ImageRef, parse_bubble_images
 from cursor_view.sources.sqlite_util import _connect_cursor_disk_kv
 
 logger = logging.getLogger(__name__)
@@ -111,12 +112,23 @@ def _parse_bubble_row(
     key: str,
     value,
     db_path_str: str,
-) -> tuple[str, str, str, str, str, list[str], list[str], tuple[str, str] | None] | None:
+) -> tuple[
+    str,
+    str,
+    str,
+    str,
+    str,
+    list[str],
+    list[str],
+    tuple[str, str] | None,
+    list[ImageRef],
+] | None:
     """Parse one ``bubbleId:*`` row into the public iterator tuple.
 
     Returns ``None`` for rows whose JSON body failed to parse or whose
     bubble contains no user-visible signal (no text, no URIs, no tool
-    call) so the two callers can skip without repeating the filter.
+    call, no images) so the two callers can skip without repeating the
+    filter.
     """
     if value is None:
         return None
@@ -128,14 +140,17 @@ def _parse_bubble_row(
     if isinstance(b, dict):
         file_uris, folder_uris = _extract_uris_from_bubble(b)
         tool_call = _tool_call_from_bubble(b)
+        image_refs = parse_bubble_images(b)
     else:
         file_uris, folder_uris = [], []
         tool_call = None
+        image_refs = []
     txt = (b.get("text") or b.get("richText") or "").strip()
-    # Preserve bubbles that carry workspaceUris/relevantFiles or a tool
-    # call even if they have no text, so project inference and
-    # subagent-parent reconstruction can still see them.
-    if not txt and not file_uris and not folder_uris and tool_call is None:
+    # Image-only bubbles still carry a message: keep them even when every
+    # other signal is empty. Project inference and subagent-parent
+    # reconstruction similarly rely on URI/tool-call rows that have no
+    # text of their own.
+    if not txt and not file_uris and not folder_uris and tool_call is None and not image_refs:
         return None
     role = "user" if b.get("type") == 1 else "assistant"
     # Key layout is ``bubbleId:<composerId>:<bubbleId>``; we need both
@@ -145,13 +160,35 @@ def _parse_bubble_row(
     parts = key.split(":", 2)
     composer_id = parts[1] if len(parts) >= 2 else ""
     bubble_id = parts[2] if len(parts) >= 3 else ""
-    return composer_id, bubble_id, role, txt, db_path_str, file_uris, folder_uris, tool_call
+    return (
+        composer_id,
+        bubble_id,
+        role,
+        txt,
+        db_path_str,
+        file_uris,
+        folder_uris,
+        tool_call,
+        image_refs,
+    )
 
 
 def iter_bubbles_from_disk_kv(
     db: pathlib.Path,
-) -> Iterable[tuple[str, str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
-    """Yield (composerId, bubbleId, role, text, db_path, file_uris, folder_uris, tool_call).
+) -> Iterable[
+    tuple[
+        str,
+        str,
+        str,
+        str,
+        str,
+        list[str],
+        list[str],
+        tuple[str, str] | None,
+        list[ImageRef],
+    ]
+]:
+    """Yield (composerId, bubbleId, role, text, db_path, file_uris, folder_uris, tool_call, image_refs).
 
     ``bubbleId`` is the ``<bid>`` segment of the row's ``bubbleId:<cid>:<bid>``
     primary key; callers pair it with
@@ -167,6 +204,13 @@ def iter_bubbles_from_disk_kv(
     tool invocation (``toolFormerData``) and ``None`` otherwise; callers
     use this to reconstruct subagent parent links that Cursor no longer
     stores on the subagent composer itself.
+
+    ``image_refs`` carries :class:`cursor_view.images.ImageRef` entries
+    for every image attached to the bubble (either on-disk via
+    ``context.selectedImages`` or inline via the legacy ``images``
+    list). Emitting them on the bubble tuple lets Pass 2 attach image
+    metadata to the per-bubble message dict in lock-step with text,
+    URIs, and tool calls, without reading the bubble JSON twice.
     """
     con = _connect_cursor_disk_kv(db)
     if con is None:
@@ -188,20 +232,36 @@ def iter_bubbles_from_disk_kv(
 def iter_bubbles_for_cids(
     db: pathlib.Path,
     cids: Iterable[str],
-) -> Iterable[tuple[str, str, str, str, str, list[str], list[str], tuple[str, str] | None]]:
+) -> Iterable[
+    tuple[
+        str,
+        str,
+        str,
+        str,
+        str,
+        list[str],
+        list[str],
+        tuple[str, str] | None,
+        list[ImageRef],
+    ]
+]:
     """Cid-scoped form of :func:`iter_bubbles_from_disk_kv`.
 
-    Emits the same 8-tuple ``(composerId, bubbleId, role, text, db_path,
-    file_uris, folder_uris, tool_call)`` but only for bubbles whose
-    ``composerId`` is in ``cids``. The per-cid query is a range scan of
-    the ``bubbleId:<cid>:`` PK prefix -- ``key > 'bubbleId:<cid>:'`` with
-    a ``key < 'bubbleId:<cid>;'`` upper bound (``;`` is the byte directly
-    after ``:``) -- which runs on the implicit primary-key index in
-    O(bubbles_per_cid) time without a LIKE escape for composer ids that
-    contain underscores (``task-<toolCallId>`` commonly do).
+    Emits the same 9-tuple ``(composerId, bubbleId, role, text, db_path,
+    file_uris, folder_uris, tool_call, image_refs)`` but only for
+    bubbles whose ``composerId`` is in ``cids``. The per-cid query is a
+    range scan of the ``bubbleId:<cid>:`` PK prefix --
+    ``key > 'bubbleId:<cid>:'`` with a ``key < 'bubbleId:<cid>;'``
+    upper bound (``;`` is the byte directly after ``:``) -- which runs
+    on the implicit primary-key index in O(bubbles_per_cid) time
+    without a LIKE escape for composer ids that contain underscores
+    (``task-<toolCallId>`` commonly do).
 
     Cids with no matching rows are skipped silently so callers can pass
-    a noisy dirty set without pre-filtering.
+    a noisy dirty set without pre-filtering. ``image_refs`` is emitted
+    here (rather than read by a second pass) so Pass 2 can attach image
+    metadata to the per-bubble message dict in lock-step with text,
+    URIs, and tool calls.
     """
     cids_list = [c for c in cids if isinstance(c, str) and c]
     if not cids_list:

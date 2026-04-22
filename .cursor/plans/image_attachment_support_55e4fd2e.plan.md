@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: sources-bubbles
     content: Widen iter_bubbles_from_disk_kv and iter_bubbles_for_cids in cursor_view/sources/bubbles.py with a 9th list[ImageRef] field; extend the no-signal early-return filter to keep image-only bubbles.
-    status: pending
+    status: completed
   - id: extraction-global-bubbles
     content: Thread image_refs through cursor_view/extraction/passes/global_bubbles.py so each message dict carries an images list in the same ordinal/turn order as text.
     status: pending
