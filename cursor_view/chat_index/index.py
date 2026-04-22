@@ -19,6 +19,7 @@ from cursor_view.chat_index.rebuild import _rebuild
 from cursor_view.chat_index.rows import (
     _count_summaries,
     _database_has_fts,
+    _fetch_images_for_session,
     _fetch_summaries,
     _insert_chat,
     _summary_row_to_api,
@@ -81,8 +82,18 @@ class ChatIndex:
             "query": normalized_query,
         }
 
-    def get_chat(self, session_id: str, force_refresh: bool = False) -> dict[str, Any] | None:
-        """Return a full chat detail object for one session id."""
+    def get_chat(
+        self,
+        session_id: str,
+        force_refresh: bool = False,
+        include_image_bytes: bool = False,
+    ) -> dict[str, Any] | None:
+        """Return a full chat detail object for one session id.
+
+        ``include_image_bytes`` defaults False (bytes flow through
+        ``/api/chat/<id>/image/<uuid>``); exports flip it True so
+        renderers can inline base64 data URIs.
+        """
         self.ensure_current(force=force_refresh)
         with self._connect(read_only=True) as con:
             con.row_factory = sqlite3.Row
@@ -92,21 +103,52 @@ class ChatIndex:
             if not summary:
                 return None
             cur.execute(
-                """
-                SELECT role, content
-                FROM chat_message
-                WHERE session_id=?
-                ORDER BY position ASC
-                """,
+                "SELECT role, content FROM chat_message "
+                "WHERE session_id=? ORDER BY position ASC",
                 (session_id,),
             )
             messages = [
-                {"role": row["role"], "content": row["content"]}
+                {"role": row["role"], "content": row["content"], "images": []}
                 for row in cur.fetchall()
             ]
+            image_rows = _fetch_images_for_session(
+                con, session_id, include_bytes=include_image_bytes
+            )
+        # Bucket each image into its owning message by ``position``;
+        # ``image_index`` served its ordering job upstream, so both
+        # storage-layer keys come off before hitting the wire.
+        for image in image_rows:
+            position = image.pop("position")
+            image.pop("image_index", None)
+            if 0 <= position < len(messages):
+                messages[position]["images"].append(image)
         detail = _summary_row_to_api(summary)
         detail["messages"] = messages
         return detail
+
+    def get_image(
+        self, session_id: str, image_uuid: str
+    ) -> tuple[bytes, str] | None:
+        """Return ``(raw_bytes, mime_type)`` for one attached image.
+
+        Bypasses the chat-detail payload so ``GET /api/chat/<id>``
+        stays small for chats with megabytes of images. ``LIMIT 1``
+        is intentional: a uuid can appear on multiple turns with
+        identical bytes (see ``chat_image`` DDL comment).
+        """
+        self.ensure_current(force=False)
+        with self._connect(read_only=True) as con:
+            con.row_factory = sqlite3.Row
+            cur = con.cursor()
+            cur.execute(
+                "SELECT mime_type, data FROM chat_image "
+                "WHERE session_id = ? AND uuid = ? LIMIT 1",
+                (session_id, image_uuid),
+            )
+            row = cur.fetchone()
+        if row is None:
+            return None
+        return bytes(row["data"]), row["mime_type"]
 
     def ensure_current(self, force: bool = False) -> None:
         """Refresh the index if source DBs changed or a rebuild was requested.

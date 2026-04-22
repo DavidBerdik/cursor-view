@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: index-get-chat-and-image
     content: Extend ChatIndex.get_chat with include_image_bytes; add ChatIndex.get_image for the image route; keep read-only connection guard intact.
-    status: pending
+    status: completed
   - id: routes-image-endpoint
     content: Add GET /api/chat/<id>/image/<uuid> to cursor_view/routes.py; switch export_chat to include_image_bytes=True.
     status: pending
