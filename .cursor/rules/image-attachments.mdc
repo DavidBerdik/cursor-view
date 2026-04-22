@@ -1,0 +1,135 @@
+---
+description: Image attachment handling -- parse, load, store, serve, graceful skip
+globs: **/*.py
+alwaysApply: false
+---
+
+# Two storage formats, always parse both
+
+Cursor writes image attachments on a bubble's JSON value in **two**
+shapes and either, both, or neither may appear on any given bubble:
+
+- **Modern** — `bubble.context.selectedImages` entries of the form
+  `{uuid, path, dimension: {width, height}, loadedAt, addedWithoutMention}`,
+  where `path` is an absolute filesystem path like
+  `<cursor_root>/User/workspaceStorage/<workspace_id>/images/image-<uuid>.png`.
+- **Legacy** — top-level `bubble.images` entries of the form
+  `{uuid, dimension: {width, height}, data: {"0": byte, "1": byte, ...}}`,
+  where `data` is a serialized `Uint8Array` reconstructed as
+  `bytes(data[str(i)] for i in range(len(data)))`.
+
+A single call to
+`cursor_view.images.parse_bubble_images` walks both shapes and dedups
+by `uuid` with first-seen-wins (disk preferred, because a live disk
+file is cheaper than parsing the inline byte dict). **Do not**
+branch-by-format at the call site or write a second parser that only
+looks at one shape; the canonical example is the 22-bubble-wide legacy
+corpus on my install that modern builds might re-emit with
+`selectedImages` alongside the legacy `images` array.
+
+Motivating source: `cursor_view/images/refs.py::parse_bubble_images`.
+
+# MIME by magic bytes, never by extension
+
+`cursor_view/images/loading.py::_sniff_mime` reads the first 16 bytes
+and recognizes PNG, JPEG, GIF, and WEBP (the two-part `RIFF.*WEBP`
+check is intentional because bytes 4-7 are the file-size field, which
+is content-dependent). **Never** trust a filename extension for MIME:
+Cursor's `.png`-suffixed files have in the wild carried JPEG payloads,
+and the browser will refuse to render a mismatch.
+
+The module is stdlib-only on purpose. Do not reach for `imghdr`,
+`python-magic`, or Pillow -- those dependencies bloat the PyInstaller
+bundle and import-time cost, which
+[`python-standards.mdc`](python-standards.mdc) explicitly calls out. If
+a new format becomes common enough that magic-byte sniffing needs to
+grow, add another prefix check inside `_sniff_mime`; do not swap the
+strategy.
+
+# BLOBs live only in `chat_image`
+
+Image bytes live in the `chat_image` content table (see
+[`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc)) and **nowhere else**
+inside the chat-index cache:
+
+- Not in `chat_search_text` / `chat_search_fts`. Adding base64 or raw
+  bytes to those tables breaks FTS5 tokenization and inflates the
+  per-chat text blob we actually want tokenized.
+- Not in `cursor_view.cache.delta.composer_rows._composer_hash`. The
+  source-row hash produced by
+  `cursor_view/cache/diff/hashing.py::_hash_value` already flips when
+  a bubble's `images` / `context.selectedImages` fields change, so
+  images-as-hash-input is redundant; more importantly, folding
+  megabyte-scale bytes into the watermark column destroys the point of
+  a lightweight drift sentinel.
+
+The table's `(session_id, position, image_index)` primary key is
+`UNIQUE`, but `(session_id, uuid)` is intentionally **not**: the same
+image uuid can legitimately appear on multiple turns (Cursor
+represents repeat attachments as two bubbles pointing at the same
+uuid), so `ChatIndex.get_image` uses `LIMIT 1` and trusts that any
+matching row's bytes are identical. Do not add a `UNIQUE` constraint
+on `(session_id, uuid)` or repeat-attachment chats will fail to
+insert.
+
+# Bytes flow through dedicated paths, never through `GET /api/chat/<id>`
+
+The chat-detail JSON payload
+(`ChatIndex.get_chat(session_id, include_image_bytes=False)` is the
+default) carries per-image **metadata only**: `{uuid, mime_type,
+width, height}`. Bytes reach consumers via exactly two paths:
+
+1. `GET /api/chat/<session_id>/image/<image_uuid>` — the dedicated
+   HTTP route served by `cursor_view/routes.py::get_chat_image`,
+   which hits `ChatIndex.get_image` and responds with
+   `Content-Type: <mime>` plus
+   `Cache-Control: private, max-age=31536000, immutable`. The frontend
+   gallery (`frontend/src/components/chat-detail/MessageImageGallery.js`)
+   builds `<img src="...">` URLs against this route.
+2. `ChatIndex.get_chat(..., include_image_bytes=True)` — the opt-in
+   mode the export routes flip on so Markdown / JSON / HTML renderers
+   can inline `data:<mime>;base64,...` URIs into the written file.
+   `cursor_view/chat_index/rows.py::_fetch_images_for_session` owns
+   the base64 encoding; nothing else in the code base should be
+   calling `base64.b64encode` on image data.
+
+Do not add a third path that embeds base64 into the chat-detail JSON
+-- that undoes the entire point of the route split (a chat with many
+images would blow up the first page load).
+
+# Graceful skip on missing / malformed sources
+
+Image materialization is **not** fail-fast. When
+`cursor_view.images.load_image_bytes` cannot produce bytes -- missing
+on-disk file (`OSError`), malformed inline byte dict
+(`KeyError` / `TypeError` / `ValueError`), or an unknown
+`source_kind` on a round-tripped transport dict -- it logs a lazy
+`%s`-style warning and returns `None`.
+`cursor_view/chat_index/rows.py::_insert_chat_images` skips the
+corresponding image, the owning message still lands in
+`chat_message`, and no exception propagates.
+
+This is deliberate graceful degradation, **not** a
+[`known-bugs.mdc`](known-bugs.mdc) `TODO(bug):`. Do not add a
+`TODO(bug):` marker to this path and do not introduce a raise-on-miss
+variant; one broken attachment must never drop a whole message.
+
+Lazy `%s`-style logging is required per
+[`python-standards.mdc`](python-standards.mdc) so that a disabled log
+level does not pay the cost of formatting the missing file's path.
+
+# Canonical examples
+
+- `cursor_view/images/refs.py` — dataclass + two-format parser + dedup.
+- `cursor_view/images/loading.py` — magic-byte MIME sniff + graceful
+  skip loader.
+- `cursor_view/chat_index/rows.py::_insert_chat_images` /
+  `_fetch_images_for_session` — the only places that materialize or
+  encode image BLOBs.
+- `cursor_view/routes.py::get_chat_image` — the dedicated HTTP route.
+- `cursor_view/export/markdown.py::_render_message_images_markdown` /
+  `cursor_view/export/html.py::_render_message_images_html` — the only
+  consumers that inline base64 data URIs.
+- `frontend/src/components/chat-detail/MessageImageGallery.js` — the
+  only frontend consumer of image bytes; uses `<img src>` against the
+  dedicated route, not base64 inlined into the chat-detail JSON.
