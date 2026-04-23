@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: A3-guard-gallery
     content: In `frontend/src/components/chat-detail/MessageImageGallery.js`, filter the `images` prop at entry to only objects with a non-empty string `uuid` so malformed input degrades gracefully instead of crashing the component.
-    status: pending
+    status: completed
   - id: A5-soften-composer-hash-docstring
     content: "Soften the `_composer_hash` docstring in `cursor_view/cache/delta/composer_rows.py` so it accurately describes when image changes do and don't flip the source-row hash (bubble JSON change: yes; in-place disk file replacement: no; Cursor's upload model makes this acceptable)."
     status: pending

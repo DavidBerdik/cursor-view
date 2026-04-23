@@ -19,6 +19,17 @@ export default function MessageImageGallery({ sessionId, images, role }) {
   if (!Array.isArray(images) || images.length === 0) {
     return null;
   }
+  // Defensive filter: the backend enforces `chat_image.uuid TEXT NOT NULL`
+  // so every well-formed payload has a usable uuid, but a future upstream
+  // regression (null entry, missing/non-string uuid) would otherwise crash
+  // the whole chat view via an "undefined.uuid" dereference in the .map
+  // below. Dropping malformed entries lets the rest of the bubble render.
+  const safeImages = images.filter(
+    (img) => img && typeof img.uuid === 'string' && img.uuid.length > 0
+  );
+  if (safeImages.length === 0) {
+    return null;
+  }
   const alt = `Image attached by ${role === 'user' ? 'user' : 'Cursor'}`;
   const encodedSessionId = encodeURIComponent(sessionId);
 
@@ -33,7 +44,7 @@ export default function MessageImageGallery({ sessionId, images, role }) {
         mr: role === 'user' ? 5 : 0,
       }}
     >
-      {images.map((img) => {
+      {safeImages.map((img) => {
         const src = `/api/chat/${encodedSessionId}/image/${encodeURIComponent(img.uuid)}`;
         return (
           <Box
