@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: A1-preview-image-only
     content: Fix `cursor_view/chat_index/rows.py::_preview_from_messages` so chats whose only user-visible content is images no longer render as `Content unavailable` in the chat-list / search preview.
-    status: pending
+    status: completed
   - id: A2-escape-uuid-markdown
     content: Escape `uuid` with `html.escape(..., quote=True)` in `cursor_view/export/markdown.py::_render_message_images_markdown` so an attacker-controlled uuid cannot break out of the `<img alt="...">` attribute.
     status: pending

@@ -28,8 +28,13 @@ def _trim_preview(text: str, limit: int = 240) -> str:
 def _preview_from_messages(messages: list[dict[str, Any]]) -> str:
     first_user = None
     first_any = None
+    any_images = False
     for msg in messages:
-        content = msg.get("content", "") if isinstance(msg, dict) else ""
+        if not isinstance(msg, dict):
+            continue
+        if not any_images and msg.get("images"):
+            any_images = True
+        content = msg.get("content", "")
         if not isinstance(content, str) or not content.strip():
             continue
         if first_any is None:
@@ -37,7 +42,11 @@ def _preview_from_messages(messages: list[dict[str, Any]]) -> str:
         if msg.get("role") == "user":
             first_user = content
             break
-    return _trim_preview(first_user or first_any or "Content unavailable")
+    # Image-only turns coalesce to ``content=""`` so the text fallbacks
+    # above miss; a neutral label keeps the chat-list / search preview
+    # informative instead of reading "Content unavailable".
+    fallback = "(image attachment)" if any_images else "Content unavailable"
+    return _trim_preview(first_user or first_any or fallback)
 
 
 def _search_blob(project: dict[str, Any], messages: list[dict[str, Any]], preview: str) -> str:
