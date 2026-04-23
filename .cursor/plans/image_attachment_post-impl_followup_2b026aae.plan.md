@@ -34,7 +34,7 @@ todos:
     status: completed
   - id: B2-content-length-utf8
     content: "Pre-existing: fix `cursor_view/routes.py::export_chat` HTML branch to compute `Content-Length` from UTF-8 byte length rather than `len(str)` (Python counts code points, which mismatches the wire encoding for any non-ASCII content)."
-    status: pending
+    status: completed
   - id: B3-sanitize-filename
     content: "Pre-existing: sanitize `session_id` before interpolating into `Content-Disposition: filename=\"cursor-chat-{...}\"` across all three export format branches in `cursor_view/routes.py::export_chat`."
     status: pending

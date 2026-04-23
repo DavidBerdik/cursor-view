@@ -158,12 +158,19 @@ def export_chat(session_id):
             request.cookies.get("themeMode"),
         )
         html_content = generate_standalone_html(chat_for_export, export_theme)
+        # Content-Length must reflect the UTF-8 byte count on the wire, not
+        # Python's str-length (which counts code points). Non-ASCII content
+        # (project names, paths, chat text) otherwise advertises a smaller
+        # body than Flask encodes, which strict clients / proxies treat as
+        # a truncated response. Mirrors the Markdown branch's ``md_bytes``
+        # pattern above.
+        html_bytes = html_content.encode("utf-8")
         return Response(
             html_content,
             mimetype="text/html; charset=utf-8",
             headers={
                 "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.html"',
-                "Content-Length": str(len(html_content)),
+                "Content-Length": str(len(html_bytes)),
                 "Cache-Control": "no-store",
             },
         )
