@@ -140,3 +140,42 @@ When you touch any of these tables, update this rule and
 `cursor_view/chat_index/schema.py` in the same change. Schema drift
 between code and rule is exactly what
 `.cursor/rules/comments-style.mdc` calls out.
+
+# Canonical bubble order
+
+The canonical chronological order of a composer's messages lives on
+`composerData:<cid>.fullConversationHeadersOnly`, not on the
+`bubbleId:<cid>:*` row set. Cursor routinely prunes bubbles out of
+that array (summarization checkpoints, conversation restarts,
+"reset to this point" UX) without deleting the corresponding
+`bubbleId:*` rows, so extraction must treat any bubble whose
+`bubbleId` is absent from the headers array of a composer that HAS
+a non-empty headers array as stale and drop it — no message, no
+URI into project inference, no `tool_call_parent` upsert, no
+`comp_meta` seed, no `db_path` write. The fallback "append in
+encounter order" path is reserved for composers whose headers
+array is missing or empty (legacy Cursor builds that predate the
+array); every bubble still flows through for those composers so
+the chat surfaces with all the content Cursor kept.
+
+Two places enforce the invariant and must stay in sync:
+
+- `cursor_view/extraction/passes/global_bubbles.py::_collect_global_bubbles`
+  — the in-memory side of Pass 2. Drops orphans from messages,
+  URIs, `tool_call_parent`, and the `sessions[cid]` seed.
+- `cursor_view/cache/diff/global_db.py::_diff_global_cursor_disk_kv`
+  — the persisted side. Builds a per-cid header allowlist from
+  `composerData:*` rows before hashing bubble rows and suppresses
+  `tool_call_parent_updates` staging for any bubble absent from its
+  composer's allowlist. The row hash is still recorded in
+  `source_row_snapshot` so hash churn on an orphan continues to
+  flip its cid into `modified_cids` and a re-extract properly
+  drops it via the matching filter on the extraction side.
+
+Regression guards:
+`tests/test_chat_index_incremental.py::test_orphan_bubble_filtered_full_rebuild`,
+`::test_orphan_bubble_filtered_incremental`,
+`::test_orphan_tool_call_bubble_not_linked`, and
+`::test_legacy_composer_still_includes_all_bubbles` (locks down
+the legacy encounter-order fallback so future edits to the orphan
+filter can't accidentally drop legacy composers' bubbles).

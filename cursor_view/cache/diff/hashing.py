@@ -75,6 +75,42 @@ def _tool_call_id_from_bubble(raw: Any) -> str | None:
     return tcid if isinstance(tcid, str) and tcid else None
 
 
+def _header_bubble_ids_from_composer(raw: Any) -> frozenset[str] | None:
+    """Return the set of ``bubbleId`` strings from a composerData's headers array.
+
+    Returns ``None`` if the composer has no non-empty
+    ``fullConversationHeadersOnly`` array (legacy Cursor builds, or a
+    composer still in its "first bubble not yet stamped" state), which
+    callers treat as "no orphan filter applies -- pass every bubble
+    through the legacy encounter-order path". Returns a frozen set of
+    bubbleIds otherwise; callers treat any ``bubbleId:<cid>:*`` row whose
+    id is NOT in the set as a pruned-orphan that Cursor no longer shows.
+    """
+    try:
+        data = json.loads(raw) if raw else None
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    headers = data.get("fullConversationHeadersOnly")
+    if not isinstance(headers, list) or not headers:
+        return None
+    bubble_ids: set[str] = set()
+    for entry in headers:
+        if not isinstance(entry, dict):
+            continue
+        bid = entry.get("bubbleId")
+        if isinstance(bid, str) and bid:
+            bubble_ids.add(bid)
+    return frozenset(bubble_ids) if bubble_ids else None
+
+
+def _bubble_id_from_kv_key(key: str) -> str:
+    """Extract ``<bid>`` from ``bubbleId:<cid>:<bid>``; ``""`` if the key isn't a bubble row."""
+    parts = key.split(":", 2)
+    return parts[2] if len(parts) == 3 and parts[0] == "bubbleId" else ""
+
+
 def _legacy_tab_ids(raw: Any) -> list[str]:
     """Return the ``tabId`` strings from a legacy-chatdata blob."""
     try:
@@ -99,10 +135,12 @@ __all__ = [
     "_PANE_CONTAINER_PREFIX",
     "_PANE_VIEW_PREFIX",
     "_LEGACY_CHATDATA_KEY",
+    "_bubble_id_from_kv_key",
     "_cid_from_pane_view_key",
     "_cids_from_pane_container_value",
     "_composer_id_from_kv_key",
     "_hash_value",
+    "_header_bubble_ids_from_composer",
     "_legacy_tab_ids",
     "_tool_call_id_from_bubble",
 ]

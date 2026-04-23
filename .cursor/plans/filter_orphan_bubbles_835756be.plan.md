@@ -7,19 +7,19 @@ todos:
     status: completed
   - id: add-tests
     content: Add four new tests to tests/test_chat_index_incremental.py (orphan filtered on full rebuild, orphan filtered on incremental, orphan tool-call not linked into tool_call_parent, explicit legacy-no-headers regression), run them and confirm they fail against current code
-    status: pending
+    status: completed
   - id: implement-fix
-    content: In cursor_view/extraction/passes/global_bubbles.py::_collect_global_bubbles, skip bubbles whose bubbleId is not in ordinal_map when ordinal_map is non-empty (no message, no URIs, no tool_call_parent, no comp_meta seed, no db_path write); keep the legacy encounter-order fallback when ordinal_map is empty; update the docstring paragraph to explain the orphan-filter invariant; add a logger.debug counter guarded by isEnabledFor(DEBUG)
-    status: pending
+    content: In cursor_view/extraction/passes/global_bubbles.py::_collect_global_bubbles, skip bubbles whose bubbleId is not in ordinal_map when ordinal_map is non-empty (no message, no URIs, no tool_call_parent, no comp_meta seed, no db_path write); keep the legacy encounter-order fallback when ordinal_map is empty; update the docstring paragraph to explain the orphan-filter invariant; add a logger.debug counter guarded by isEnabledFor(DEBUG). Also filter orphans in cursor_view/cache/diff/global_db.py::_diff_global_cursor_disk_kv to block the second write path into tool_call_parent (required for the orphan-tool-call regression test to pass; see `_header_bubble_ids_from_composer` helper added to cursor_view/cache/diff/hashing.py).
+    status: completed
   - id: update-rule
     content: Add a 'Canonical bubble order' subsection to .cursor/rules/sqlite-cursor-db.mdc documenting the orphan-filter invariant and citing the two new regression tests
-    status: pending
+    status: completed
   - id: verify-green
     content: Re-run `python -m unittest discover -s tests -v` and confirm all tests (the four new ones plus the original 14) pass
-    status: pending
+    status: completed
   - id: manual-smoke
     content: Start the server against the real Cursor data, open http://127.0.0.1:5000/chat/7676aa8c-6c48-481e-ac24-1b1f434e6206 and confirm the orphan 'After the changes...' block no longer appears at the bottom and the last message is the canonical 'The diagram is in place...' assistant response; press Refresh once to force a full rebuild and re-verify
-    status: pending
+    status: completed
 isProject: false
 ---
 

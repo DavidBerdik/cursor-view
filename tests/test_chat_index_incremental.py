@@ -565,6 +565,136 @@ class IncrementalRefreshTest(unittest.TestCase):
         rows = self._messages_with_rowid(cid)
         self.assertEqual(len(rows), 2, "Legacy composer should still produce both messages")
 
+    # ---------------------------------------------------------------
+    # Regression: orphan bubbles (absent from fullConversationHeadersOnly)
+    # ---------------------------------------------------------------
+    def _tool_call_parent_ids(self) -> set[str]:
+        con = sqlite3.connect(self.cache_path)
+        try:
+            cur = con.cursor()
+            cur.execute("SELECT tool_call_id FROM tool_call_parent")
+            return {row[0] for row in cur.fetchall()}
+        finally:
+            con.close()
+
+    def test_orphan_bubble_filtered_full_rebuild(self) -> None:
+        """Bubbles absent from the headers array are dropped on full rebuild.
+
+        Cursor prunes bubbles out of ``fullConversationHeadersOnly``
+        (summarization checkpoints, conversation restarts) without
+        deleting the corresponding ``bubbleId:*`` rows. When the
+        headers array exists and is non-empty, any bubble whose id is
+        not in it is stale state Cursor itself does not show, so
+        extraction must skip it entirely rather than sort it to the
+        end of the transcript.
+        """
+        cid = "bbbbbbbb-1111-1111-1111-111111111111"
+        _put_kv(
+            self.global_db,
+            f"composerData:{cid}",
+            _composer("Orphan Full", headers=[("b1", 1), ("b2", 2)]),
+        )
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("b1 text"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("b2 text", role_type=2))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b_orphan", _bubble("orphan text", role_type=2))
+
+        self._build_index()
+
+        rows = self._messages_with_rowid(cid)
+        self.assertEqual(
+            [(r[2], r[3]) for r in rows],
+            [("user", "b1 text"), ("assistant", "b2 text")],
+            "Orphan bubble must be dropped on full rebuild, not appended at the end",
+        )
+        for _rowid, _pos, _role, content in rows:
+            self.assertNotIn("orphan", content.lower())
+
+    def test_orphan_bubble_filtered_incremental(self) -> None:
+        """Orphan filter also holds through the incremental refresh path."""
+        cid = "bbbbbbbb-2222-2222-2222-222222222222"
+        _put_kv(
+            self.global_db,
+            f"composerData:{cid}",
+            _composer("Orphan Inc", headers=[("b1", 1), ("b2", 2)]),
+        )
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("b1 text"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("b2 text", role_type=2))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b_orphan", _bubble("orphan text", role_type=2))
+
+        ci = self._build_index()
+
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b2",
+            _bubble("b2 text EDITED", role_type=2),
+        )
+
+        dirty = self._refresh(ci)
+        self.assertEqual(dirty.modified_cids, {cid})
+
+        rows = self._messages_with_rowid(cid)
+        self.assertEqual(
+            [(r[2], r[3]) for r in rows],
+            [("user", "b1 text"), ("assistant", "b2 text EDITED")],
+            "Incremental refresh must keep the orphan dropped and reflect the edit",
+        )
+
+    def test_orphan_tool_call_bubble_not_linked(self) -> None:
+        """Orphan bubbles' ``toolFormerData.toolCallId`` must not populate ``tool_call_parent``.
+
+        Linking an orphan would resurrect a dead subagent parent
+        pointer for a future ``task-<toolCallId>`` lookup and let
+        stale state override the canonical transcript.
+        """
+        parent_cid = "bbbbbbbb-3333-3333-3333-333333333333"
+        orphan_tcid = "toolu_orphan"
+        _put_kv(
+            self.global_db,
+            f"composerData:{parent_cid}",
+            _composer("Orphan ToolCall", headers=[("b1", 1)]),
+        )
+        _put_kv(self.global_db, f"bubbleId:{parent_cid}:b1", _bubble("parent ask"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{parent_cid}:b_orphan",
+            _bubble("orphan tool call", role_type=2, tool_call_id=orphan_tcid),
+        )
+
+        self._build_index()
+
+        self.assertNotIn(
+            orphan_tcid,
+            self._tool_call_parent_ids(),
+            "Orphan bubble's toolCallId must not be written to tool_call_parent",
+        )
+
+    def test_legacy_composer_still_includes_all_bubbles(self) -> None:
+        """No headers array => legacy encounter-order fallback keeps every bubble.
+
+        Supplements ``test_bubble_order_falls_back_to_encounter_order_without_headers``
+        by explicitly naming the "extra bubble that would have been an
+        orphan if headers existed" case, so future readers see the two
+        branches of ``_collect_global_bubbles`` side-by-side.
+        """
+        cid = "bbbbbbbb-4444-4444-4444-444444444444"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Legacy No Headers"))
+        # Alternating roles keep every bubble as its own chat_message
+        # row; same-role neighbors would otherwise be coalesced and
+        # hide the count we actually care about here.
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("first"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("second", role_type=2))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b_extra", _bubble("extra"))
+
+        self._build_index()
+
+        rows = self._messages_with_rowid(cid)
+        contents = {r[3] for r in rows}
+        self.assertEqual(
+            contents,
+            {"first", "second", "extra"},
+            "Without a headers array, every bubble falls through the legacy path",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

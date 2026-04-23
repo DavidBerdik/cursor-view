@@ -56,11 +56,22 @@ def _collect_global_bubbles(
     supplies Cursor's own canonical ordering. Messages are accumulated
     per cid tagged with their ordinal and sorted before being appended
     to ``sessions[cid]["messages"]``, so the final list matches the
-    order the user actually saw the turns in. Bubbles whose bubbleId
-    is missing from the map (legacy builds, or a bubble written after
-    the composerData snapshot we read) fall to the end of the per-cid
-    list in encountered order -- the exact fallback
-    ``fullConversationHeadersOnly`` is designed to make rare.
+    order the user actually saw the turns in.
+
+    Orphan-filter invariant: when a composer HAS a non-empty
+    ``fullConversationHeadersOnly`` array, any ``bubbleId:<cid>:*`` row
+    whose id is absent from that array is stale state Cursor itself
+    does not show (summarization checkpoints, conversation restarts,
+    "reset to this point" UX leave the bubble rows behind on disk) and
+    must be dropped entirely: no message, no URIs into project
+    inference, no ``tool_call_parent`` upsert, no ``comp_meta`` seed,
+    no ``db_path`` write. The legacy encounter-order fallback is
+    reserved for composers whose headers array is missing or empty
+    (old Cursor builds that predate the array); those bubbles are
+    still appended via ``_UNMAPPED_BUBBLE_ORDINAL`` so the chat
+    surfaces with every message it has. Regression guards live at
+    ``tests/test_chat_index_incremental.py::test_orphan_bubble_filtered_full_rebuild``
+    and ``::test_orphan_bubble_filtered_incremental``.
 
     When ``cids`` is given, bubbles are fetched via
     :func:`iter_bubbles_for_cids` so only rows in the dirty set are
@@ -81,6 +92,8 @@ def _collect_global_bubbles(
     messages_by_cid: Dict[str, list[tuple[int, int, dict]]] = defaultdict(list)
     msg_count = 0
     seq = 0
+    debug_enabled = logger.isEnabledFor(logging.DEBUG)
+    orphan_counts: Dict[str, int] = defaultdict(int) if debug_enabled else {}
     for (
         cid,
         bubble_id,
@@ -92,6 +105,16 @@ def _collect_global_bubbles(
         tool_call,
         image_refs,
     ) in bubble_iter:
+        ordinal_map = bubble_order_by_cid.get(cid) or {}
+        if ordinal_map and bubble_id not in ordinal_map:
+            # Orphan: Cursor pruned this bubble out of the composer's
+            # canonical transcript but left the row on disk. Skip every
+            # side effect -- URIs, tool_call_parent, comp_meta seed,
+            # db_path write -- so stale state can't resurrect a dead
+            # project inference hint or subagent parent link.
+            if debug_enabled:
+                orphan_counts[cid] += 1
+            continue
         if "db_path" not in sessions[cid]:
             sessions[cid]["db_path"] = db_path
         if file_uris:
@@ -114,7 +137,6 @@ def _collect_global_bubbles(
         # (no text, no images) has no user signal and is dropped.
         if not text and not image_refs:
             continue
-        ordinal_map = bubble_order_by_cid.get(cid) or {}
         ordinal = ordinal_map.get(bubble_id, _UNMAPPED_BUBBLE_ORDINAL)
         messages_by_cid[cid].append(
             (
@@ -139,3 +161,6 @@ def _collect_global_bubbles(
         sessions[cid]["messages"].extend(msg for _ord, _s, msg in bucket)
 
     logger.debug("  - Extracted %s messages from global cursorDiskKV bubbles", msg_count)
+    if debug_enabled:
+        for cid, n in orphan_counts.items():
+            logger.debug("  - Skipped %s orphan bubbles for %s", n, cid[:8])
