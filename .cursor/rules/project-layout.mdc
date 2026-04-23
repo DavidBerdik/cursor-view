@@ -14,7 +14,9 @@ alwaysApply: true
   subpackages (extend, don't replace, listed alphabetically):
   `cursor_view/cache/` (with `diff/` and `delta/` sub-subpackages),
   `cursor_view/chat_index/`, `cursor_view/desktop/`,
-  `cursor_view/export/`, `cursor_view/extraction/` (with a `passes/`
+  `cursor_view/export/` (with a `vendor/` sub-subpackage for committed
+  third-party browser assets — currently `mermaid.min.js`),
+  `cursor_view/extraction/` (with a `passes/`
   sub-subpackage for the per-pass modules), `cursor_view/images/`,
   `cursor_view/projects/`, `cursor_view/sources/`.
 - Do not create a new top-level Python file unless it is a shim for an
@@ -38,6 +40,12 @@ alwaysApply: true
 - Compiled or generated artifacts (`__pycache__/`, `dist/`, `build/`,
   `frontend/node_modules/`, `frontend/build/`) must stay gitignored.
   Do not commit them to "fix" a build.
+- Vendored third-party browser assets (files under `cursor_view/export/vendor/`)
+  are **not** build artifacts — they are committed intentionally so the HTML
+  export and the PyInstaller binary work without a Node toolchain or network
+  access. `cursor_view/export/vendor/` is the only permitted location for
+  such assets. See [`mermaid-rendering.mdc`](mermaid-rendering.mdc) for the
+  update procedure.
 - Static HTML prototypes and UI mockups do not belong in the repo
   (motivating example: the deleted `cursor_chat_viewer/index.html`).
 

@@ -1,4 +1,4 @@
-import React, { startTransition, useContext, useEffect, useMemo, useState } from 'react';
+import React, { startTransition, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -12,6 +12,7 @@ import {
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { prepareMarkdownHtml } from '../../markdown/prepareMarkdownHtml';
+import { prerenderMermaidDiagrams } from '../../utils/prerenderMermaidDiagrams';
 import { ColorContext } from '../../contexts/ColorContext';
 import { ThemeModeContext } from '../../contexts/ThemeModeContext';
 import { useExportFlow } from '../../hooks/useExportFlow';
@@ -59,11 +60,12 @@ const ChatDetail = () => {
             if (typeof message.content !== 'string') {
               return { ...message, images };
             }
-            return {
-              ...message,
-              renderedContent: await prepareMarkdownHtml(message.content),
-              images,
-            };
+            const renderedContent = await prepareMarkdownHtml(message.content);
+            // Pre-render mermaid diagrams while the loading spinner is still
+            // visible so MermaidBlock receives a ready SVG on first paint and
+            // there is no flash of raw source text.
+            const mermaidSvgs = await prerenderMermaidDiagrams(renderedContent, darkMode);
+            return { ...message, renderedContent, mermaidSvgs, images };
           }),
         );
         if (cancelled) {
@@ -89,6 +91,42 @@ const ChatDetail = () => {
       cancelled = true;
     };
   }, [sessionId]);
+
+  // Restore the saved scroll position and begin tracking it for future
+  // refreshes. useLayoutEffect fires after React commits the DOM but before
+  // the browser paints, so scrollTo executes before the first frame is
+  // drawn and the user never sees a flash at position 0. A requestAnimationFrame
+  // is not needed here because useLayoutEffect already guarantees the content
+  // DOM (and its full height) is in place when the callback runs.
+  //
+  // Key is per-session so navigating to a different chat starts at the top.
+  // window.history.scrollRestoration is set to 'manual' in App.js so the
+  // browser's own restore attempt cannot fire during the spinner and clobber
+  // the position we set here.
+  useLayoutEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    const key = `scroll-chat-${sessionId}`;
+    const saved = Number(sessionStorage.getItem(key) ?? '0');
+    window.scrollTo(0, saved);
+
+    let saveTimer;
+    function handleScroll() {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        sessionStorage.setItem(key, String(window.scrollY));
+      }, 150);
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+
+    return () => {
+      clearTimeout(saveTimer);
+      window.removeEventListener('scroll', handleScroll);
+    };
+  }, [loading, sessionId]);
 
   const messages = useMemo(
     () => (Array.isArray(chat?.messages) ? chat.messages : []),

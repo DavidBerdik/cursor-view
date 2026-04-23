@@ -87,6 +87,7 @@ export default function MessageBubble({ sessionId, message }) {
               html={message.renderedContent}
               colors={colors}
               role={message.role}
+              mermaidSvgs={message.mermaidSvgs}
             />
           ) : (
             <Typography>Content unavailable</Typography>

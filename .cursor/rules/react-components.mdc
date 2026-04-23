@@ -61,3 +61,26 @@ import { formatDate } from '../../utils/formatDate';
 - Reuse the `useExportFlow` hook for any new "export to file" UI
   rather than copying the format-dialog -> warning-dialog ->
   `exportChat()` state machine again.
+
+# Third-party imperative-DOM libraries
+
+When integrating a library whose primary output is imperative DOM mutation
+(mermaid, prism, monaco, etc.), isolate it behind a dedicated React
+component that owns the `useEffect` + cleanup, and a companion hook that
+manages the library's global singleton (initialization, theme sync).
+**Never** call the library's `.initialize` / `.render` / singleton-setup
+function directly inside a React render function — only inside effects.
+
+`MermaidBlock` + `useMermaid` are the canonical example:
+
+- `useMermaid` (in `frontend/src/hooks/useMermaid.js`) owns
+  `mermaid.initialize` — called in a `useEffect([darkMode])` once at the
+  `MessageMarkdown` level so the singleton is always configured before any
+  block renders.
+- `MermaidBlock` (in `frontend/src/components/MermaidBlock.js`) owns the
+  per-block async `mermaid.render` call, the diagram/source toggle state,
+  the `latestRef` cancellation pattern (per
+  [`frontend-hooks.mdc`](frontend-hooks.mdc)), and the error fallback UI.
+  It also re-initializes mermaid immediately before each `mermaid.render`
+  call because React runs child effects before parent effects, so the
+  parent's `useMermaid` effect may not have run yet on the first mount.

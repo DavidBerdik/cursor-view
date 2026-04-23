@@ -111,9 +111,13 @@ Subpackages:
     tables below.
 - `export/` &mdash; chat export generators: `themes.py` (palette),
   `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
-  normalization), `html.py` (standalone HTML + inline CSS template).
+  normalization), `html.py` (standalone HTML + inline CSS template),
+  `mermaid.py` (fence-to-div rewrite + vendored JS loader + init-script
+  builder for mermaid diagram support in HTML exports).
   Both `markdown.py` and `html.py` inline image attachments as
   `data:<mime>;base64,...` URIs so the exported file is self-contained.
+  `export/vendor/` holds `mermaid.min.js` (committed third-party asset,
+  not a build artifact &mdash; see "Updating vendored mermaid" below).
 - `images/` &mdash; image attachment parsing and byte loading shared
   between extraction and the cache write path. `refs.py` owns the
   `ImageRef` dataclass and `parse_bubble_images` (walks both the
@@ -212,6 +216,10 @@ disk file, and multiple images per message round-tripping through
 `ChatIndex.get_chat` / `get_image`, plus two coalescer unit cases for
 same-role image concatenation and the image-only-turn "Content
 unavailable" placeholder fix.
+`tests/test_export_html_mermaid.py` covers the mermaid HTML export
+path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
+special characters in diagram source, non-mermaid fence regression
+guard, and dark/light theme selection.
 
 ### Frontend (`frontend/src/`)
 
@@ -224,15 +232,18 @@ unavailable" placeholder fix.
 - `hooks/` &mdash; shared custom hooks: `useChatSummaries`,
   `useExportFlow`, `useExportWarningPreference`, `useSavedSelection`
   (captures + restores the user's text selection across the
-  context-menu open cycle).
+  context-menu open cycle), `useMermaid` (bootstraps the mermaid
+  singleton and keeps its theme in sync with `ThemeModeContext`).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
   consumed by `AppContextMenu`).
 - `markdown/` &mdash; the unified/remark/rehype pipeline that
   pre-renders chat messages to HTML.
 - `components/`
-  - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js` &mdash;
-    global UI.
+  - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js`,
+    `MermaidBlock.js` &mdash; global UI. `MermaidBlock` renders a
+    mermaid fenced code block as a live diagram (default) or raw source,
+    with a per-block toggle and a parse-error fallback.
   - `chat-list/` &mdash; the list page split into `ChatList`,
     `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
   - `chat-detail/` &mdash; the detail page split into `ChatDetail`,
@@ -253,6 +264,36 @@ unavailable" placeholder fix.
   standalone binary on Windows, macOS, and Linux.
 - `requirements.txt`, `frontend/package.json` &mdash; Python and JS
   dependencies, respectively.
+
+### Updating vendored mermaid
+
+The HTML export embeds `cursor_view/export/vendor/mermaid.min.js` so
+exported files are fully self-contained (no network required at view
+time). This file is a committed third-party asset, not a generated
+artifact. To upgrade the mermaid version:
+
+1. Update `"mermaid"` in `frontend/package.json` to the new version and
+   run:
+   ```
+   cd frontend
+   npm install
+   ```
+2. Copy the updated UMD build into the vendor directory:
+   ```
+   cp frontend/node_modules/mermaid/dist/mermaid.min.js \
+      cursor_view/export/vendor/mermaid.min.js
+   ```
+3. Update the version record:
+   ```
+   echo -n "X.Y.Z" > cursor_view/export/vendor/VERSION.txt
+   ```
+4. Commit `frontend/package.json`, `frontend/package-lock.json`,
+   `cursor_view/export/vendor/mermaid.min.js`, and
+   `cursor_view/export/vendor/VERSION.txt` together.
+
+The npm package (used by the React chat view) and the vendored UMD build
+(used by HTML exports) must track the **same major version** to avoid
+diagram-syntax drift between the two rendering paths.
 
 ## Standalone binary
 
@@ -349,5 +390,6 @@ Delete that folder to reset preferences.
 - Export chats as HTML, JSON, or Markdown
 - Organize chats by project
 - View timestamps of conversations
+- Render mermaid diagrams inline in the chat view and in HTML exports
 
 _Originally built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/)._

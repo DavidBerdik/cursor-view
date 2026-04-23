@@ -13,6 +13,14 @@ import { buildTheme } from './theme/buildTheme';
 import { darkColors, lightColors } from './theme/colors';
 import { readThemeCookie, writeThemeCookie } from './theme/themeCookie';
 
+// Disable the browser's built-in scroll restoration so it cannot fire
+// during the loading spinner (when the page is too short to reach the saved
+// position) and silently reset scroll to 0. ChatDetail owns manual scroll
+// restoration via sessionStorage for the chat detail page.
+if ('scrollRestoration' in window.history) {
+  window.history.scrollRestoration = 'manual';
+}
+
 function App() {
   const [darkMode, setDarkMode] = useState(readThemeCookie);
 

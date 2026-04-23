@@ -10,7 +10,14 @@ a = Analysis(
     ['cursor_view_main.py'],
     pathex=[],
     binaries=[],
-    datas=[('frontend/build', 'frontend/build')],
+    datas=[
+        ('frontend/build', 'frontend/build'),
+        # Vendored mermaid.min.js read by cursor_view.export.mermaid via
+        # importlib.resources at HTML export time. Must ship alongside the
+        # binary so exports work without a Node toolchain or network access.
+        ('cursor_view/export/vendor/mermaid.min.js', 'cursor_view/export/vendor'),
+        ('cursor_view/export/vendor/VERSION.txt', 'cursor_view/export/vendor'),
+    ],
     hiddenimports=[
         'webview.platforms.winforms',
         'webview.platforms.cocoa',

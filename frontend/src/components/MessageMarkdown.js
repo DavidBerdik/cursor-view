@@ -1,6 +1,9 @@
 import React, { useContext } from 'react';
 import { Box, alpha } from '@mui/material';
+import parse from 'html-react-parser';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
+import MermaidBlock from './MermaidBlock';
+import { useMermaid } from '../hooks/useMermaid';
 
 function getCodeBlockBackground(colors, role, darkMode) {
   if (role === 'user') {
@@ -10,9 +13,60 @@ function getCodeBlockBackground(colors, role, darkMode) {
   return alpha(colors.highlightColor, darkMode ? 0.2 : 0.1);
 }
 
-export default function MessageMarkdown({ html, colors, role }) {
+// Returns true when an html-dom-parser element node is a mermaid code block,
+// i.e. <code class="language-mermaid"> (possibly with additional classes).
+function isMermaidCodeNode(node) {
+  if (node.type !== 'tag' || node.name !== 'code') {
+    return false;
+  }
+  const classes = (node.attribs?.class ?? '').split(/\s+/);
+  return classes.includes('language-mermaid');
+}
+
+// Extracts the text content from an html-dom-parser element's children.
+function textContent(node) {
+  return (node.children ?? [])
+    .filter((c) => c.type === 'text')
+    .map((c) => c.data)
+    .join('');
+}
+
+export default function MessageMarkdown({ html, colors, role, mermaidSvgs }) {
   const { darkMode } = useContext(ThemeModeContext);
+  // Bootstraps the mermaid singleton and keeps its theme in sync with
+  // dark/light mode. MermaidBlock also calls mermaid.initialize before
+  // each render; this hook is the global owner of startOnLoad:false.
+  useMermaid();
+
   const codeBlockBackground = getCodeBlockBackground(colors, role, darkMode);
+
+  // Replace <pre><code class="language-mermaid">…</code></pre> nodes
+  // produced by rehype-stringify with a MermaidBlock React component.
+  // We intercept at the <pre> level so the wrapper element is removed and
+  // MermaidBlock's own block-level Box takes its place cleanly.
+  // All other nodes fall through to the default html-react-parser conversion.
+  function replaceNode(node) {
+    if (node.type !== 'tag' || node.name !== 'pre') {
+      return undefined;
+    }
+    const codeChild = (node.children ?? []).find(
+      (c) => c.type === 'tag' && isMermaidCodeNode(c),
+    );
+    if (!codeChild) {
+      return undefined;
+    }
+    const source = textContent(codeChild);
+    const prerender = mermaidSvgs instanceof Map ? mermaidSvgs.get(source) : undefined;
+    return (
+      <MermaidBlock
+        source={source}
+        initialSvg={prerender?.svg ?? undefined}
+        initialError={prerender?.error ?? undefined}
+      />
+    );
+  }
+
+  const parsedContent = parse(html || '', { replace: replaceNode });
 
   return (
     <Box
@@ -41,7 +95,6 @@ export default function MessageMarkdown({ html, colors, role }) {
       }}
     >
       <Box
-        dangerouslySetInnerHTML={{ __html: html || '' }}
         sx={{
           '& :not(pre) > code': {
             display: 'inline',
@@ -54,7 +107,9 @@ export default function MessageMarkdown({ html, colors, role }) {
             verticalAlign: 'baseline',
           },
         }}
-      />
+      >
+        {parsedContent}
+      </Box>
     </Box>
   );
 }

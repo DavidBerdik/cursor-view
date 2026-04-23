@@ -1,0 +1,101 @@
+---
+description: Mermaid diagram rendering conventions for the chat view and HTML export
+globs: cursor_view/export/**/*.py,frontend/src/**/*.{js,jsx}
+alwaysApply: false
+---
+
+# Two rendering pipelines, one source format
+
+Authors write fenced code blocks tagged with language `mermaid`. Two
+pipelines consume them; never introduce a third without updating this rule:
+
+- **Chat view** — `prepareMarkdownHtml` produces a pre-rendered HTML string
+  (unchanged). `MessageMarkdown` uses `html-react-parser` to walk that
+  string and replace every `<pre><code class="language-mermaid">` subtree
+  with a `<MermaidBlock>` React component. `MermaidBlock` owns the async
+  `mermaid.render` call, the diagram/source toggle, and the error fallback.
+  `useMermaid` (called once in `MessageMarkdown`) bootstraps the mermaid
+  singleton with `startOnLoad: false` and keeps the theme in sync with
+  `ThemeModeContext`.
+
+- **HTML export** — `cursor_view/export/mermaid.py::transform_mermaid_fences_to_html`
+  rewrites mermaid fences to `<div class="mermaid">` blocks before
+  Python-Markdown sees them. `load_vendored_mermaid_js` + `build_mermaid_init_script`
+  inject the vendored bundle and an initializer tag before `</body>` so
+  every exported file is self-contained (no network at view time).
+
+# BLOBs stay out of the cache
+
+Rendered mermaid SVGs are **not** image attachments and must not land in
+`chat_image`, `chat_message`, `chat_search_text`, `chat_search_fts`, or
+any source-row hash input. See [`image-attachments.mdc`](image-attachments.mdc)
+and [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc).
+
+# Theme sync
+
+- `MermaidBlock` reads `darkMode` from `ThemeModeContext` and re-renders
+  when it flips. `mermaid.initialize` is called with
+  `theme: darkMode ? 'dark' : 'default'` immediately before each
+  `mermaid.render` call.
+- `build_mermaid_init_script(theme_mode)` maps `"dark"` → `"dark"`,
+  everything else → `"default"`, matching the `EXPORT_HTML_THEMES` palette
+  logic in `cursor_view/export/themes.py`.
+- The mermaid theme must never be hard-coded; it must always be derived from
+  the same `theme_mode` / `darkMode` source that drives the surrounding UI.
+
+# Graceful source fallback on parse error
+
+When `mermaid.render` rejects, `MermaidBlock` surfaces the error message
+via a `<Typography color="error">` caption and forces `mode = 'source'` so
+the raw fence text is always visible. This is deliberate graceful
+degradation — not a [`known-bugs.mdc`](known-bugs.mdc) `TODO(bug):`.
+Do not silently swallow parse errors or render a blank box.
+
+# Escape before inlining (HTML export)
+
+`transform_mermaid_fences_to_html` runs `html.escape` on the mermaid body
+before wrapping it in `<div class="mermaid">`. This is the actual XSS
+boundary for authored content. Mermaid's `securityLevel: "strict"` is
+belt-and-braces on top; removing the `html.escape` call is not safe even
+if `securityLevel` is set.
+
+# Markdown and JSON exports leave fences verbatim
+
+`cursor_view/export/markdown.py` emits message content unchanged.
+`mermaid`-tagged fences render on any GitHub-flavored markdown viewer
+without any transformation from us. Do not add diagram rendering to the
+Markdown or JSON export paths.
+
+# Vendored mermaid.min.js
+
+The UMD browser build lives at `cursor_view/export/vendor/mermaid.min.js`
+and is committed to the repo. It is **not** a generated build artifact of
+this project; it is a vendored third-party asset, analogous to a
+`third_party/` or `vendor/` directory in other projects.
+
+`cursor_view/export/vendor/` is the **only** place vendored third-party
+JS/CSS assets may live. Do not add a second `vendor/` dir elsewhere.
+
+## Update procedure
+
+When bumping the mermaid version:
+
+1. Update `"mermaid"` in `frontend/package.json` and run `npm install`
+   inside `frontend/`.
+2. Copy `frontend/node_modules/mermaid/dist/mermaid.min.js` to
+   `cursor_view/export/vendor/mermaid.min.js`.
+3. Overwrite `cursor_view/export/vendor/VERSION.txt` with the new version
+   string (no trailing newline).
+4. Commit all three files together.
+
+The frontend (`mermaid` npm package) and the export (`mermaid.min.js`) must
+track the **same major version** to avoid diagram-syntax drift between the
+chat view and HTML exports.
+
+# Prose references to mermaid fence syntax
+
+When writing plan files, rules, or other documentation that needs to mention
+the literal text of a mermaid opening fence, do **not** use a 4-backtick
+inline-code span to wrap it. Cursor's chat renderer treats the inner triple
+backticks as an opening fence and produces a parse error. Use phrasing such
+as "a fenced code block tagged with language `mermaid`" instead.

@@ -18,6 +18,11 @@ from typing import Any
 import markdown
 
 from cursor_view.export.markdown_fences import normalize_markdown_for_html_export
+from cursor_view.export.mermaid import (
+    build_mermaid_init_script,
+    load_vendored_mermaid_js,
+    transform_mermaid_fences_to_html,
+)
 from cursor_view.export.themes import EXPORT_HTML_THEMES
 
 logger = logging.getLogger(__name__)
@@ -129,6 +134,7 @@ _HTML_STYLE_TEMPLATE = """\
             border: 1px solid var(--pre-border);
             border-radius: 5px;
             overflow-x: auto;
+            background-color: var(--pre-bg) !important;
         }}
         .message-content .codehilite pre {{
             margin: 0;
@@ -256,6 +262,66 @@ _HTML_STYLE_TEMPLATE = """\
         }}
         .footer a {{
             color: var(--link);
+        }}
+        .message-content .mermaid {{
+            position: relative;
+            text-align: center;
+            margin: 1em 0;
+        }}
+        .message-content .mermaid-toggle {{
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: var(--text-secondary);
+            line-height: 0;
+            opacity: 0.6;
+        }}
+        .message-content .mermaid-toggle:hover {{
+            color: var(--link);
+            opacity: 1;
+        }}
+        .message-content .mermaid-source {{
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            margin: 0;
+            padding: 15px;
+            white-space: pre;
+            text-align: left;
+            overflow-x: auto;
+            color: var(--text-primary);
+            background-color: var(--pre-bg);
+            border: 1px solid var(--pre-border);
+            border-radius: 5px;
+        }}
+        .message-content .mermaid-error {{
+            text-align: left;
+            border: 1px solid #e57373;
+            border-radius: 4px;
+            padding: 8px 12px;
+            margin: 1em 0;
+        }}
+        .message-content .mermaid-error-msg {{
+            color: #e57373;
+            font-size: 0.85em;
+            margin: 0 0 6px 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }}
+        .message-content .mermaid-error-src {{
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            margin: 8px 0 0 0;
+            padding: 15px;
+            white-space: pre;
+            overflow-x: auto;
+            color: var(--text-primary);
+            background-color: var(--pre-bg);
+            border: 1px solid var(--pre-border);
+            border-radius: 5px;
         }}"""
 
 
@@ -316,6 +382,7 @@ def _build_messages_html(messages: list[dict[str, Any]], theme: dict[str, Any]) 
             content = "Content unavailable"
 
         normalized_content = normalize_markdown_for_html_export(content)
+        normalized_content = transform_mermaid_fences_to_html(normalized_content)
         # Escape raw HTML first, then let the Markdown library convert markdown syntax.
         rendered_content = markdown.markdown(
             normalized_content,
@@ -400,6 +467,8 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
         messages_html = _build_messages_html(messages, theme)
 
         style_block = _HTML_STYLE_TEMPLATE.format_map(theme)
+        mermaid_lib = load_vendored_mermaid_js()
+        mermaid_init = build_mermaid_init_script(resolved_theme_mode)
         html_document = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -427,6 +496,8 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
     <div class="footer">
         <a href="https://github.com/DavidBerdik/cursor-view" target="_blank" rel="noopener noreferrer">Exported from Cursor View</a>
     </div>
+    <script>{mermaid_lib}</script>
+    {mermaid_init}
 </body>
 </html>"""
 
