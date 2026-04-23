@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: A4-log-oob-image-position
     content: Add a lazy `logger.warning` in the new `_attach_images_to_messages` helper (from D2) for any `chat_image` row whose `position` is out of range, so silent data drop becomes observable.
-    status: pending
+    status: completed
   - id: D1-split-refs-transport
     content: "Follow plan §3.1's explicit escape hatch: move `image_ref_to_transport_dict` and `image_ref_from_transport_dict` from `cursor_view/images/refs.py` into new `cursor_view/images/transport.py`; update `cursor_view/images/__init__.py` re-exports. Brings `refs.py` under plan's <100-line target."
     status: pending

@@ -255,17 +255,27 @@ def _attach_images_to_messages(
     """Bucket ``chat_image`` rows into each message's ``images`` list.
 
     Pops storage-only ``position`` / ``image_index`` keys (both
-    served their ordering job upstream) and drops out-of-range
-    positions so the caller sees the remaining images, not a crash.
+    served their ordering job upstream) and logs-and-drops any
+    out-of-range position so the caller sees the remaining images,
+    not a crash. The warning makes the silent-data-loss path (manual
+    DB edits, partial delta applies, future regressions) observable
+    rather than invisible.
     """
     image_rows = _fetch_images_for_session(
         con, session_id, include_bytes=include_bytes
     )
     for image in image_rows:
         position = image.pop("position")
-        image.pop("image_index", None)
+        image_index = image.pop("image_index", None)
         if 0 <= position < len(messages):
             messages[position]["images"].append(image)
+        else:
+            logger.warning(
+                "Dropping out-of-range chat_image row for %s: "
+                "position=%s, image_index=%s, uuid=%s, message_count=%s",
+                session_id, position, image_index,
+                image.get("uuid"), len(messages),
+            )
 
 
 def _count_summaries(con: sqlite3.Connection, query: str) -> int:
