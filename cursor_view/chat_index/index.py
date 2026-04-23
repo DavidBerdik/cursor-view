@@ -1,4 +1,13 @@
-"""``ChatIndex`` orchestrator: refresh routing, connection lifecycle, public API."""
+"""``ChatIndex`` orchestrator: refresh routing, connection lifecycle, public API.
+
+Schema-drift routing (``_cached_schema_version`` plus the
+synchronous-rebuild branch of :meth:`ChatIndex.ensure_current`) sets
+the module's mandatory floor slightly above the 400-line soft limit:
+those helpers read ``ChatIndex`` instance state (``_rebuild_build_lock``,
+``db_path``, ``_bg_*``) and cannot be extracted to a sibling module
+without pulling that state with them. See
+:file:`.cursor/rules/chat-index-refresh.mdc`.
+"""
 
 from __future__ import annotations
 
@@ -17,9 +26,9 @@ from cursor_view.cache import (
 from cursor_view.chat_index.fingerprint import _current_source_fingerprint
 from cursor_view.chat_index.rebuild import _rebuild
 from cursor_view.chat_index.rows import (
+    _attach_images_to_messages,
     _count_summaries,
     _database_has_fts,
-    _fetch_images_for_session,
     _fetch_summaries,
     _insert_chat,
     _summary_row_to_api,
@@ -111,17 +120,9 @@ class ChatIndex:
                 {"role": row["role"], "content": row["content"], "images": []}
                 for row in cur.fetchall()
             ]
-            image_rows = _fetch_images_for_session(
-                con, session_id, include_bytes=include_image_bytes
+            _attach_images_to_messages(
+                con, session_id, messages, include_bytes=include_image_bytes
             )
-        # Bucket each image into its owning message by ``position``;
-        # ``image_index`` served its ordering job upstream, so both
-        # storage-layer keys come off before hitting the wire.
-        for image in image_rows:
-            position = image.pop("position")
-            image.pop("image_index", None)
-            if 0 <= position < len(messages):
-                messages[position]["images"].append(image)
         detail = _summary_row_to_api(summary)
         detail["messages"] = messages
         return detail
@@ -153,29 +154,16 @@ class ChatIndex:
     def ensure_current(self, force: bool = False) -> None:
         """Refresh the index if source DBs changed or a rebuild was requested.
 
-        Routing matches section 3.1 of the incremental-refresh plan:
-
-        - ``force=True`` always triggers a synchronous full rebuild;
-          there is no delta equivalent because the UI uses this entry
-          point to reset suspected-bad cache state.
-        - A missing cache file is a first-build and likewise rebuilds
-          synchronously; the delta path needs a populated
-          ``source_row`` / ``composer_state`` baseline to be useful.
-        - A readable cache whose ``meta`` answers the fast
-          fingerprint check is a pure cache hit; no work scheduled.
-        - A cache that raises :class:`sqlite3.DatabaseError` while
-          we're reading its meta is corrupt and rebuilt synchronously
-          under the lock.
-        - Schema-version drift is treated like a missing cache -- the
-          on-disk rows were produced under the previous schema, so
-          serving them while the new cache is built would return
-          responses that don't match the current table layout.
-          Callers block until the rebuild completes.
-        - Pure fingerprint mismatch (source DB mtimes moved but the
-          row shapes are still current) is a stale-but-readable
-          cache; the current snapshot is served immediately while
-          :meth:`_schedule_background_refresh` dispatches the
-          incremental apply off the request path.
+        This method is the canonical refresh-routing switch that
+        :file:`.cursor/rules/chat-index-refresh.mdc` codifies:
+        ``force=True``, a missing cache file, corrupt ``meta``
+        (``sqlite3.DatabaseError``), or schema-version drift all
+        route to a synchronous rebuild; a pure source-fingerprint
+        miss routes to stale-while-revalidate via
+        :meth:`_schedule_background_refresh`. Schema drift blocks
+        (rather than SWR-scheduling) because serving old-shape rows
+        under a new-shape reader is a correctness bug, not a
+        freshness issue.
         """
         source_fingerprint, sources = self._current_source_fingerprint()
 
@@ -253,22 +241,14 @@ class ChatIndex:
     def _background_refresh_worker(self) -> None:
         """Run a stale-while-revalidate refresh, releasing the schedule slot on exit.
 
-        Acquires ``_rebuild_build_lock`` so delta applies and fallback
-        rebuilds don't race against a synchronous force-refresh or
-        first-build. Under the lock:
-
-        1. Re-fingerprint the sources; another thread may have
-           completed the refresh while we were waiting, turning this
-           worker into a no-op.
-        2. Read the cache's ``schema_version``. Anything that throws
-           :class:`sqlite3.DatabaseError` or that doesn't match the
-           current :data:`INDEX_SCHEMA_VERSION` falls through to a
-           full rebuild; the delta path requires the v2 tables to be
-           present and consistent.
-        3. Otherwise run the row-hash diff and apply it. If the
-           apply transaction fails with a SQLite error (corruption,
-           schema surprise, etc.), log and fall back to a full
-           rebuild so the cache is never left in a broken state.
+        Holds ``_rebuild_build_lock`` so delta applies and fallback
+        rebuilds don't race force-refresh or first-build. Under the
+        lock, re-fingerprints the sources (another worker may have
+        finished while we were waiting) then picks between the delta
+        path and a full rebuild; any
+        :class:`sqlite3.DatabaseError`, schema-version mismatch, or
+        failed delta apply falls through to a rebuild so the cache
+        is never left in a broken state.
         """
         try:
             with self._rebuild_build_lock:

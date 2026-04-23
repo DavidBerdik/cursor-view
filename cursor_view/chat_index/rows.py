@@ -168,13 +168,11 @@ def _insert_chat_images(
 ) -> None:
     """Materialize ``messages`` image attachments into ``chat_image``.
 
-    ``position`` matches the owning ``chat_message`` row's position
-    (both come from the same :func:`enumerate` over the coalesced
-    ``messages``), so a later join on ``(session_id, position)``
-    lines images up with their message without a separate ordinal.
-    Missing / malformed sources are logged by
-    :func:`cursor_view.images.load_image_bytes` and silently skipped
-    so one broken attachment never drops a whole message.
+    ``position`` shares the :func:`enumerate` index with the owning
+    ``chat_message`` row, joining images to messages without a
+    separate ordinal. Malformed sources are logged and skipped by
+    :func:`cursor_view.images.load_image_bytes` so one broken
+    attachment never drops a whole message.
     """
     for position, msg in enumerate(messages):
         for image_index, image_dict in enumerate(msg.get("images") or []):
@@ -218,14 +216,12 @@ def _fetch_images_for_session(
 ) -> list[dict[str, Any]]:
     """Return image metadata (and optionally bytes) for ``session_id``.
 
-    Rows come back ordered by ``(position, image_index)`` so callers
-    can bucket them straight into per-message groups without a
-    secondary sort. ``include_bytes`` is opt-in: the chat-detail JSON
-    served to the browser stays small by defaulting to metadata only,
-    while exports flip it on and pay the base64 cost once to inline
-    ``data:<mime>;base64,...`` URIs. The two SQL strings are distinct
-    constants so a typo in one cannot silently inherit a bad column
-    list from the other.
+    Rows are ordered by ``(position, image_index)`` so callers can
+    bucket them per message without a secondary sort. ``include_bytes``
+    is opt-in: chat-detail JSON stays metadata-only by default;
+    exports flip it on to inline ``data:<mime>;base64,...`` URIs. The
+    two SQL constants stay distinct so a typo cannot silently inherit
+    the other's column list.
     """
     cur = con.cursor()
     cur.execute(
@@ -247,6 +243,29 @@ def _fetch_images_for_session(
             entry["data_uri"] = f"data:{row['mime_type']};base64,{encoded}"
         out.append(entry)
     return out
+
+
+def _attach_images_to_messages(
+    con: sqlite3.Connection,
+    session_id: str,
+    messages: list[dict[str, Any]],
+    *,
+    include_bytes: bool,
+) -> None:
+    """Bucket ``chat_image`` rows into each message's ``images`` list.
+
+    Pops storage-only ``position`` / ``image_index`` keys (both
+    served their ordering job upstream) and drops out-of-range
+    positions so the caller sees the remaining images, not a crash.
+    """
+    image_rows = _fetch_images_for_session(
+        con, session_id, include_bytes=include_bytes
+    )
+    for image in image_rows:
+        position = image.pop("position")
+        image.pop("image_index", None)
+        if 0 <= position < len(messages):
+            messages[position]["images"].append(image)
 
 
 def _count_summaries(con: sqlite3.Connection, query: str) -> int:
