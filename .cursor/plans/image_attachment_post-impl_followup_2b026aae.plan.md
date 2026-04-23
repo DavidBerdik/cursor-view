@@ -131,7 +131,7 @@ Rollout ordering is in a dedicated section at the bottom of this file.
 
 ### A4 - `get_chat` silently drops out-of-range image positions
 
-**Where.** [`cursor_view/chat_index/index.py`](cursor_view/chat_index/index.py) lines 120-124.
+**Where.** [`cursor_view/chat_index/index.py`](cursor_view/chat_index/index.py) lines 120-124 (line numbers confirmed against the post-schema-drift file; the routing changes from `.cursor/plans/schema-drift-sync-rebuild_aa2ba9e8.plan.md` did not move this block because they landed after `get_chat`).
 
 ```120:124:cursor_view/chat_index/index.py
         for image in image_rows:
@@ -167,7 +167,7 @@ Rollout ordering is in a dedicated section at the bottom of this file.
   <Paper>
     <Box sx={{ /* markdown styling */ }}>
       {typeof message.renderedContent === 'string'
-        ? <MessageMarkdown … />
+        ? <MessageMarkdown html={…} colors={…} role={…} mermaidSvgs={message.mermaidSvgs} />
         : <Typography>Content unavailable</Typography>}
     </Box>
   </Paper>
@@ -177,6 +177,8 @@ Rollout ordering is in a dedicated section at the bottom of this file.
 </Box>
 ```
 
+The `mermaidSvgs={message.mermaidSvgs}` prop is the hand-off to the mermaid pre-render Map populated by `ChatDetail`'s fetch effect (see `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` §Change 1); it is orthogonal to A6 and stays on the `<MessageMarkdown>` element as-is after the JSX move below.
+
 **Target structure:**
 
 ```jsx
@@ -185,7 +187,7 @@ Rollout ordering is in a dedicated section at the bottom of this file.
   <Paper>
     <Box sx={{ /* markdown styling */ }}>
       {typeof message.renderedContent === 'string'
-        ? <MessageMarkdown … />
+        ? <MessageMarkdown html={…} colors={…} role={…} mermaidSvgs={message.mermaidSvgs} />
         : <Typography>Content unavailable</Typography>}
     </Box>
     {images.length > 0 && (
@@ -203,7 +205,7 @@ Rollout ordering is in a dedicated section at the bottom of this file.
 
 **Rule compliance.**
 
-- [`react-components.mdc`](.cursor/rules/react-components.mdc) - `MessageBubble.js` stays at ~105 lines (well under the 250-line soft limit, unchanged by moving one JSX block from outside to inside a parent element); `MessageImageGallery.js` drops two lines, still well under 80; theme tokens only (no hard-coded colors); one component per file preserved; "feature-folder sibling" layout preserved.
+- [`react-components.mdc`](.cursor/rules/react-components.mdc) - `MessageBubble.js` stays at ~103 lines (current count; moving one JSX block from outside to inside a parent element is byte-neutral, well under the 250-line soft limit); `MessageImageGallery.js` drops two lines, still well under 80; theme tokens only (no hard-coded colors); one component per file preserved; "feature-folder sibling" layout preserved. The `mermaid-rendering.mdc` third-party imperative-DOM rule (added by `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md`) applies only to the `MessageMarkdown` → `MermaidBlock` chain inside the Paper and is not affected by the gallery relocation.
 - [`frontend-hooks.mdc`](.cursor/rules/frontend-hooks.mdc) - no hook changes; `MessageBubble` keeps its existing `useContext(ColorContext)` and nothing else.
 - [`image-attachments.mdc`](.cursor/rules/image-attachments.mdc) - byte flow unchanged (gallery still renders `<img src="/api/chat/:id/image/:uuid">` against the dedicated route; no base64 inlining, no chat-detail JSON bytes, no new path to the cache).
 - [`comments-style.mdc`](.cursor/rules/comments-style.mdc) - the updated intent comment on the gallery placement explains *why* it lives inside the Paper (parity with exported layout, bubble visually contains its attachments) rather than narrating the JSX structure.
@@ -214,8 +216,10 @@ Rollout ordering is in a dedicated section at the bottom of this file.
 
 **Where.** [`.cursor/rules/image-attachments.mdc`](.cursor/rules/image-attachments.mdc).
 
+**Rule state check.** Confirmed that `image-attachments.mdc` was **not** touched by any of the three intervening plans (`filter_orphan_bubbles_835756be`, `schema-drift-sync-rebuild_aa2ba9e8`, `mermaid-diagram-rendering_e9f9690c`); both drift items below still apply verbatim.
+
 **What.** Two drift items:
-- The "Canonical examples" / "Bytes flow" sections name only the Markdown + HTML renderers as consumers of inlined `data_uri`. The JSON export path also returns per-message `images` with `data_uri` populated (via `get_chat(..., include_image_bytes=True)` in `routes.py::export_chat`). Per comments-style.mdc "Rule drift", this must reflect reality.
+- The "Canonical examples" section near the end of the rule names only `markdown.py::_render_message_images_markdown` and `html.py::_render_message_images_html` as consumers that inline base64 data URIs, but the JSON export path also returns per-message `images` with `data_uri` populated (via `get_chat(..., include_image_bytes=True)` in `routes.py::export_chat`). The "Bytes flow" section higher up does already mention JSON correctly ("Markdown / JSON / HTML renderers") so the fix is a narrow one-bullet addition to the "Canonical examples" list naming the JSON export entry point. Per comments-style.mdc "Rule drift", the two sections must agree.
 - The paragraph on `_sniff_mime` says "reads the first 16 bytes" and calls out a deliberate two-part WEBP check. The 16-byte figure is only the size of the unknown-magic debug log slice; the sniffer uses prefix checks of 3-12 bytes depending on format. Minor wording nit worth fixing while the rule is being touched.
 
 **Fix direction.** Edit the two paragraphs. No code change.
@@ -273,8 +277,10 @@ The intent comment should explain *why* the blank is needed ("blank line so Comm
 ### A9 - HTML export: images should be clickable hyperlinks to a full-size view
 
 **Where.**
-- [`cursor_view/export/html.py`](cursor_view/export/html.py) `_render_message_images_html` (~lines 262-287) - emits each `<img>` tag.
-- [`cursor_view/export/html.py`](cursor_view/export/html.py) `_HTML_STYLE_TEMPLATE` `.message-images` CSS block (~lines 176-185) - needs anchor-specific rules.
+- [`cursor_view/export/html.py`](cursor_view/export/html.py) `_render_message_images_html` (lines 328-353 in the current file; the function moved down the module when `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` added ~60 lines of mermaid CSS to `_HTML_STYLE_TEMPLATE`) - emits each `<img>` tag.
+- [`cursor_view/export/html.py`](cursor_view/export/html.py) `_HTML_STYLE_TEMPLATE` `.message-images` CSS block (lines 182-191 in the current file) - needs anchor-specific rules.
+
+**Mermaid-CSS coexistence.** The mermaid rules (lines 266-324 of the current file: `.mermaid`, `.mermaid-toggle`, `.mermaid-source`, `.mermaid-error`, `.mermaid-error-msg`, `.mermaid-error-src`) live farther down the template and do not collide with A9's additions. The selectors are orthogonal (`.message-images a` vs. `.mermaid-*`), and A9's `text-decoration: none` / `line-height: 0` overrides target only descendants of `.message-images`, never descendants of `.mermaid`. No cross-editing of mermaid rules is required when A9 lands.
 
 **What.** User-reported UX request. HTML exports currently emit bare `<img src="data:...">` tags, so users who want a full-size view of an attached image must right-click and pick *Open Image in New Tab*. The live React gallery (`MessageImageGallery.js`) already ships the better UX: each image is wrapped in `<Box component="a" href={src} target="_blank" rel="noopener">` so one click opens the full-size image in a new tab. The HTML export should be brought to parity.
 
@@ -762,27 +768,49 @@ const handleOpenLink = () => {
 
 ### D1 - `cursor_view/images/refs.py` over plan section 3.1 target
 
-**Where.** [`cursor_view/images/refs.py`](cursor_view/images/refs.py) is 142 lines vs. plan section 3.1's soft <100-line target.
+**Where.** [`cursor_view/images/refs.py`](cursor_view/images/refs.py) is 141 lines vs. plan section 3.1's soft <100-line target. (At plan-write time the module was 142 lines; a one-line whitespace trim landed in an unrelated touch, so the arithmetic below still matches the original split direction.)
 
 **Fix direction.** Follow the plan's own escape hatch: move `image_ref_to_transport_dict` and `image_ref_from_transport_dict` into a new sibling `cursor_view/images/transport.py`. Update `cursor_view/images/__init__.py` to re-export both from the new module. Update `cursor_view/images/refs.py` module docstring to cross-reference. Consumers (`extraction/passes/global_bubbles.py`, `chat_index/rows.py`) already import from the package `__init__.py`, so no call-site changes needed.
 
-### D2 - `cursor_view/chat_index/index.py` 410 lines, 10 over soft limit
+### D2 - `cursor_view/chat_index/index.py` 454 lines, 54 over soft limit
 
 **Where.** [`cursor_view/chat_index/index.py`](cursor_view/chat_index/index.py).
 
-**Fix direction.** Extract the image-attach + strip-internals step from `get_chat` into a private helper `_attach_images_to_messages(con, session_id, messages, include_bytes)` in `rows.py`. Saves ~10 lines in `index.py`. Since `rows.py` is already at 391 and would grow to ~408, compensate by tightening the `_insert_chat_images` / `_fetch_images_for_session` docstrings (they have verbose intent paragraphs that can shed 6-8 lines without losing intent). Also folds A4's new `logger.warning` into the extracted helper (clean place for it). Both modules land under ~400.
+**Starting state (post-schema-drift).** At this plan's authoring, `index.py` was 410 lines. After `.cursor/plans/schema-drift-sync-rebuild_aa2ba9e8.plan.md` landed the synchronous-on-schema-drift router, the module is now **454 lines**. The new lines (~50) are the `_cached_schema_version` helper plus the schema-drift branch inside `ensure_current` and its expanded routing docstring; they are correctness-critical and must not be extracted to a helper module away from the `ChatIndex` instance state they read. D2's arithmetic is updated accordingly.
 
-### D3 - `cursor_view/export/html.py` 443 lines, 43 over soft limit
+**Fix direction.** Extract the image-attach + strip-internals step from `get_chat` into a private helper `_attach_images_to_messages(con, session_id, messages, include_bytes)` in `rows.py`. Saves ~8 lines in `index.py` (current lines 117-124), landing it at ~446 -- still over 400. Compensate by tightening two groups of docstrings without losing intent:
+
+1. The `ensure_current` + `_background_refresh_worker` routing docstrings (current lines 154-178 and 253-271 respectively) together can shed ~10-15 lines by consolidating the four-case routing bullets into a pointer to [`chat-index-refresh.mdc`](.cursor/rules/chat-index-refresh.mdc), which now codifies the same invariant. Keep the "old-shape rows under a new-shape reader are a correctness bug" intent sentence in-code so the branch comment stays self-explanatory.
+2. The `_insert_chat_images` / `_fetch_images_for_session` docstrings in `rows.py` (this is the trim the original todo already calls for, preserving `rows.py` under ~385 after it absorbs the ~8-line extracted helper from `index.py`; current `rows.py` is 390 lines).
+
+**Target.** `index.py` under ~425-430, `rows.py` under ~385. If docstring trimming cannot get `index.py` back under the 400 soft limit without dropping an intent paragraph, accept the overrun and document it with a one-sentence preamble in the module docstring naming schema-drift routing as the mandatory new floor, rather than extracting routing helpers into a separate module (`_cached_schema_version`, `_schedule_background_refresh`, `_background_refresh_worker`, and `_cached_index_up_to_date` all read `self._rebuild_build_lock`, `self.db_path`, `self._bg_*` fields, so a free-function extraction is unnatural). The soft limit is a *soft* limit; the rule's intent is to prevent runaway growth, not to force awkward splits.
+
+A4's `logger.warning` for out-of-range `chat_image.position` lands in the extracted `_attach_images_to_messages` helper, exactly as the original plan states -- that is still the clean home for it.
+
+### D3 - `cursor_view/export/html.py` 514 lines, 114 over soft limit
 
 **Where.** [`cursor_view/export/html.py`](cursor_view/export/html.py).
 
-**Fix direction.** Move `_HTML_STYLE_TEMPLATE` (the ~220-line CSS string constant at the top of the module) to a new sibling `cursor_view/export/html_styles.py`. `html.py` re-imports it: `from cursor_view.export.html_styles import HTML_STYLE_TEMPLATE`. The template becomes a public name (drop the leading underscore) since it's now cross-module; the import in `html.py` stays the only consumer. Net: `html.py` drops to ~225 lines, new `html_styles.py` at ~230 lines. Both comfortably under 400. No behavioral change.
+**Starting state (post-mermaid).** At this plan's authoring, `html.py` was 443 lines (43 over the soft limit). After `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` landed, the module is now **514 lines**. The ~71 new lines are:
 
-### D4 - `generate_markdown` 51 lines, over plan section 8.1's <40 target
+- ~60 lines of mermaid CSS in `_HTML_STYLE_TEMPLATE` (current lines 266-324: the `.mermaid` / `.mermaid-toggle` / `.mermaid-source` / `.mermaid-error` / `.mermaid-error-msg` / `.mermaid-error-src` rules).
+- The `transform_mermaid_fences_to_html` call inside `_build_messages_html` (~2 lines).
+- The `load_vendored_mermaid_js()` + `build_mermaid_init_script(...)` invocations and the `<script>` / initializer injection before `</body>` inside `generate_standalone_html` (~4 lines).
+- New imports block (`from cursor_view.export.mermaid import ...`).
 
-**Where.** [`cursor_view/export/markdown.py`](cursor_view/export/markdown.py) lines 28-78.
+D3 is more motivated than originally stated (114 over the limit vs. 43) and the split moves more bytes than originally projected.
 
-**Fix direction.** Extract the header-block construction (lines 31-53 - date formatting + project info + info-lines list) into a private helper `_markdown_header_lines(chat) -> list[str]`. Also extract the per-message rendering block (lines 59-72) into `_markdown_message_lines(msg, index) -> list[str]` which internally calls `_render_message_images_markdown`. `generate_markdown` shrinks to ~20 lines (info, header-lines extend, messages branch with the per-message helper call, footer). Module lands at ~95 lines, still under the <80 plan target if we tighten helper docstrings; if not, the 100-line soft rule still easily covered.
+**Fix direction.** Move `_HTML_STYLE_TEMPLATE` (the ~290-line CSS string constant spanning current lines 35-325, including the new mermaid rules) to a new sibling `cursor_view/export/html_styles.py`. `html.py` re-imports it: `from cursor_view.export.html_styles import HTML_STYLE_TEMPLATE`. The template becomes a public name (drop the leading underscore) since it's now cross-module; the import in `html.py` stays the only consumer. Net: `html.py` drops to ~235 lines (not the original ~225 projection -- the mermaid script-injection and helper-call lines stay in `html.py`); new `html_styles.py` lands at ~290 lines (the mermaid CSS rides the move). Both comfortably under 400. No behavioral change.
+
+**Mermaid coexistence.** The mermaid rules all live inside `_HTML_STYLE_TEMPLATE` and travel with the move; no separate copy or cross-reference is needed. After D3 lands, the `html.py` module body is limited to imports, the two rendering helpers (`_render_message_images_html`, `_build_messages_html`), and `generate_standalone_html` -- none of which contain CSS, so a future contributor adding more mermaid rules will naturally land them in `html_styles.py` by inspection.
+
+### D4 - `generate_markdown` 50 lines, over plan section 8.1's <40 target
+
+**Where.** [`cursor_view/export/markdown.py`](cursor_view/export/markdown.py) lines 28-77.
+
+**Starting state.** `markdown.py` is **78 lines total** today; `generate_markdown` spans lines 28-77 (50 lines). The original plan text cited 51 lines for the function and projected a post-refactor module size of ~95; neither arithmetic survives the smaller starting module. The helper-extraction motivation is unchanged because the function still exceeds plan section 8.1's <40-line soft target.
+
+**Fix direction.** Extract the header-block construction (lines 31-52 -- date formatting + project info + info-lines list) into a private helper `_markdown_header_lines(chat) -> list[str]`. Also extract the per-message rendering block (lines 58-72) into `_markdown_message_lines(msg, index) -> list[str]` which internally calls `_render_message_images_markdown` (and carries A8's conditional blank-line separator when A8 lands in the same helper). `generate_markdown` shrinks to ~20 lines (info, header-lines extend, messages branch with the per-message helper call, footer). Module lands near **~75 lines** post-refactor (two helpers add ~15-20 lines, the parent function sheds ~30); well under the <80 plan target.
 
 ## Bucket E - Test coverage additions
 
@@ -824,12 +852,13 @@ Keep the test module stdlib-only (matches `test_chat_index_incremental.py` style
 
 - `## Project layout` in full, preserving all existing subsections verbatim. Section headers may become `## ...` (top-level in the new file) instead of `### ...` so CONTRIBUTING.md reads cleanly as its own document:
   - `### Entry points`
-  - `### Backend (cursor_view/)` (top-level modules + subpackages + the content-tables / delta-tables cache layout block)
-  - `### Tests (tests/)` - renamed to `## Running the tests` as a top-level section, preserving the `python -m unittest discover -s tests` invocation and the two test-module summaries
-  - `### Frontend (frontend/src/)`
+  - `### Backend (cursor_view/)` (top-level modules + subpackages + the content-tables / delta-tables cache layout block; includes the `cursor_view/export/vendor/` sub-subpackage entry that `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` added to the canonical subpackages list and the vendored `mermaid.min.js` + `VERSION.txt` file-inventory bullet)
+  - `### Tests (tests/)` - renamed to `## Running the tests` as a top-level section, preserving the `python -m unittest discover -s tests` invocation and the test-module summaries (the list has grown since this plan was written to include `tests/test_chat_index_incremental.py`'s orphan-bubble and schema-drift regression tests and the new `tests/test_export_html_mermaid.py`; the move carries whatever the list looks like at the moment F1 executes)
+  - `### Frontend (frontend/src/)` (carries the `components/MermaidBlock.js`, `hooks/useMermaid.js`, and `utils/prerenderMermaidDiagrams.js` entries the mermaid plan appended)
   - `### Assets and configuration`
 - `### Build a standalone binary` from `## Standalone binary`, including the PyInstaller invocation, icon-regeneration script (`python3 assets/icons/_generate_icons.py`), `dist/` tree, and the macOS `xattr -dr com.apple.quarantine` note.
-- A short new `## Project conventions` section at the end pointing contributors at `.cursor/rules/` as the persistent convention store (comment style, Python / React component standards, image-attachment handling, etc.). One paragraph, no verbose restatement of each rule.
+- `## Updating vendored mermaid` (added to `README.md` by `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md`) -- contributor-only docs (`npm install` → copy → `VERSION.txt` bump flow plus the frontend / export major-version alignment caveat). Belongs in CONTRIBUTING for the same signal-to-noise reason as the Project-layout sections. After the move, `README.md` pointer to CONTRIBUTING should be sufficient; end users installing the tool do not need to know how to rebuild `mermaid.min.js`.
+- A short new `## Project conventions` section at the end pointing contributors at `.cursor/rules/` as the persistent convention store (comment style, Python / React component standards, image-attachment handling, mermaid rendering, refresh-path routing, etc.). One paragraph, no verbose restatement of each rule.
 
 **Sections that stay in `README.md`.**
 
@@ -841,7 +870,7 @@ Keep the test module stdlib-only (matches `test_chat_index_incremental.py` style
 - **New single pointer line** near the top (immediately after the privacy note or as the first section header) of the shape:
   > Contributing to Cursor View? See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the project layout map, the build-from-source PyInstaller instructions, and how to run the test suite.
 
-**Rule update (required in the same PR).** The `comments-style.mdc` Rule drift clause says: *"When a refactor materially changes a convention captured in any rule under `.cursor/rules/`, update that rule in the same PR. Rules must not drift from reality; a stale rule is worse than no rule."* The `project-layout.mdc` rule currently reads:
+**Rule update (required in the same PR).** The `comments-style.mdc` Rule drift clause says: *"When a refactor materially changes a convention captured in any rule under `.cursor/rules/`, update that rule in the same PR. Rules must not drift from reality; a stale rule is worse than no rule."* `project-layout.mdc` was touched by `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` to add the `cursor_view/export/vendor/` sub-subpackage and a new "Vendored third-party browser assets" clause in the Dead-code section, but its Documentation sync clause was **not** touched and still reads exactly as the original plan quoted it:
 
 ```
 # Documentation sync
@@ -849,7 +878,7 @@ Keep the test module stdlib-only (matches `test_chat_index_incremental.py` style
   "Project layout" section of `README.md` in the same change.
 ```
 
-F1 changes the file that hosts the "Project layout" section, so the rule must be updated in lock-step. The new text:
+F1 changes the file that hosts the "Project layout" section, so the rule must be updated in lock-step. The new text is unchanged from the original plan:
 
 ```
 # Documentation sync
@@ -911,7 +940,9 @@ E1 does not grow for F1.
 - [`project-layout.mdc`](.cursor/rules/project-layout.mdc) - confirm no new top-level Python file landed (all new code lives in subpackages - `cursor_view/images/transport.py` from D1 and the `open_url_in_browser` method added to `cursor_view/desktop/api.py` by C1 are both sibling / method additions inside existing subpackages, not new top-level files; `frontend/src/utils/mode.js` from C2 lives under the established `utils/` folder per the fixed frontend structure). Confirm tests live under `tests/`. Confirm the Documentation sync rule edit from F1 landed.
 - [`python-standards.mdc`](.cursor/rules/python-standards.mdc) - measure every module with `python -c "import ast, pathlib; ..."` to confirm each is under ~400 lines (post-D2 / D3 splits this should be true everywhere); measure every new function to confirm under ~100 lines (`_build_messages_html`, `_attach_images_to_messages`, `_render_message_images_html`, `_insert_chat_images`, `_fetch_images_for_session`, `DesktopApi.open_url_in_browser` etc.); confirm module docstrings are present on every new file; confirm `%s`-style lazy logging in every new `logger.*` call; confirm no cross-package underscore imports.
 - [`react-components.mdc`](.cursor/rules/react-components.mdc) - confirm one component per file (`MessageImageGallery.js`, `ImageLightboxModal.js`); measure each component file to confirm under 250 lines; grep for hex colors / RGB strings in new MUI `sx` blocks to confirm theme tokens only.
-- [`sqlite-cursor-db.mdc`](.cursor/rules/sqlite-cursor-db.mdc) - confirm every new SQLite connection is inside `with closing(...)` / `try/finally`; confirm no `if "con" in locals()` pattern; confirm every read-only open uses the `file:...?mode=ro` URI form. Confirm the Content tables bullet still lists `chat_image`.
+- [`sqlite-cursor-db.mdc`](.cursor/rules/sqlite-cursor-db.mdc) - confirm every new SQLite connection is inside `with closing(...)` / `try/finally`; confirm no `if "con" in locals()` pattern; confirm every read-only open uses the `file:...?mode=ro` URI form. Confirm the Content tables bullet still lists `chat_image`. The rule was rewritten by `.cursor/plans/schema-drift-sync-rebuild_aa2ba9e8.plan.md` to describe the synchronous-on-schema-drift routing and by `.cursor/plans/filter_orphan_bubbles_835756be.plan.md` to add the "Canonical bubble order" subsection -- confirm neither section drifted in the opposite direction as a side effect of this plan's work (e.g., D2's docstring trim in `index.py` must not delete the "synchronous" framing that the rule now depends on).
+- [`chat-index-refresh.mdc`](.cursor/rules/chat-index-refresh.mdc) - new rule added by `.cursor/plans/schema-drift-sync-rebuild_aa2ba9e8.plan.md`. This plan's scope (image attachments, exports, right-click menu) does not add a condition to `_cached_index_up_to_date`, does not touch `ensure_current`'s routing switch, and does not move the `_cached_schema_version` helper. G1's work here is confirming *non-interaction*: the rule's invariant ("never serve rows under a different schema version") is preserved end-to-end. D2's docstring-tightening is the only touch to `index.py` this plan makes, and it must not alter the four-way routing semantics.
+- [`mermaid-rendering.mdc`](.cursor/rules/mermaid-rendering.mdc) - new rule added by `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md`. Confirm each bullet still holds after this plan's A-F execution: (1) still only two pipelines (chat view + HTML export) -- A9's anchor wrap on `<img>` does not add a third mermaid path; A10's modal lightbox is strictly for image attachments, not diagrams. (2) Rendered SVGs still never land in `chat_image` / `chat_message` / `chat_search_text`. (3) `MermaidBlock` theme sync still reads `ThemeModeContext`, untouched by A6's gallery relocation. (4) Graceful source fallback on parse error intact. (5) `html.escape` on mermaid body inside `transform_mermaid_fences_to_html` intact. (6) Markdown + JSON exports still leave mermaid fences verbatim. (7) `cursor_view/export/vendor/` is still the only vendored-asset directory (D1 adds `cursor_view/images/transport.py`, not a second `vendor/`; D3 adds `cursor_view/export/html_styles.py` as a peer of `html.py`, not under `vendor/`).
 
 **Output.** If any violation is found:
 - **If attributable to a specific A-F todo** and fixable in <20 lines, treat as a hotfix to the owning todo and land in this PR.
@@ -929,6 +960,7 @@ E1 does not grow for F1.
 - **`image-attachments.mdc` Canonical examples** - A7 already adds `ImageLightboxModal.js`; G2 verifies nothing else slipped. E.g., A9's anchor wrapping pattern in `_render_message_images_html` might warrant mention in the "Bytes flow through dedicated paths" section if G3 decides it merits rule-level capture.
 - **`react-components.mdc` contemporary example** - if any component in this plan happens to be a new exemplar of the "decompose past 250 lines" pattern, append it. Likely no - `MessageBubble.js`, `MessageImageGallery.js`, `ImageLightboxModal.js`, and the updated `AppContextMenu.js` (from C3) all stay small. The new `frontend/src/utils/mode.js` (from C2) is the first `src/utils/` helper specifically for runtime-environment detection; if the promote-on-sight rule wants a contemporary example, this is a candidate.
 - **Line-count figures** inside any rule that drifted during execution (e.g., if the rule cites a file size that changed).
+- **`chat-index-refresh.mdc` and `mermaid-rendering.mdc` non-drift check.** Both rules were introduced after this plan was authored (by `.cursor/plans/schema-drift-sync-rebuild_aa2ba9e8.plan.md` and `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` respectively). This plan's surface is deliberately orthogonal to both -- image-attachment fixes, export renderers, right-click menu, doc reorganization -- so G2's expected outcome is *no edits needed to either rule*. Call out the expected no-op in the PR description so a reviewer does not mistake non-edits for forgotten edits.
 
 **Output.** Direct edits to the drifted rule text, shipped in this PR. No new rule files here - new rules are G3's concern.
 
@@ -1073,6 +1105,8 @@ All proposed changes respect the rules this PR is already scoped to:
 - **sqlite-cursor-db.mdc** - D2 keeps `_attach_images_to_messages` as an underscore-prefixed helper inside the same package (no cross-package reach); content-tables list still names `chat_image`. Bucket C does not touch the cache or any SQLite code (the new `DesktopApi.open_url_in_browser` method is pure Python stdlib: `urllib.parse` + `webbrowser`). G1 re-walks the connection-cleanup and read-only-URI clauses against every new DB-touching line.
 
 ## Rollout ordering
+
+**Starting-state note.** The D2 and D3 line counts shifted after this plan was written. `cursor_view/chat_index/index.py` grew from ~410 to **454 lines** when `.cursor/plans/schema-drift-sync-rebuild_aa2ba9e8.plan.md` added the synchronous-on-schema-drift branch, so D2's extraction + docstring trim is pulling harder than originally projected (see D2's updated arithmetic). `cursor_view/export/html.py` grew from ~443 to **514 lines** when `.cursor/plans/mermaid-diagram-rendering_e9f9690c.plan.md` added mermaid CSS + script injection, so D3 is *more* motivated than originally stated (114 over the 400-line soft limit vs. the original 43) and the style-template move carries ~60 more lines of CSS. The rollout steps themselves are unchanged; only the budget-headroom math each step is making room for shifted.
 
 Recommended sequence to avoid line-budget fights and test churn:
 
