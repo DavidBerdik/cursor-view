@@ -31,7 +31,7 @@ todos:
     status: completed
   - id: B1-guard-non-dict-bubble
     content: "Pre-existing: `cursor_view/sources/bubbles.py::_parse_bubble_row` crashes on non-dict JSON. Guard the `txt = (b.get(...) ...)` statement behind the existing `isinstance(b, dict)` branch."
-    status: pending
+    status: completed
   - id: B2-content-length-utf8
     content: "Pre-existing: fix `cursor_view/routes.py::export_chat` HTML branch to compute `Content-Length` from UTF-8 byte length rather than `len(str)` (Python counts code points, which mismatches the wire encoding for any non-ASCII content)."
     status: pending

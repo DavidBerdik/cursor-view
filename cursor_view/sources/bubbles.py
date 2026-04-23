@@ -141,11 +141,17 @@ def _parse_bubble_row(
         file_uris, folder_uris = _extract_uris_from_bubble(b)
         tool_call = _tool_call_from_bubble(b)
         image_refs = parse_bubble_images(b)
+        # ``text`` / ``richText`` live on the bubble dict so this
+        # lookup stays under the same ``isinstance`` gate the
+        # neighboring helpers already use; a non-dict body (list /
+        # string / number / ``None``) falls through to the else
+        # branch and the empty-signal filter below returns ``None``.
+        txt = (b.get("text") or b.get("richText") or "").strip()
     else:
         file_uris, folder_uris = [], []
         tool_call = None
         image_refs = []
-    txt = (b.get("text") or b.get("richText") or "").strip()
+        txt = ""
     # Image-only bubbles still carry a message: keep them even when every
     # other signal is empty. Project inference and subagent-parent
     # reconstruction similarly rely on URI/tool-call rows that have no
