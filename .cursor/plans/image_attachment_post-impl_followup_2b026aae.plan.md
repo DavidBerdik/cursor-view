@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: D3-split-html-styles
     content: "Move `_HTML_STYLE_TEMPLATE` from `cursor_view/export/html.py` into new sibling `cursor_view/export/html_styles.py` (as public `HTML_STYLE_TEMPLATE`). `html.py` imports it. Net: both modules well under 400."
-    status: pending
+    status: completed
   - id: A4-log-oob-image-position
     content: Add a lazy `logger.warning` in the new `_attach_images_to_messages` helper (from D2) for any `chat_image` row whose `position` is out of range, so silent data drop becomes observable.
     status: pending
