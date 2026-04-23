@@ -12,6 +12,13 @@ import { Box } from '@mui/material';
 // can view / save the full-size asset; `rel="noopener"` keeps the new
 // tab from reaching back into the chat window.
 //
+// Layout: the gallery is rendered inside `MessageBubble`'s `<Paper>`,
+// as a sibling below the markdown Box. The Paper's padding already
+// scopes it horizontally, so this component only sets top spacing
+// (`mt`) for separation from the text content above. `role` is kept
+// on the prop signature purely so the alt text can distinguish user
+// attachments from assistant ones; no role-based margin logic here.
+//
 // All styling uses MUI theme tokens (`borderColor: 'divider'`) per the
 // theme-ownership rule -- no hard-coded colors so dark / light mode
 // changes flow through automatically.
@@ -40,8 +47,6 @@ export default function MessageImageGallery({ sessionId, images, role }) {
         flexWrap: 'wrap',
         gap: 1,
         mt: 1.5,
-        ml: role === 'user' ? 0 : 5,
-        mr: role === 'user' ? 5 : 0,
       }}
     >
       {safeImages.map((img) => {

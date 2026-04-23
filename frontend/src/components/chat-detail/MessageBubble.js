@@ -11,9 +11,12 @@ import { ColorContext } from '../../contexts/ColorContext';
 // ChatDetail's effect via `prepareMarkdownHtml`). The Box around
 // MessageMarkdown owns the in-chat styling for links, tables, lists,
 // and images so the markdown output blends with the chat theme.
-// Image attachments render beneath the Paper via MessageImageGallery
-// so the gallery's flex layout does not have to fight the markdown
-// theming inside the Paper.
+// Image attachments render inside the same Paper, as a sibling below
+// the markdown Box, so the bubble visually contains its attachments
+// and matches the Markdown / HTML exports (both of which keep images
+// inside the message block). The Paper's own padding scopes the
+// gallery horizontally, which is why the gallery no longer sets its
+// own role-based asymmetric margins.
 export default function MessageBubble({ sessionId, message }) {
   const colors = useContext(ColorContext);
   const isUser = message.role === 'user';
@@ -93,14 +96,14 @@ export default function MessageBubble({ sessionId, message }) {
             <Typography>Content unavailable</Typography>
           )}
         </Box>
+        {images.length > 0 && (
+          <MessageImageGallery
+            sessionId={sessionId}
+            images={images}
+            role={message.role}
+          />
+        )}
       </Paper>
-      {images.length > 0 && (
-        <MessageImageGallery
-          sessionId={sessionId}
-          images={images}
-          role={message.role}
-        />
-      )}
     </Box>
   );
 }
