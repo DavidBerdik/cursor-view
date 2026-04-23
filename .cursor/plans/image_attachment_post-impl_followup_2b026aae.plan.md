@@ -25,7 +25,7 @@ todos:
     status: completed
   - id: A5-soften-composer-hash-docstring
     content: "Soften the `_composer_hash` docstring in `cursor_view/cache/delta/composer_rows.py` so it accurately describes when image changes do and don't flip the source-row hash (bubble JSON change: yes; in-place disk file replacement: no; Cursor's upload model makes this acceptable)."
-    status: pending
+    status: completed
   - id: D4-split-generate-markdown
     content: Extract `_markdown_header_lines` and `_markdown_message_lines` helpers from `cursor_view/export/markdown.py::generate_markdown` to meet plan §8.1's <40-line target for the top-level function without changing output.
     status: pending

@@ -49,13 +49,22 @@ def _composer_hash(
     against a freshly derived payload to detect drift without joining
     back to ``chat_message``.
 
-    Image BLOBs are intentionally excluded from the payload: the
-    source-row hash already flips when a bubble's images change (the
-    image refs are part of the value hashed by
-    :func:`cursor_view.cache.diff.hashing._hash_value`), so folding
-    megabyte-scale bytes into ``composer_hash`` would defeat the
-    purpose of this lightweight watermark column without adding any
-    new detection capability.
+    Image BLOBs are intentionally excluded from the payload. The
+    source-row hash flips whenever the bubble JSON changes (uuid,
+    ``selectedImages[].path``, or the inline byte dict) because
+    :func:`cursor_view.cache.diff.hashing._hash_value` folds the
+    bubble-row value into its SHA-256, which covers every Cursor
+    image-change path observed in practice: new uploads get a fresh
+    uuid, path-rebases change ``.path``, and inline-byte edits change
+    the dict. The one gap is an on-disk file replaced in place under
+    an unchanged ``(uuid, path)`` pair -- the row value is byte-for-
+    byte identical, so the hash stays the same and a stale
+    ``chat_image`` BLOB lingers until something else dirties the
+    composer. This is acceptable because Cursor does not rewrite
+    image files in place (the upload model assigns a new uuid each
+    time), and because folding megabyte-scale bytes into this
+    lightweight watermark would defeat its purpose without adding
+    detection capability for any code path Cursor actually exercises.
     """
     payload = {
         "project_name": chat_formatted.get("project", {}).get("name", ""),
