@@ -37,7 +37,7 @@ todos:
     status: completed
   - id: B3-sanitize-filename
     content: "Pre-existing: sanitize `session_id` before interpolating into `Content-Disposition: filename=\"cursor-chat-{...}\"` across all three export format branches in `cursor_view/routes.py::export_chat`."
-    status: pending
+    status: completed
   - id: A6-gallery-inside-paper
     content: Move `<MessageImageGallery>` inside the `<Paper>` in `frontend/src/components/chat-detail/MessageBubble.js` (as a sibling below the inner markdown-styling `<Box>`) so images render *inside* the chat bubble in the live UI, matching exports. Simplify `MessageImageGallery.js`'s layout to drop the role-based `ml` / `mr` asymmetric margins (no longer needed once the gallery is horizontally scoped by the Paper's padding); keep `role` on the prop signature for alt-text only. Update the `MessageBubble.js` intent comment that currently says the gallery "renders beneath the Paper".
     status: pending

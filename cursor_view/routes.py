@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from pathlib import Path
 
 from flask import Blueprint, Response, current_app, jsonify, request, send_from_directory
@@ -124,6 +125,14 @@ def export_chat(session_id):
             logger.warning("Chat with ID %s not found for export", session_id)
             return jsonify({"error": "Chat not found"}), 404
 
+        # Sanitize the filename-prefix slice once so each format's
+        # ``Content-Disposition`` header below cannot be split or
+        # malformed by a ``session_id`` that contains ``"``, ``;``,
+        # newlines, or other header-sensitive bytes. Real Cursor
+        # session_ids are UUIDs (hex + dashes) and pass through
+        # unchanged; this is defense-in-depth for malformed input.
+        safe_prefix = re.sub(r"[^A-Za-z0-9._-]", "", session_id[:8])
+
         if export_format == "json":
             json_payload = {
                 **chat_for_export,
@@ -135,7 +144,7 @@ def export_chat(session_id):
                 json.dumps(json_payload, indent=2),
                 mimetype="application/json; charset=utf-8",
                 headers={
-                    "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.json"',
+                    "Content-Disposition": f'attachment; filename="cursor-chat-{safe_prefix}.json"',
                     "Cache-Control": "no-store",
                 },
             )
@@ -147,7 +156,7 @@ def export_chat(session_id):
                 md_content,
                 mimetype="text/markdown; charset=utf-8",
                 headers={
-                    "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.md"',
+                    "Content-Disposition": f'attachment; filename="cursor-chat-{safe_prefix}.md"',
                     "Content-Length": str(len(md_bytes)),
                     "Cache-Control": "no-store",
                 },
@@ -169,7 +178,7 @@ def export_chat(session_id):
             html_content,
             mimetype="text/html; charset=utf-8",
             headers={
-                "Content-Disposition": f'attachment; filename="cursor-chat-{session_id[:8]}.html"',
+                "Content-Disposition": f'attachment; filename="cursor-chat-{safe_prefix}.html"',
                 "Content-Length": str(len(html_bytes)),
                 "Cache-Control": "no-store",
             },
