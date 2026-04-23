@@ -37,9 +37,16 @@ def _render_message_images_markdown(images: list[dict[str, Any]]) -> list[str]:
     ]
 
 
-def generate_markdown(chat):
-    """Generate a Markdown representation of the chat."""
-    logger.info("Generating Markdown for session ID: %s", chat.get('session_id', 'N/A'))
+def _markdown_header_lines(chat: dict[str, Any]) -> list[str]:
+    """Return the leading header block for a chat's Markdown export.
+
+    Covers the ``# Cursor Chat: ...`` title, the four info bullets
+    (project / path / date / session id), and the trailing ``---``
+    thematic break plus its blank line before the message stream.
+    Date formatting falls back to ``"Unknown date"`` when the
+    ``date`` field is missing or unparseable so the header never
+    bubbles an exception out of the export path.
+    """
     date_display = "Unknown date"
     if chat.get("date"):
         try:
@@ -52,7 +59,7 @@ def generate_markdown(chat):
     project_path = chat.get("project", {}).get("rootPath", "Unknown Path")
     session_display = chat.get("session_id", "Unknown")
 
-    lines = [
+    return [
         f"# Cursor Chat: {project_name}",
         "",
         f"- **Project:** {project_name}",
@@ -64,25 +71,44 @@ def generate_markdown(chat):
         "",
     ]
 
+
+def _markdown_message_lines(msg: dict[str, Any], index: int) -> list[str]:
+    """Return the Markdown lines for one message, images included.
+
+    Emits, in order: the role heading, a blank line, the trimmed
+    content (with a ``"Content unavailable"`` fallback for truly
+    empty turns and for non-string content -- mirrors the coalescer
+    convention), another blank line, the ``<img>`` lines from
+    :func:`_render_message_images_markdown`, and a trailing ``---``
+    thematic break + blank line. ``index`` is the message's 0-based
+    position and is used only to identify the turn in the
+    non-string-content warning log.
+    """
+    role = msg.get("role", "unknown")
+    content = msg.get("content", "")
+    images = msg.get("images") or []
+    if not isinstance(content, str):
+        logger.warning("Message %s has invalid content", index + 1)
+        content = "Content unavailable"
+    elif not content and not images:
+        content = "Content unavailable"
+    heading = "**User**" if role == "user" else "**Cursor**"
+    lines = [heading, "", content.rstrip(), ""]
+    lines.extend(_render_message_images_markdown(images))
+    lines.extend(["---", ""])
+    return lines
+
+
+def generate_markdown(chat):
+    """Generate a Markdown representation of the chat."""
+    logger.info("Generating Markdown for session ID: %s", chat.get('session_id', 'N/A'))
+    lines = _markdown_header_lines(chat)
     messages = chat.get("messages") or []
     if not messages:
         lines.append("*No messages found in this conversation.*")
     else:
         for i, msg in enumerate(messages):
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "")
-            images = msg.get("images") or []
-            if not isinstance(content, str):
-                logger.warning("Message %s has invalid content", i + 1)
-                content = "Content unavailable"
-            elif not content and not images:
-                # Truly empty turn: mirror the coalescer's fallback.
-                content = "Content unavailable"
-            heading = "**User**" if role == "user" else "**Cursor**"
-            lines.extend([heading, "", content.rstrip(), ""])
-            lines.extend(_render_message_images_markdown(images))
-            lines.extend(["---", ""])
-
+            lines.extend(_markdown_message_lines(msg, i))
     lines.append("")
     lines.append(
         "*Exported from [Cursor View](https://github.com/DavidBerdik/cursor-view)*"

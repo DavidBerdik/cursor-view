@@ -28,7 +28,7 @@ todos:
     status: completed
   - id: D4-split-generate-markdown
     content: Extract `_markdown_header_lines` and `_markdown_message_lines` helpers from `cursor_view/export/markdown.py::generate_markdown` to meet plan §8.1's <40-line target for the top-level function without changing output.
-    status: pending
+    status: completed
   - id: B1-guard-non-dict-bubble
     content: "Pre-existing: `cursor_view/sources/bubbles.py::_parse_bubble_row` crashes on non-dict JSON. Guard the `txt = (b.get(...) ...)` statement behind the existing `isinstance(b, dict)` branch."
     status: pending
