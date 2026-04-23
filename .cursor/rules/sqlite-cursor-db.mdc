@@ -88,13 +88,22 @@ in `cursor_view/cache/diff/global_db.py` or
 
 `cursor_view/chat_index/schema.py::_create_schema` owns the cache's
 on-disk layout. Bumping `INDEX_SCHEMA_VERSION` (defined in the same
-module) forces one full rebuild on first launch; subsequent launches
-take the incremental path. The per-version history lives in the
-`INDEX_SCHEMA_VERSION` block comment in that same module — including
-why the `chat_image` content table landed under v2 without a bump
-(no shipped caches to invalidate; developers with stale local caches
-delete `chat-index.sqlite3` or hit the UI's Refresh button). The
-tables split into two roles:
+module) forces one full rebuild on the first launch that sees the
+drift; subsequent launches take the incremental path. The refresh
+router in `ChatIndex.ensure_current` treats that drift as a
+correctness concern, not a freshness one, and handles it on the
+**synchronous** path — callers block until the rebuild finishes
+rather than being served rows under the previous schema while a
+background refresh catches up. Pure fingerprint-only drift (source
+DB mtimes moved but the row shapes are still current) stays on the
+stale-while-revalidate path. The `_cached_schema_version` helper is
+the single source of truth the router reads to distinguish the two.
+The per-version history lives in the `INDEX_SCHEMA_VERSION` block
+comment in that same module — including why the `chat_image` content
+table landed under v2 without a bump (no shipped caches to
+invalidate; developers with stale local caches delete
+`chat-index.sqlite3` or hit the UI's Refresh button). The tables
+split into two roles:
 
 - **Content tables** serve reads: `chat_summary`, `chat_message`,
   `chat_search_text`, `chat_search_fts`, `chat_image`. The full rebuild

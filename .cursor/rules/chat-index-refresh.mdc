@@ -1,0 +1,59 @@
+---
+description: Rules for routing refreshes in ChatIndex.ensure_current
+globs: **/cursor_view/chat_index/**/*.py
+alwaysApply: false
+---
+
+# Refresh routing
+
+`ChatIndex.ensure_current` in
+`cursor_view/chat_index/index.py` is the canonical switch for deciding
+which refresh recipe runs against the cache. It picks between two
+paths across four triggers:
+
+- **Synchronous rebuild** (caller blocks until the new cache is
+  ready) runs on:
+  - `force=True` (manual refresh from the UI);
+  - missing cache file (first-build);
+  - cache that raises `sqlite3.DatabaseError` while its `meta`
+    rows are being read (corruption);
+  - `schema_version` meta row that does not match
+    `INDEX_SCHEMA_VERSION` (schema drift).
+- **Stale-while-revalidate** (caller is handed the current
+  snapshot, a background worker refreshes off the request path)
+  runs when the only signal is a source-DB fingerprint miss; the
+  on-disk row shapes are still current, so serving them until the
+  refresh lands is safe.
+
+# Invariant: never serve rows under a different schema version
+
+Do not add a condition to `_cached_index_up_to_date` that returns
+`False` without first deciding which of the two paths it belongs on.
+The deciding question is "does this change affect row **shape** or
+just row **freshness**?". Shape drift (columns added/removed,
+semantics changed, FTS schema rewritten) is a correctness bug if
+the cache is served during the rebuild and must route through the
+synchronous branch. Freshness drift (source DB mtimes moved,
+content hashes changed) is safe to serve stale and should stay on
+SWR so the API latency stays bounded.
+
+The `_cached_schema_version` helper exists specifically so the
+router can distinguish the two without reading the `meta` table
+twice; keep it as the single source of truth for the
+`schema_version` comparison rather than re-reading `meta` inline.
+The source-fingerprint hash in `fingerprint.py` already folds
+`INDEX_SCHEMA_VERSION` into its SHA-256, so the two signals flip in
+lockstep on a ship; the direct read is what lets `ensure_current`
+pick synchronous vs. background before dispatch.
+
+# Related rules and code
+
+- Cache table layout, history of schema bumps, and the
+  synchronous-vs-SWR summary that this rule points back to:
+  [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc).
+- Canonical routing switch: `ChatIndex.ensure_current` in
+  `cursor_view/chat_index/index.py`.
+- Regression guards:
+  `tests/test_chat_index_incremental.py::test_schema_version_bump_forces_synchronous_rebuild`
+  and `::test_source_fingerprint_bump_uses_background_refresh` lock
+  down both sides of the routing decision.

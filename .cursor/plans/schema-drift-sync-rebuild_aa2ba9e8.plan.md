@@ -4,22 +4,22 @@ overview: Route `INDEX_SCHEMA_VERSION` drift through the synchronous first-build
 todos:
   - id: routing-helper
     content: Add _cached_schema_version helper and schema-drift synchronous branch in ChatIndex.ensure_current; update docstring and log line
-    status: pending
+    status: completed
   - id: schema-doc
     content: Update INDEX_SCHEMA_VERSION block comment in cursor_view/chat_index/schema.py to document synchronous-on-drift behavior
-    status: pending
+    status: completed
   - id: regression-tests
     content: Add synchronous-on-schema-drift and background-on-fingerprint-only tests to tests/test_chat_index_incremental.py
-    status: pending
+    status: completed
   - id: rule-sqlite
     content: Revise Cache tables section of .cursor/rules/sqlite-cursor-db.mdc to describe synchronous-on-drift routing
-    status: pending
+    status: completed
   - id: rule-refresh
     content: Author new .cursor/rules/chat-index-refresh.mdc capturing the four-way routing invariant
-    status: pending
+    status: completed
   - id: readme-check
     content: Re-read README project layout section; update only if the new rule file requires it
-    status: pending
+    status: completed
 isProject: false
 ---
 

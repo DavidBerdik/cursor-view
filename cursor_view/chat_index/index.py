@@ -166,12 +166,16 @@ class ChatIndex:
         - A cache that raises :class:`sqlite3.DatabaseError` while
           we're reading its meta is corrupt and rebuilt synchronously
           under the lock.
-        - Anything else (schema drift, fingerprint mismatch) is a
-          stale-but-readable cache; the current snapshot is served
-          immediately while
+        - Schema-version drift is treated like a missing cache -- the
+          on-disk rows were produced under the previous schema, so
+          serving them while the new cache is built would return
+          responses that don't match the current table layout.
+          Callers block until the rebuild completes.
+        - Pure fingerprint mismatch (source DB mtimes moved but the
+          row shapes are still current) is a stale-but-readable
+          cache; the current snapshot is served immediately while
           :meth:`_schedule_background_refresh` dispatches the
-          incremental apply (or a full rebuild when the schema
-          differs) off the request path.
+          incremental apply off the request path.
         """
         source_fingerprint, sources = self._current_source_fingerprint()
 
@@ -194,6 +198,7 @@ class ChatIndex:
         try:
             if self._cached_index_up_to_date(source_fingerprint):
                 return
+            cached_schema = self._cached_schema_version()
         except sqlite3.DatabaseError:
             logger.warning("Existing chat index is unreadable; rebuilding")
             with self._rebuild_build_lock:
@@ -203,6 +208,24 @@ class ChatIndex:
                             return
                     except sqlite3.DatabaseError:
                         pass
+                self._rebuild(source_fingerprint, sources)
+            return
+
+        if cached_schema != str(INDEX_SCHEMA_VERSION):
+            # Old-shape rows under a new-shape reader are a correctness
+            # bug, not a freshness issue, so this branch blocks instead
+            # of scheduling SWR like a pure fingerprint miss would.
+            logger.info(
+                "Chat index schema drift (%s -> %s); rebuilding synchronously",
+                cached_schema,
+                INDEX_SCHEMA_VERSION,
+            )
+            with self._rebuild_build_lock:
+                try:
+                    if self._cached_index_up_to_date(source_fingerprint):
+                        return
+                except sqlite3.DatabaseError:
+                    pass
                 self._rebuild(source_fingerprint, sources)
             return
 
@@ -261,6 +284,12 @@ class ChatIndex:
                     self._rebuild(fp, sources)
                     return
                 if cached_schema != str(INDEX_SCHEMA_VERSION):
+                    # Primary schema-drift handling now lives on the
+                    # synchronous path in ``ensure_current``; this arm
+                    # is defense-in-depth for the rare case where a
+                    # background refresh was already queued (e.g. on a
+                    # fingerprint miss) and then raced a schema bump
+                    # landing before the worker took the build lock.
                     logger.info(
                         "Chat index schema drift (%s -> %s); falling back to full rebuild",
                         cached_schema,
@@ -288,11 +317,26 @@ class ChatIndex:
         if not self.db_path.exists():
             return False
         cached_fingerprint = self._read_meta_value("source_fingerprint")
-        cached_version = self._read_meta_value("schema_version")
+        cached_version = self._cached_schema_version()
         return (
             cached_fingerprint == source_fingerprint
             and cached_version == str(INDEX_SCHEMA_VERSION)
         )
+
+    def _cached_schema_version(self) -> str | None:
+        """Return the cache's ``schema_version`` meta row value, or None if absent.
+
+        Split out from :meth:`_cached_index_up_to_date` so the refresh
+        router can distinguish a schema bump (synchronous rebuild --
+        serving old-shape rows to callers expecting the new shape is a
+        data-correctness bug) from a pure source-fingerprint miss (safe
+        to serve stale under stale-while-revalidate). Raises
+        :class:`sqlite3.DatabaseError` on corrupt cache so the caller
+        can unify corrupt-cache handling with schema-drift handling.
+        """
+        if not self.db_path.exists():
+            return None
+        return self._read_meta_value("schema_version")
 
     @contextmanager
     def _cache_read_guard(self) -> Iterator[None]:

@@ -35,6 +35,8 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
+from cursor_view.chat_index import INDEX_SCHEMA_VERSION
+
 
 def _create_source_schema(db_path: pathlib.Path, include_disk_kv: bool = True) -> None:
     """Create a minimal Cursor-shaped ``state.vscdb`` file with the tables we populate."""
@@ -667,6 +669,90 @@ class IncrementalRefreshTest(unittest.TestCase):
             self._tool_call_parent_ids(),
             "Orphan bubble's toolCallId must not be written to tool_call_parent",
         )
+
+    # ---------------------------------------------------------------
+    # Regression: ensure_current schema-drift routing
+    # ---------------------------------------------------------------
+    def _seed_trivial_chat(self) -> str:
+        """Populate the synthetic source DB with one small chat and return its cid."""
+        cid = "cccccccc-0000-0000-0000-000000000001"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Schema Drift"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("hi"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("yo", role_type=2))
+        return cid
+
+    def test_schema_version_bump_forces_synchronous_rebuild(self) -> None:
+        """Schema drift on a readable cache must go through the synchronous rebuild path.
+
+        Serving rows built under the previous schema to callers that
+        expect the new shape is a correctness bug, not a freshness
+        issue; ``ChatIndex.ensure_current`` routes schema-version
+        mismatches through ``_rebuild`` under the build lock instead
+        of the stale-while-revalidate branch used for pure
+        fingerprint misses. We simulate drift by editing the cache's
+        ``schema_version`` meta row directly so the test does not
+        have to monkey-patch ``INDEX_SCHEMA_VERSION`` (which is also
+        folded into the source fingerprint and would confuse the
+        assertion).
+        """
+        self._seed_trivial_chat()
+        ci = self._build_index()
+
+        con = sqlite3.connect(self.cache_path)
+        try:
+            con.execute(
+                "UPDATE meta SET value=? WHERE key='schema_version'",
+                (str(INDEX_SCHEMA_VERSION - 1),),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+        original_rebuild = ci._rebuild
+        with patch.object(
+            ci, "_schedule_background_refresh"
+        ) as bg, patch.object(ci, "_rebuild", wraps=original_rebuild) as rebuild:
+            ci.ensure_current()
+
+        bg.assert_not_called()
+        rebuild.assert_called_once()
+        self.assertEqual(
+            ci._read_meta_value("schema_version"),
+            str(INDEX_SCHEMA_VERSION),
+            "Synchronous rebuild should leave the cache stamped with the current schema version",
+        )
+
+    def test_source_fingerprint_bump_uses_background_refresh(self) -> None:
+        """Pure fingerprint drift (row shapes still current) stays on the SWR path.
+
+        Complements the schema-drift test: if a future regression
+        accidentally routes fingerprint-only misses through the
+        synchronous branch this assertion will fail loudly. We bump
+        only the ``source_fingerprint`` meta row and leave
+        ``schema_version`` untouched so the router hits the final
+        ``_schedule_background_refresh`` arm.
+        """
+        self._seed_trivial_chat()
+        ci = self._build_index()
+
+        con = sqlite3.connect(self.cache_path)
+        try:
+            con.execute(
+                "UPDATE meta SET value=? WHERE key='source_fingerprint'",
+                ("deadbeef" * 8,),
+            )
+            con.commit()
+        finally:
+            con.close()
+
+        original_rebuild = ci._rebuild
+        with patch.object(
+            ci, "_schedule_background_refresh"
+        ) as bg, patch.object(ci, "_rebuild", wraps=original_rebuild) as rebuild:
+            ci.ensure_current()
+
+        bg.assert_called_once()
+        rebuild.assert_not_called()
 
     def test_legacy_composer_still_includes_all_bubbles(self) -> None:
         """No headers array => legacy encounter-order fallback keeps every bubble.

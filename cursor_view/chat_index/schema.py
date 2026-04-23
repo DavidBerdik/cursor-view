@@ -16,6 +16,23 @@ logger = logging.getLogger(__name__)
 # pure code changes to ``cursor_view`` never invalidate it; this field is the
 # one lever we have to force a rebuild for those cases.
 #
+# A bump forces a **synchronous** rebuild on the first launch that observes
+# the drift: ``ChatIndex.ensure_current`` routes schema-version mismatches
+# through the same full-rebuild recipe used for first-build and corrupt-cache
+# recovery, so API responses never mix old-schema rows with readers that
+# expect the new shape. Pure fingerprint-only drift (source-DB mtimes moved
+# but the row shapes are still current) remains on the stale-while-revalidate
+# path; the two are deliberately distinct routes.
+#
+# Two independent signals gate that synchronous path. The fingerprint hash in
+# ``fingerprint.py`` already folds this constant into its SHA-256, so bumping
+# it is by itself sufficient to make ``_cached_index_up_to_date`` return
+# False. The ``schema_version`` meta row written by ``_rebuild`` is the
+# second, direct signal -- ``ensure_current`` reads it via
+# ``_cached_schema_version`` specifically so the router can tell schema drift
+# apart from a fingerprint-only miss and pick synchronous vs. background
+# accordingly.
+#
 # History:
 #   1 -> initial schema (content tables only).
 #   2 -> added composer_state / source_row / tool_call_parent for the
