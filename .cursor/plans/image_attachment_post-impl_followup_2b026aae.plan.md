@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: A2-escape-uuid-markdown
     content: Escape `uuid` with `html.escape(..., quote=True)` in `cursor_view/export/markdown.py::_render_message_images_markdown` so an attacker-controlled uuid cannot break out of the `<img alt="...">` attribute.
-    status: pending
+    status: completed
   - id: A3-guard-gallery
     content: In `frontend/src/components/chat-detail/MessageImageGallery.js`, filter the `images` prop at entry to only objects with a non-empty string `uuid` so malformed input degrades gracefully instead of crashing the component.
     status: pending

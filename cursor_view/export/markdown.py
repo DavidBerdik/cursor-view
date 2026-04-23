@@ -1,6 +1,7 @@
 """Markdown export for chat sessions."""
 
 import datetime
+import html
 import logging
 from typing import Any
 
@@ -15,11 +16,22 @@ def _render_message_images_markdown(images: list[dict[str, Any]]) -> list[str]:
     across renderers (GitHub / GitLab / VS Code preview all handle
     raw HTML verbatim, which guarantees the exported file renders
     the same everywhere).
+
+    ``uuid`` flows from upstream bubble JSON and is HTML-escaped
+    before interpolation so a uuid containing ``"`` or ``>`` cannot
+    break out of the ``alt`` attribute when the exported ``.md`` is
+    viewed in a renderer that passes raw HTML through (GitHub /
+    GitLab / VS Code preview all do). ``data_uri`` is generated
+    locally from the sanitized MIME prefix plus the base64 alphabet,
+    so its grammar is already safe for direct interpolation.
     """
     if not images:
         return []
     return [
-        f'<img src="{img.get("data_uri", "")}" alt="Image {img.get("uuid", "")}" />'
+        '<img src="{src}" alt="Image {uuid}" />'.format(
+            src=img.get("data_uri", ""),
+            uuid=html.escape(str(img.get("uuid", "")), quote=True),
+        )
         for img in images
         if isinstance(img, dict)
     ]
