@@ -16,11 +16,10 @@ Public API:
 """
 
 from cursor_view.images.loading import load_image_bytes
-from cursor_view.images.refs import (
-    ImageRef,
+from cursor_view.images.refs import ImageRef, parse_bubble_images
+from cursor_view.images.transport import (
     image_ref_from_transport_dict,
     image_ref_to_transport_dict,
-    parse_bubble_images,
 )
 
 __all__ = [

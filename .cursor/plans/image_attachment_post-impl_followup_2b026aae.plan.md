@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: D1-split-refs-transport
     content: "Follow plan §3.1's explicit escape hatch: move `image_ref_to_transport_dict` and `image_ref_from_transport_dict` from `cursor_view/images/refs.py` into new `cursor_view/images/transport.py`; update `cursor_view/images/__init__.py` re-exports. Brings `refs.py` under plan's <100-line target."
-    status: pending
+    status: completed
   - id: A1-preview-image-only
     content: Fix `cursor_view/chat_index/rows.py::_preview_from_messages` so chats whose only user-visible content is images no longer render as `Content unavailable` in the chat-list / search preview.
     status: pending
