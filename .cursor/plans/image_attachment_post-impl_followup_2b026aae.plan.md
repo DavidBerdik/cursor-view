@@ -43,7 +43,7 @@ todos:
     status: completed
   - id: A7-rule-accuracy
     content: "Update `.cursor/rules/image-attachments.mdc`: (1) add JSON export to the list of consumers of inlined base64 `data_uri`; (2) fix the `_sniff_mime` description -- prefix checks of 3-12 bytes, not \"first 16 bytes\". Required by comments-style.mdc's Rule drift clause."
-    status: pending
+    status: completed
   - id: A8-markdown-img-separator
     content: Fix `cursor_view/export/markdown.py::generate_markdown` so image-bearing messages emit a blank line between the last `<img>` tag and the trailing `---` thematic break. Without it, CommonMark parsers treat the `<img>` line as a paragraph whose following `---` is either a setext H2 underline or literal text. Conditional `lines.append("")` when `_render_message_images_markdown` returns a non-empty list; text-only output stays byte-identical.
     status: pending

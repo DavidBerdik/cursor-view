@@ -31,12 +31,15 @@ Motivating source: `cursor_view/images/refs.py::parse_bubble_images`.
 
 # MIME by magic bytes, never by extension
 
-`cursor_view/images/loading.py::_sniff_mime` reads the first 16 bytes
-and recognizes PNG, JPEG, GIF, and WEBP (the two-part `RIFF.*WEBP`
-check is intentional because bytes 4-7 are the file-size field, which
-is content-dependent). **Never** trust a filename extension for MIME:
-Cursor's `.png`-suffixed files have in the wild carried JPEG payloads,
-and the browser will refuse to render a mismatch.
+`cursor_view/images/loading.py::_sniff_mime` checks a 3-to-12-byte
+prefix against the magic signatures of PNG (8 bytes), JPEG (3 bytes),
+GIF (6 bytes), and WEBP (the split `RIFF` at offsets 0-3 plus `WEBP`
+at offsets 8-11 is intentional because bytes 4-7 are the file-size
+field, which is content-dependent). The "first 16 bytes" figure only
+appears in the unknown-magic debug-log slice (`data[:16]`) -- it is
+not the recognition window. **Never** trust a filename extension for
+MIME: Cursor's `.png`-suffixed files have in the wild carried JPEG
+payloads, and the browser will refuse to render a mismatch.
 
 The module is stdlib-only on purpose. Do not reach for `imghdr`,
 `python-magic`, or Pillow -- those dependencies bloat the PyInstaller
@@ -128,8 +131,11 @@ level does not pay the cost of formatting the missing file's path.
   encode image BLOBs.
 - `cursor_view/routes.py::get_chat_image` — the dedicated HTTP route.
 - `cursor_view/export/markdown.py::_render_message_images_markdown` /
-  `cursor_view/export/html.py::_render_message_images_html` — the only
-  consumers that inline base64 data URIs.
+  `cursor_view/export/html.py::_render_message_images_html` /
+  `cursor_view/routes.py::export_chat` (JSON branch, which flips
+  `include_image_bytes=True` and emits the per-image `data_uri`
+  through `messages_for_json_export`) — the three consumers that
+  inline base64 data URIs.
 - `frontend/src/components/chat-detail/MessageImageGallery.js` — the
   only frontend consumer of image bytes; uses `<img src>` against the
   dedicated route, not base64 inlined into the chat-detail JSON.
