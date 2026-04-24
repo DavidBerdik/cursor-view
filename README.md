@@ -99,5 +99,6 @@ Delete that folder to reset preferences.
 - Organize chats by project
 - View timestamps of conversations
 - Render mermaid diagrams inline in the chat view and in HTML exports
+- View image attachments inline in the chat, with a full-size modal on click (prev/next chevrons + keyboard navigation when a message has multiple images); HTML exports keep the same images clickable and open them in a new browser tab
 
 _Originally built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/)._

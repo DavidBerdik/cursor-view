@@ -79,7 +79,11 @@ Subpackages:
     tables below.
 - `export/` &mdash; chat export generators: `themes.py` (palette),
   `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
-  normalization), `html.py` (standalone HTML + inline CSS template),
+  normalization), `html.py` (standalone HTML assembler &mdash; imports
+  `HTML_STYLE_TEMPLATE` from `html_styles.py` and substitutes theme
+  tokens via `str.format_map`), `html_styles.py` (the large CSS skin
+  that wraps every HTML export, split out of `html.py` so the
+  rendering logic and the style sheet evolve independently),
   `mermaid.py` (fence-to-div rewrite + vendored JS loader + init-script
   builder for mermaid diagram support in HTML exports).
   Both `markdown.py` and `html.py` inline image attachments as
@@ -91,10 +95,13 @@ Subpackages:
   `ImageRef` dataclass and `parse_bubble_images` (walks both the
   modern `context.selectedImages` on-disk-path shape and the legacy
   top-level `images` inline-byte-dict shape, dedups by uuid with disk
-  preferred). `loading.py` owns `load_image_bytes` and
-  `_sniff_mime` (stdlib-only magic-byte sniffing for PNG / JPEG / GIF
-  / WEBP) with a graceful skip + lazy `%s` warning for missing or
-  malformed sources.
+  preferred). `transport.py` owns the `image_ref_to_transport_dict` /
+  `image_ref_from_transport_dict` codec used to serialize `ImageRef`
+  values across the extraction-pipeline / chat-index-writer boundary
+  (split off from `refs.py` so both halves stay short and focused).
+  `loading.py` owns `load_image_bytes` and `_sniff_mime` (stdlib-only
+  magic-byte sniffing for PNG / JPEG / GIF / WEBP) with a graceful
+  skip + lazy `%s` warning for missing or malformed sources.
 - `projects/` &mdash; project-name resolution, split by heuristic.
   `inference.py` is the slim `workspace_info` orchestrator.
   `name.py` derives a display name from a resolved root path.
@@ -179,11 +186,22 @@ and pane-view key promotion from `(global)` to a workspace.
 `tests/test_chat_index_images.py` covers the image attachment path:
 modern-shape (on-disk) and legacy-shape (inline byte dict) rebuilds,
 image modification via incremental apply, graceful skip on a missing
-disk file, and multiple images per message round-tripping through
-`chat_image` &rarr; `_fetch_images_for_session` &rarr;
-`ChatIndex.get_chat` / `get_image`, plus two coalescer unit cases for
-same-role image concatenation and the image-only-turn "Content
-unavailable" placeholder fix.
+disk file (with an `assertLogs` on the missing-disk warning so silent
+`OSError` swallowing fails the test), and multiple images per message
+round-tripping through `chat_image` &rarr; `_fetch_images_for_session`
+&rarr; `ChatIndex.get_chat` / `get_image`; plus three coalescer unit
+cases for same-role image concatenation, the image-only-turn
+placeholder fix, and the post-loop clear of a `"Content unavailable"`
+seed when same-role image merging makes the record image-bearing. The
+module also pins the image-attachment post-impl regressions: image-only
+chat preview fallback, `include_image_bytes=True` base64 round-trip via
+`get_chat`, disk-preferred dedup when the same uuid appears in both
+storage shapes, non-dict bubble JSON handling, out-of-range
+`chat_image.position` dropped with a warning, Markdown export's
+blank-line separator between `<img>` and the trailing `---` thematic
+break, and the HTML export's `<a href=... target=_blank rel=noopener>`
+wrapper around every `<img>` with matching `.message-images a` /
+`a:hover` CSS.
 `tests/test_export_html_mermaid.py` covers the mermaid HTML export
 path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
 special characters in diagram source, non-mermaid fence regression
@@ -204,7 +222,9 @@ guard, and dark/light theme selection.
   singleton and keeps its theme in sync with `ThemeModeContext`).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
-  consumed by `AppContextMenu`).
+  consumed by `AppContextMenu`), `mode` (`isDesktopMode()` &mdash;
+  shared pywebview-runtime detection consumed by both `exportChat.js`
+  and `AppContextMenu.js`).
 - `markdown/` &mdash; the unified/remark/rehype pipeline that
   pre-renders chat messages to HTML.
 - `components/`
@@ -216,8 +236,11 @@ guard, and dark/light theme selection.
     `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
   - `chat-detail/` &mdash; the detail page split into `ChatDetail`,
     `ChatMetaPanel`, `MessageList`, `MessageBubble`,
-    `MessageImageGallery` (renders attached images via
-    `GET /api/chat/:id/image/:uuid`).
+    `MessageImageGallery` (renders attached-image thumbnails via
+    `GET /api/chat/:id/image/:uuid`), and its sibling
+    `ImageLightboxModal` (the full-size modal the gallery opens on
+    thumbnail click, with prev/next chevrons, counter, thumbnail
+    strip, and keyboard navigation).
   - `export/` &mdash; shared `ExportFormatDialog` and
     `ExportWarningDialog` used by both pages.
 

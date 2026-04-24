@@ -79,10 +79,10 @@ todos:
     status: completed
   - id: G4-bug-re-review
     content: "Re-read every file this plan touched (A1-F1) after execution and look for bugs that escaped detection. For each bug found: (a) if it fits this plan's scope and is small (< 20 lines, no new test file), add a late-stage todo here and fix it; (b) if it is out of scope or larger, add a `# TODO(bug):` comment per `.cursor/rules/known-bugs.mdc` describing the symptom, suspected cause, trigger, any graceful-degradation masking, and why it is not being fixed now, then defer to a follow-up plan; (c) do NOT use `TODO(bug):` for graceful-degradation paths (documented as intentional) or stylistic items (use plain `TODO:` or no comment). Explicit reminder: never silently delete suspicious code."
-    status: pending
+    status: completed
   - id: H1-final-docs-sync
     content: "After G1-G4 land, re-read the final state of `cursor_view/`, `frontend/src/`, `tests/`, and `.cursor/rules/` and reconcile `README.md` + `.github/CONTRIBUTING.md` against it. Checklist: (1) subpackage / feature-folder map in CONTRIBUTING still matches the final tree (including `cursor_view/desktop/api.py`'s new method from C1 if the CONTRIBUTING map cites `DesktopApi`'s surface); (2) CONTRIBUTING's Running-the-tests section lists every test module (including any spawned by a G4 late-stage fix); (3) CONTRIBUTING's Project-conventions pointer names every rule file, especially any new rule authored by G3; (4) README's pointer line to CONTRIBUTING still resolves; (5) any user-facing setup / binary-usage section in README still reflects the final entry-point / flag / port surface. Fulfills the Documentation sync clause that F1 rewrote into `project-layout.mdc`. No-op if G1-G4 landed no surface-altering changes - document the no-op outcome in the PR description."
-    status: pending
+    status: completed
 isProject: false
 ---
 
