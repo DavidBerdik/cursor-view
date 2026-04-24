@@ -168,6 +168,14 @@ HTML_STYLE_TEMPLATE = """\
             gap: 8px;
             margin-top: 12px;
         }}
+        .message-content .message-images a {{
+            display: inline-flex;
+            text-decoration: none;
+            line-height: 0;
+        }}
+        .message-content .message-images a:hover {{
+            text-decoration: none;
+        }}
         .message-content .message-images img {{
             border: 1px solid var(--image-border);
             border-radius: 6px;

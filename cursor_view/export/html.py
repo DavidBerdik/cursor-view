@@ -36,6 +36,22 @@ def _render_message_images_html(
 ) -> str:
     """Return a ``<div class="message-images">`` block for one message.
 
+    Each image is wrapped in an ``<a href="..." target="_blank"
+    rel="noopener">`` so a single click opens the full-size view in
+    a new tab -- UX parity with ``MessageImageGallery.js``'s live
+    gallery. Modern browsers allow top-level navigation to
+    ``data:image/*`` (while restricting ``data:text/html`` for
+    phishing reasons), so the same inlined ``data_uri`` powers both
+    ``href`` and ``src`` without a second cache or payload hop.
+
+    ``data_uri`` is ``html.escape``-ed defensively before
+    interpolation into both attributes, matching the discipline
+    applied to the Markdown exporter's ``alt`` attribute (A2):
+    base64 grammar is already HTML-safe, but routing every
+    externally-originated value through ``html.escape`` on the
+    interpolation boundary removes a class of bug without having to
+    reason about each data path's threat model.
+
     ``theme`` is reserved for a future tinted-placeholder fallback
     that will need access to palette tokens without re-importing
     :data:`EXPORT_HTML_THEMES`; v1 does not consume it. Sizing is
@@ -47,11 +63,16 @@ def _render_message_images_html(
         return ""
     who = "user" if role == "user" else "Cursor"
     alt = html.escape(f"Image attached by {who}")
-    tags = [
-        f'<img src="{img.get("data_uri", "")}" alt="{alt}" />'
-        for img in images
-        if isinstance(img, dict)
-    ]
+    tags: list[str] = []
+    for img in images:
+        if not isinstance(img, dict):
+            continue
+        data_uri = html.escape(img.get("data_uri", ""), quote=True)
+        tags.append(
+            f'<a href="{data_uri}" target="_blank" rel="noopener">'
+            f'<img src="{data_uri}" alt="{alt}" />'
+            f'</a>'
+        )
     if not tags:
         return ""
     return '<div class="message-images">\n' + "\n".join(tags) + '\n</div>'

@@ -49,7 +49,7 @@ todos:
     status: completed
   - id: A9-html-clickable-images
     content: Wrap each `<img>` in `cursor_view/export/html.py::_render_message_images_html` with an `<a href="{data_uri}" target="_blank" rel="noopener">` so HTML exports open full-size images on a single click (parity with the frontend gallery's existing anchor behavior) instead of requiring a right-click menu. Extend `_HTML_STYLE_TEMPLATE`'s `.message-images` block with an `a { display:inline-flex; text-decoration:none; line-height:0; }` rule plus an `a:hover { text-decoration:none; }` override so the existing `.message-content a:hover` underline does not appear beneath hovered images. Also escape `data_uri` with `html.escape(..., quote=True)` before interpolation into both `href` and `src` (defensive discipline matching A2).
-    status: pending
+    status: completed
   - id: A10-chat-view-modal-lightbox
     content: Replace the `MessageImageGallery.js` anchor-wrapped thumbnails with a `<button>`-wrapped thumbnail that opens a new `ImageLightboxModal.js` sibling component (MUI `Dialog` with a dimmed backdrop). Modal shows the full-size image (via the existing `/api/chat/:id/image/:uuid` URL), a counter ("1/2"), prev / next chevrons + keyboard Left/Right nav when `images.length > 1`, a close button + Escape + backdrop-click to dismiss, and a thumbnail strip along the bottom. Callbacks wrapped in `useCallback` per frontend-hooks.mdc. Chat-view only -- HTML exports (A9) keep the anchor / new-tab behavior.
     status: pending
