@@ -67,7 +67,7 @@ todos:
     status: completed
   - id: F1-move-dev-docs-to-contributing
     content: "Create `.github/CONTRIBUTING.md` and move the contributor-facing sections out of `README.md`: the entire `## Project layout` section (entry points, backend subpackage map, cache SQLite layout, tests list, frontend layout, assets) and the `### Build a standalone binary` subsection (PyInstaller invocation, icon regeneration, Gatekeeper note). Add one pointer line from `README.md` to the new file. Update `.cursor/rules/project-layout.mdc`'s Documentation sync clause to point at `.github/CONTRIBUTING.md` instead of `README.md`, per comments-style.mdc's Rule drift clause. Ship the rule edit in the same PR as the content move."
-    status: pending
+    status: completed
   - id: G1-rule-violation-audit
     content: Read every `.cursor/rules/*.mdc` and walk each rule against the post-execution tree to confirm no rule is violated. Audit per rule (comments-style, frontend-hooks, image-attachments, known-bugs, project-layout, python-standards, react-components, sqlite-cursor-db). Scope covers every file this plan modified or created (A1-F1). Any violation found lands in a *follow-up* plan file under `.cursor/plans/` describing each violation + remediation direction; do NOT fix in this plan's PR unless the violation is a one-liner attributable to a specific todo above (treat that as a hotfix to the owning todo).
     status: pending

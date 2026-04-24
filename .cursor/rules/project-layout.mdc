@@ -52,4 +52,7 @@ alwaysApply: true
 # Documentation sync
 
 - Any change that alters the repository layout must update the
-  "Project layout" section of `README.md` in the same change.
+  "Project layout" section of `.github/CONTRIBUTING.md` in the same
+  change. If the change also affects user-facing setup, binary
+  usage, or features, update the relevant section of `README.md`
+  too.
