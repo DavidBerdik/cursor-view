@@ -79,10 +79,11 @@ def _markdown_message_lines(msg: dict[str, Any], index: int) -> list[str]:
     content (with a ``"Content unavailable"`` fallback for truly
     empty turns and for non-string content -- mirrors the coalescer
     convention), another blank line, the ``<img>`` lines from
-    :func:`_render_message_images_markdown`, and a trailing ``---``
-    thematic break + blank line. ``index`` is the message's 0-based
-    position and is used only to identify the turn in the
-    non-string-content warning log.
+    :func:`_render_message_images_markdown`, a blank separator when
+    the helper produced any image lines (see intent comment below),
+    and a trailing ``---`` thematic break + blank line. ``index``
+    is the message's 0-based position and is used only to identify
+    the turn in the non-string-content warning log.
     """
     role = msg.get("role", "unknown")
     content = msg.get("content", "")
@@ -94,7 +95,16 @@ def _markdown_message_lines(msg: dict[str, Any], index: int) -> list[str]:
         content = "Content unavailable"
     heading = "**User**" if role == "user" else "**Cursor**"
     lines = [heading, "", content.rstrip(), ""]
-    lines.extend(_render_message_images_markdown(images))
+    image_lines = _render_message_images_markdown(images)
+    if image_lines:
+        lines.extend(image_lines)
+        # Blank line so CommonMark renders the trailing ``---`` as a
+        # thematic break, not a setext-H2 underline of the preceding
+        # paragraph (the final ``<img>`` tag) or as literal dashes.
+        # Text-only messages already have this blank from the
+        # ``content.rstrip()`` + ``""`` pair above; images would
+        # otherwise butt up against the ``---``.
+        lines.append("")
     lines.extend(["---", ""])
     return lines
 

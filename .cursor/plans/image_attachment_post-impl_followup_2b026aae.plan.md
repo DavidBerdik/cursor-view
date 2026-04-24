@@ -46,7 +46,7 @@ todos:
     status: completed
   - id: A8-markdown-img-separator
     content: Fix `cursor_view/export/markdown.py::generate_markdown` so image-bearing messages emit a blank line between the last `<img>` tag and the trailing `---` thematic break. Without it, CommonMark parsers treat the `<img>` line as a paragraph whose following `---` is either a setext H2 underline or literal text. Conditional `lines.append("")` when `_render_message_images_markdown` returns a non-empty list; text-only output stays byte-identical.
-    status: pending
+    status: completed
   - id: A9-html-clickable-images
     content: Wrap each `<img>` in `cursor_view/export/html.py::_render_message_images_html` with an `<a href="{data_uri}" target="_blank" rel="noopener">` so HTML exports open full-size images on a single click (parity with the frontend gallery's existing anchor behavior) instead of requiring a right-click menu. Extend `_HTML_STYLE_TEMPLATE`'s `.message-images` block with an `a { display:inline-flex; text-decoration:none; line-height:0; }` rule plus an `a:hover { text-decoration:none; }` override so the existing `.message-content a:hover` underline does not appear beneath hovered images. Also escape `data_uri` with `html.escape(..., quote=True)` before interpolation into both `href` and `src` (defensive discipline matching A2).
     status: pending
