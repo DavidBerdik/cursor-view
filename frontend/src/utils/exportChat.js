@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isDesktopMode } from './mode';
 
 const FORMAT_META = {
   json: { ext: 'json', mime: 'application/json;charset=utf-8' },
@@ -6,10 +7,15 @@ const FORMAT_META = {
   html: { ext: 'html', mime: 'text/html;charset=utf-8' },
 };
 
+// Layered gate: `isDesktopMode()` answers "am I running inside
+// pywebview at all?" (the shared helper in `mode.js`); the
+// `save_export` check answers "is this specific bridge method ready
+// yet?". The two questions are separate because pywebview registers
+// methods asynchronously at startup, and the desktop-mode label (C3)
+// needs the first answer without caring about the second.
 function hasDesktopBridge() {
   return (
-    typeof window !== 'undefined' &&
-    window.pywebview &&
+    isDesktopMode() &&
     window.pywebview.api &&
     typeof window.pywebview.api.save_export === 'function'
   );

@@ -3,20 +3,24 @@ import { Menu, MenuItem, ListItemIcon, ListItemText, Divider } from '@mui/materi
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ContentCutIcon from '@mui/icons-material/ContentCut';
 import ContentPasteIcon from '@mui/icons-material/ContentPaste';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SelectAllIcon from '@mui/icons-material/SelectAll';
 
 import { findSelectionContainer, isEditableElement } from '../utils/dom';
+import { isDesktopMode } from '../utils/mode';
 import { useSavedSelection } from '../hooks/useSavedSelection';
 
 const AppContextMenu = () => {
   const [anchorPos, setAnchorPos] = useState(null);
   const [selectionText, setSelectionText] = useState('');
   const [editable, setEditable] = useState(false);
+  const [linkHref, setLinkHref] = useState(null);
   const targetRef = useRef(null);
   const { save, restore, reset, scheduleRestore } = useSavedSelection();
 
   const handleClose = useCallback(() => {
     setAnchorPos(null);
+    setLinkHref(null);
     targetRef.current = null;
     reset();
   }, [reset]);
@@ -27,6 +31,13 @@ const AppContextMenu = () => {
 
       const target = event.target;
       targetRef.current = target;
+
+      // DOM-resolved absolute href (matches a left-click's navigation
+      // target, skipping a base-URL resolution step downstream). When
+      // the right-click isn't inside an anchor, linkHref stays null
+      // and the Open-link MenuItem below short-circuits.
+      const anchor = target.closest && target.closest('a[href]');
+      setLinkHref(anchor ? anchor.href : null);
 
       const isEditable = isEditableElement(target);
       setEditable(isEditable);
@@ -62,6 +73,27 @@ const AppContextMenu = () => {
 
   const open = anchorPos !== null;
   const hasSelection = selectionText.length > 0;
+
+  const handleOpenLink = () => {
+    const href = linkHref;
+    handleClose();
+    if (!href) return;
+    if (isDesktopMode() && window.pywebview?.api?.open_url_in_browser) {
+      // Route through the Python bridge so the OS default browser
+      // opens the URL instead of pywebview navigating the embedded
+      // webview away from the chat. Fire-and-forget: the bridge
+      // validates the scheme (http/https allowlist), logs its own
+      // failure modes, and returns a dict the caller does not need.
+      window.pywebview.api.open_url_in_browser(href);
+      return;
+    }
+    // Terminal / browser mode -- or desktop mode in the brief window
+    // before the bridge finishes registering (rare; the optional
+    // chain above handles it). `noopener` keeps the new tab from
+    // reaching back into `window.opener` and compromising the
+    // originating chat view.
+    window.open(href, '_blank', 'noopener');
+  };
 
   const handleCopy = async () => {
     const text = selectionText;
@@ -183,6 +215,15 @@ const AppContextMenu = () => {
       MenuListProps={{ dense: true, autoFocus: false, autoFocusItem: false }}
       TransitionProps={{ onEntered: restore }}
     >
+      {linkHref && (
+        <MenuItem onClick={handleOpenLink}>
+          <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>
+            {isDesktopMode() ? 'Open in Browser Tab' : 'Open in New Tab'}
+          </ListItemText>
+        </MenuItem>
+      )}
+      {linkHref && <Divider />}
       <MenuItem onClick={handleCopy} disabled={!hasSelection}>
         <ListItemIcon><ContentCopyIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Copy</ListItemText>

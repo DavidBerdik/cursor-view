@@ -55,13 +55,13 @@ todos:
     status: completed
   - id: C1-desktop-bridge-open-url
     content: "Add a new `DesktopApi.open_url_in_browser(url: str) -> dict` method in `cursor_view/desktop/api.py` that validates `urlparse(url).scheme in ('http', 'https')` and calls `webbrowser.open(url, new=2)`. Return `{\"opened\": bool, \"error\": str | None}` matching the existing `save_export` dict-return shape. Lazy `%s` logging for invalid-scheme rejections and `webbrowser.open` failures. No raise path -- the bridge must never throw across the JS boundary."
-    status: pending
+    status: completed
   - id: C2-frontend-is-desktop-mode
     content: Create `frontend/src/utils/mode.js` exporting `isDesktopMode()` (returns `typeof window !== 'undefined' && !!window.pywebview`). Update `frontend/src/utils/exportChat.js::hasDesktopBridge` to consume `isDesktopMode()` as its first check so the desktop-mode detection lives in one place. Two current consumers (`exportChat.js` existing, `AppContextMenu.js` incoming via C3) trigger the react-components.mdc "promote it on sight" rule for duplicated helpers.
-    status: pending
+    status: completed
   - id: C3-frontend-context-menu-open-link
     content: "Extend `frontend/src/components/AppContextMenu.js` to detect `target.closest('a[href]')` in the existing `contextmenu` handler and store the resolved `linkHref` in component state. Add a conditional MenuItem at the top of the menu (with `<Divider />` below it, above `Copy`) rendered only when `linkHref` is set, labeled `\"Open in Browser Tab\"` when `isDesktopMode()` and `\"Open in New Tab\"` otherwise. Click handler: desktop mode calls `window.pywebview.api.open_url_in_browser(href)` (fire-and-forget) with a `window.open(href, '_blank', 'noopener')` fallback when the bridge method isn't ready yet; terminal mode uses `window.open(...)` directly. New icon import: `OpenInNewIcon` from `@mui/icons-material/OpenInNew`. File stays under 250 lines; MUI theme tokens only."
-    status: pending
+    status: completed
   - id: E1-regression-tests
     content: "Add nine regression tests to `tests/test_chat_index_images.py` covering every fix above: image-only preview fallback (A1), coalescer post-loop placeholder clear (§5), `include_image_bytes=True` `data_uri` round-trip via `get_chat`, `assertLogs` on missing-disk warning, disk+legacy dedup (§3.1), non-dict bubble JSON (B1), out-of-range image position (A4), Markdown export's blank-line separator between `<img>` and `---` (A8 -- assert `<img …/>\\n\\n---` shape, not `<img …/>\\n---`), and HTML export's `<a href=... target=_blank rel=noopener>` wrapper around every `<img>` (A9 -- assert wrapper shape, matching href/src, and the new `.message-images a` / `a:hover` CSS block). Keep the module stdlib-only; `python -m unittest discover -s tests` must stay green."
     status: pending
