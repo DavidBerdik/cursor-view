@@ -1,28 +1,44 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { Box } from '@mui/material';
+import ImageLightboxModal from './ImageLightboxModal';
 
-// Renders a row of image attachments for one message bubble.
+// Renders a row of clickable image-attachment thumbnails for one
+// chat message. Each thumbnail is a `<button>` whose click opens
+// the sibling `ImageLightboxModal` at the corresponding index, so
+// users view attachments in place rather than being yanked out to
+// a new browser tab. This parity with Cursor's own chat UI is the
+// whole point of A10; HTML exports continue to use the anchor /
+// new-tab pattern from A9 because exported files have no React
+// runtime to host a modal.
 //
-// The actual bytes live in the chat-index cache and are served by the
+// Image bytes live in the chat-index cache and are served by the
 // dedicated `GET /api/chat/<session_id>/image/<uuid>` route rather
-// than being inlined into the chat-detail JSON payload, so each <img>
-// simply points at that URL and the browser handles caching via the
-// route's long-lived `Cache-Control: immutable` header. Each image is
-// wrapped in an anchor that opens the same URL in a new tab so users
-// can view / save the full-size asset; `rel="noopener"` keeps the new
-// tab from reaching back into the chat window.
+// than being inlined into the chat-detail JSON payload, so each
+// thumbnail and the modal's full-size `<img>` both hit the same
+// URL -- the browser's cache satisfies the modal load from the
+// already-fetched thumbnail bytes. The route's long-lived
+// `Cache-Control: immutable` header keeps that working across
+// re-renders.
 //
-// Layout: the gallery is rendered inside `MessageBubble`'s `<Paper>`,
-// as a sibling below the markdown Box. The Paper's padding already
-// scopes it horizontally, so this component only sets top spacing
-// (`mt`) for separation from the text content above. `role` is kept
-// on the prop signature purely so the alt text can distinguish user
-// attachments from assistant ones; no role-based margin logic here.
+// Layout: the gallery is rendered inside `MessageBubble`'s
+// `<Paper>`, as a sibling below the markdown Box. The Paper's
+// padding already scopes it horizontally, so this component only
+// sets top spacing (`mt`) for separation from the text content
+// above. `role` is kept on the prop signature purely so the alt
+// text can distinguish user attachments from assistant ones.
 //
-// All styling uses MUI theme tokens (`borderColor: 'divider'`) per the
-// theme-ownership rule -- no hard-coded colors so dark / light mode
-// changes flow through automatically.
+// All styling uses MUI theme tokens (`borderColor: 'divider'`) per
+// the theme-ownership rule -- no hard-coded colors so dark / light
+// mode changes flow through automatically.
 export default function MessageImageGallery({ sessionId, images, role }) {
+  const [openIndex, setOpenIndex] = useState(null);
+
+  // Stable callbacks so the modal's keydown `useEffect` does not
+  // re-register its listener on every parent re-render, per
+  // `frontend-hooks.mdc`'s "Stable callback references" clause.
+  const handleClose = useCallback(() => setOpenIndex(null), []);
+  const handleNavigate = useCallback((i) => setOpenIndex(i), []);
+
   if (!Array.isArray(images) || images.length === 0) {
     return null;
   }
@@ -41,47 +57,58 @@ export default function MessageImageGallery({ sessionId, images, role }) {
   const encodedSessionId = encodeURIComponent(sessionId);
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 1,
-        mt: 1.5,
-      }}
-    >
-      {safeImages.map((img) => {
-        const src = `/api/chat/${encodedSessionId}/image/${encodeURIComponent(img.uuid)}`;
-        return (
-          <Box
-            key={img.uuid}
-            component="a"
-            href={src}
-            target="_blank"
-            rel="noopener"
-            sx={{
-              display: 'inline-flex',
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
-              overflow: 'hidden',
-              maxWidth: 280,
-              lineHeight: 0,
-            }}
-          >
+    <>
+      <Box
+        sx={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 1,
+          mt: 1.5,
+        }}
+      >
+        {safeImages.map((img, i) => {
+          const src = `/api/chat/${encodedSessionId}/image/${encodeURIComponent(img.uuid)}`;
+          return (
             <Box
-              component="img"
-              src={src}
-              alt={alt}
-              loading="lazy"
+              key={img.uuid}
+              component="button"
+              type="button"
+              onClick={() => setOpenIndex(i)}
+              aria-label={alt}
               sx={{
-                display: 'block',
-                maxWidth: '100%',
-                height: 'auto',
+                display: 'inline-flex',
+                cursor: 'pointer',
+                p: 0,
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                overflow: 'hidden',
+                maxWidth: 280,
+                backgroundColor: 'transparent',
               }}
-            />
-          </Box>
-        );
-      })}
-    </Box>
+            >
+              <Box
+                component="img"
+                src={src}
+                alt={alt}
+                loading="lazy"
+                sx={{
+                  display: 'block',
+                  maxWidth: '100%',
+                  height: 'auto',
+                }}
+              />
+            </Box>
+          );
+        })}
+      </Box>
+      <ImageLightboxModal
+        sessionId={sessionId}
+        images={safeImages}
+        openIndex={openIndex}
+        onClose={handleClose}
+        onNavigate={handleNavigate}
+      />
+    </>
   );
 }

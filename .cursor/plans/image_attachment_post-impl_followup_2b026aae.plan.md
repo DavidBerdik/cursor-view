@@ -52,7 +52,7 @@ todos:
     status: completed
   - id: A10-chat-view-modal-lightbox
     content: Replace the `MessageImageGallery.js` anchor-wrapped thumbnails with a `<button>`-wrapped thumbnail that opens a new `ImageLightboxModal.js` sibling component (MUI `Dialog` with a dimmed backdrop). Modal shows the full-size image (via the existing `/api/chat/:id/image/:uuid` URL), a counter ("1/2"), prev / next chevrons + keyboard Left/Right nav when `images.length > 1`, a close button + Escape + backdrop-click to dismiss, and a thumbnail strip along the bottom. Callbacks wrapped in `useCallback` per frontend-hooks.mdc. Chat-view only -- HTML exports (A9) keep the anchor / new-tab behavior.
-    status: pending
+    status: completed
   - id: C1-desktop-bridge-open-url
     content: "Add a new `DesktopApi.open_url_in_browser(url: str) -> dict` method in `cursor_view/desktop/api.py` that validates `urlparse(url).scheme in ('http', 'https')` and calls `webbrowser.open(url, new=2)`. Return `{\"opened\": bool, \"error\": str | None}` matching the existing `save_export` dict-return shape. Lazy `%s` logging for invalid-scheme rejections and `webbrowser.open` failures. No raise path -- the bridge must never throw across the JS boundary."
     status: pending
