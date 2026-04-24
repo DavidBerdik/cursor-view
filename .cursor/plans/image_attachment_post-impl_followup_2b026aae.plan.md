@@ -64,7 +64,7 @@ todos:
     status: completed
   - id: E1-regression-tests
     content: "Add nine regression tests to `tests/test_chat_index_images.py` covering every fix above: image-only preview fallback (A1), coalescer post-loop placeholder clear (§5), `include_image_bytes=True` `data_uri` round-trip via `get_chat`, `assertLogs` on missing-disk warning, disk+legacy dedup (§3.1), non-dict bubble JSON (B1), out-of-range image position (A4), Markdown export's blank-line separator between `<img>` and `---` (A8 -- assert `<img …/>\\n\\n---` shape, not `<img …/>\\n---`), and HTML export's `<a href=... target=_blank rel=noopener>` wrapper around every `<img>` (A9 -- assert wrapper shape, matching href/src, and the new `.message-images a` / `a:hover` CSS block). Keep the module stdlib-only; `python -m unittest discover -s tests` must stay green."
-    status: pending
+    status: completed
   - id: F1-move-dev-docs-to-contributing
     content: "Create `.github/CONTRIBUTING.md` and move the contributor-facing sections out of `README.md`: the entire `## Project layout` section (entry points, backend subpackage map, cache SQLite layout, tests list, frontend layout, assets) and the `### Build a standalone binary` subsection (PyInstaller invocation, icon regeneration, Gatekeeper note). Add one pointer line from `README.md` to the new file. Update `.cursor/rules/project-layout.mdc`'s Documentation sync clause to point at `.github/CONTRIBUTING.md` instead of `README.md`, per comments-style.mdc's Rule drift clause. Ship the rule edit in the same PR as the content move."
     status: pending
