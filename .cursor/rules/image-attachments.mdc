@@ -120,7 +120,7 @@ parsed as CommonMark -- `_render_message_images_html` emits a
 `<div class="message-images">` container directly. Any future
 text-format exporter that emits thematic breaks around image markers
 must apply the same blank-line discipline before the break. Regression
-guard: `tests/test_chat_index_images.py::MarkdownExportImageTest`
+guard: `tests/test_chat_index_images_exports.py::MarkdownExportImageTest`
 pins both the `<img … />\n\n---` shape (present) and the direct-concat
 `<img … />\n---` shape (absent).
 

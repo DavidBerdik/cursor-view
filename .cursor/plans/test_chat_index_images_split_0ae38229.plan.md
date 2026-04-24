@@ -4,7 +4,7 @@ overview: Follow-up from the G1 rule-violation audit of the image-attachment pos
 todos:
   - id: S1-split-images-test-module
     content: "Split `tests/test_chat_index_images.py` (1005 lines) into three sibling modules and one shared fixture helper: `tests/test_chat_index_images_core.py` (existing end-to-end rebuild cases plus the coalescer unit cases), `tests/test_chat_index_images_regressions.py` (the seven ChatIndexImageTest E1 cases added for A1 / A4 / B1 / data-uri round-trip / dedup / etc.), `tests/test_chat_index_images_exports.py` (the A8 MarkdownExportImageTest + A9 HtmlExportImageTest classes), and `tests/_image_test_helpers.py` (the `_create_source_schema`, `_put_kv`, `_composer`, `_bubble_with_modern_image`, `_bubble_with_legacy_image`, `_bubble_with_both_shapes_same_uuid`, `_bubble_with_modern_images`, `_encode`, `PNG_PREFIX`, `_export_chat_fixture` fixtures that multiple classes share). Each sibling module stays stdlib-only (no pytest, no Testing Library, no new dependency); `python -m unittest discover -s tests` must stay green and still find the same ~25 tests this module currently owns."
-    status: pending
+    status: completed
 isProject: false
 ---
 

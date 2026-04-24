@@ -183,25 +183,41 @@ python -m unittest discover -s tests
 delta path is specifically designed for: single-bubble mutation,
 workspace `treeViewState` churn, first-time `task_v2` subagent spawn,
 and pane-view key promotion from `(global)` to a workspace.
-`tests/test_chat_index_images.py` covers the image attachment path:
-modern-shape (on-disk) and legacy-shape (inline byte dict) rebuilds,
-image modification via incremental apply, graceful skip on a missing
-disk file (with an `assertLogs` on the missing-disk warning so silent
-`OSError` swallowing fails the test), and multiple images per message
-round-tripping through `chat_image` &rarr; `_fetch_images_for_session`
-&rarr; `ChatIndex.get_chat` / `get_image`; plus three coalescer unit
-cases for same-role image concatenation, the image-only-turn
-placeholder fix, and the post-loop clear of a `"Content unavailable"`
-seed when same-role image merging makes the record image-bearing. The
-module also pins the image-attachment post-impl regressions: image-only
-chat preview fallback, `include_image_bytes=True` base64 round-trip via
-`get_chat`, disk-preferred dedup when the same uuid appears in both
-storage shapes, non-dict bubble JSON handling, out-of-range
-`chat_image.position` dropped with a warning, Markdown export's
-blank-line separator between `<img>` and the trailing `---` thematic
-break, and the HTML export's `<a href=... target=_blank rel=noopener>`
-wrapper around every `<img>` with matching `.message-images a` /
-`a:hover` CSS.
+
+The image-attachment coverage is split across three sibling test
+modules plus a shared helper, all under `tests/`:
+
+- `tests/_image_test_helpers.py` &mdash; shared fixtures
+  (`_create_source_schema`, `_put_kv`, `_composer`, the four
+  `_bubble_with_*` builders, `_export_chat_fixture`, `PNG_PREFIX`)
+  and the `BaseChatIndexImageTest` harness with its four
+  `cursor_root` patches. Leading-underscore name keeps it out of
+  `unittest.discover`'s default `test_*.py` pattern so it is
+  imported as a helper, not run as a test.
+- `tests/test_chat_index_images_core.py` &mdash; the original
+  end-to-end rebuild scenarios: modern-shape (on-disk) and
+  legacy-shape (inline byte dict) rebuilds, image modification via
+  incremental apply, and multiple images per message round-tripping
+  through `chat_image` &rarr; `_fetch_images_for_session` &rarr;
+  `ChatIndex.get_chat` / `get_image`; plus the two original
+  coalescer unit cases (same-role image concatenation and the
+  image-only-turn placeholder).
+- `tests/test_chat_index_images_regressions.py` &mdash; the
+  image-attachment post-impl regressions: graceful skip on a missing
+  disk file (with an `assertLogs` on the missing-disk warning so
+  silent `OSError` swallowing fails the test), image-only chat
+  preview fallback, `include_image_bytes=True` base64 round-trip via
+  `get_chat`, disk-preferred dedup when the same uuid appears in
+  both storage shapes, non-dict bubble JSON handling, out-of-range
+  `chat_image.position` dropped with a warning, and the post-loop
+  clear of a `"Content unavailable"` seed when same-role image
+  merging makes the record image-bearing.
+- `tests/test_chat_index_images_exports.py` &mdash; Markdown
+  export's blank-line separator between `<img>` and the trailing
+  `---` thematic break, and the HTML export's
+  `<a href=... target=_blank rel=noopener>` wrapper around every
+  `<img>` with matching `.message-images a` / `a:hover` CSS.
+
 `tests/test_export_html_mermaid.py` covers the mermaid HTML export
 path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
 special characters in diagram source, non-mermaid fence regression
