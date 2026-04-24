@@ -70,13 +70,13 @@ todos:
     status: completed
   - id: G1-rule-violation-audit
     content: Read every `.cursor/rules/*.mdc` and walk each rule against the post-execution tree to confirm no rule is violated. Audit per rule (comments-style, frontend-hooks, image-attachments, known-bugs, project-layout, python-standards, react-components, sqlite-cursor-db). Scope covers every file this plan modified or created (A1-F1). Any violation found lands in a *follow-up* plan file under `.cursor/plans/` describing each violation + remediation direction; do NOT fix in this plan's PR unless the violation is a one-liner attributable to a specific todo above (treat that as a hotfix to the owning todo).
-    status: pending
+    status: completed
   - id: G2-rule-accuracy-update
     content: Identify sections of any `.cursor/rules/*.mdc` whose motivating examples, canonical lists, or line-count figures drifted during this plan's execution (e.g., D1's `images/transport.py` split as a fresh motivating example in `python-standards.mdc`; any line counts the plan cites that moved during execution). Update the drifted rule text in this PR per comments-style.mdc's Rule drift clause. G2 is the backstop for drift that slipped through A7 and F1's targeted rule edits.
-    status: pending
+    status: completed
   - id: G3-new-rule-authorship
     content: "Evaluate whether any convention this plan established warrants a new `.cursor/rules/*.mdc` rule or a paragraph added to an existing rule. Candidates: the CommonMark thematic-break spacing around `<img>` (A8), the defensive `html.escape`-on-interpolation discipline for HTML-bearing data URIs (A2 / A9), the `<a href><img/></a>` anchor-wrap pattern for clickable export images (A9), the modal-lightbox UX pattern for image galleries (A10), and the mode-aware Python-bridge routing pattern for `window.open` alternatives (C1-C3). Apply the original feature plan's §14.2 default stance (new rules only when a future contributor could plausibly violate a non-obvious convention). Ship any edits in this PR."
-    status: pending
+    status: completed
   - id: G4-bug-re-review
     content: "Re-read every file this plan touched (A1-F1) after execution and look for bugs that escaped detection. For each bug found: (a) if it fits this plan's scope and is small (< 20 lines, no new test file), add a late-stage todo here and fix it; (b) if it is out of scope or larger, add a `# TODO(bug):` comment per `.cursor/rules/known-bugs.mdc` describing the symptom, suspected cause, trigger, any graceful-degradation masking, and why it is not being fixed now, then defer to a follow-up plan; (c) do NOT use `TODO(bug):` for graceful-degradation paths (documented as intentional) or stylistic items (use plain `TODO:` or no comment). Explicit reminder: never silently delete suspicious code."
     status: pending

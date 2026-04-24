@@ -13,8 +13,13 @@ alwaysApply: false
   `ChatCard`. Contemporary example: `AppContextMenu.js` was 268
   lines and now delegates its save/restore selection state to the
   `useSavedSelection` hook and its DOM helpers (`isEditableElement`,
-  `findSelectionContainer`) to `utils/dom.js`, leaving the component
-  at ~180 lines of handlers + `<Menu>` JSX.
+  `findSelectionContainer`) to `utils/dom.js`. The initial decomposition
+  landed the component near 180 lines of handlers + `<Menu>` JSX;
+  subsequent feature adds (e.g. the link-open menu item that routes
+  through the pywebview bridge in desktop mode and `window.open` in
+  terminal mode) have grown it back toward the 250 soft limit while
+  the decomposition continues to pay off — the extracted hook and
+  DOM helpers stay consumed without duplication.
 - Duplicated UI across pages (dialogs, toolbars, cards) is extracted
   into `components/<shared-area>/`. The export format + warning
   dialogs lived twice in the codebase before the refactor and must

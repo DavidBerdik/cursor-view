@@ -1,4 +1,16 @@
-"""Row-shaping helpers shared by the full rebuild and incremental apply paths."""
+"""Row-shaping helpers shared by the full rebuild and incremental apply paths.
+
+The module is slightly over the 400-line soft limit called out in
+:file:`.cursor/rules/python-standards.mdc` because the row shapers,
+the image-attach helper, and the search / summary readers must share
+a single ``_insert_chat`` coalescer-entry invariant (same reasoning
+as the matching preamble in :mod:`cursor_view.chat_index.index`):
+splitting them across sibling modules would require re-exposing
+private state for the shared ``(session_id, position, image_index)``
+insert contract and the coalescer-mirroring ``"Content unavailable"`` /
+``"(image attachment)"`` preview fallbacks, which is worse than the
+modest overrun.
+"""
 
 from __future__ import annotations
 

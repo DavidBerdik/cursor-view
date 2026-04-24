@@ -100,6 +100,30 @@ Do not add a third path that embeds base64 into the chat-detail JSON
 -- that undoes the entire point of the route split (a chat with many
 images would blow up the first page load).
 
+# Markdown export: blank line between `<img>` tags and `---`
+
+`cursor_view/export/markdown.py::_markdown_message_lines` emits a
+blank line between the last `<img>` and the trailing `---` thematic
+break **only when a message carries images**. Without that blank,
+CommonMark parsers consume the `<img>` as a paragraph whose following
+`---` is either a setext-H2 underline or literal dashes, so users see
+the thematic break rendered as a giant page-break heading or as three
+stray dashes instead of a horizontal rule. Text-only messages already
+have the required blank (the ``content.rstrip() + ""`` pair above the
+image block), so the conditional append is strictly image-specific:
+append `""` when `_render_message_images_markdown` returns a non-empty
+list, leave the sequence untouched when it returns empty so text-only
+output stays byte-identical.
+
+The HTML exporter does not need this discipline because it is not
+parsed as CommonMark -- `_render_message_images_html` emits a
+`<div class="message-images">` container directly. Any future
+text-format exporter that emits thematic breaks around image markers
+must apply the same blank-line discipline before the break. Regression
+guard: `tests/test_chat_index_images.py::MarkdownExportImageTest`
+pins both the `<img … />\n\n---` shape (present) and the direct-concat
+`<img … />\n---` shape (absent).
+
 # Graceful skip on missing / malformed sources
 
 Image materialization is **not** fail-fast. When
@@ -136,6 +160,10 @@ level does not pay the cost of formatting the missing file's path.
   `include_image_bytes=True` and emits the per-image `data_uri`
   through `messages_for_json_export`) — the three consumers that
   inline base64 data URIs.
-- `frontend/src/components/chat-detail/MessageImageGallery.js` — the
-  only frontend consumer of image bytes; uses `<img src>` against the
-  dedicated route, not base64 inlined into the chat-detail JSON.
+- `frontend/src/components/chat-detail/MessageImageGallery.js` and its
+  sibling `frontend/src/components/chat-detail/ImageLightboxModal.js` —
+  the frontend consumers of image bytes. Both point `<img src>` at the
+  dedicated `GET /api/chat/<session_id>/image/<image_uuid>` route rather
+  than base64-inlining into the chat-detail JSON. The modal opens
+  full-size on thumbnail click and reuses the browser cache from the
+  gallery's already-fetched thumbnails, so no second network hit.

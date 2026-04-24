@@ -4,32 +4,22 @@ import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
-// Per-message image lightbox rendered over MUI's default dimmed
-// backdrop. Scope is the images attached to a single chat message --
-// the parent `MessageImageGallery` holds the `openIndex` state and
-// passes this modal a filtered, well-formed `images` array (A3's
-// defensive filter has already run), so this component does not
-// need a second guard layer.
+// Per-message image lightbox. The parent `MessageImageGallery`
+// holds `openIndex` state and hands this modal a pre-filtered
+// `images` array (A3's defensive filter already ran upstream).
 //
-// UX invariants: Escape dismisses (via MUI `Dialog`'s `onClose`);
-// backdrop click dismisses (also via `Dialog`'s built-in behavior);
-// the close button in the top-right mirrors Escape; `ArrowLeft` /
-// `ArrowRight` on the keyboard navigate prev/next when the message
-// has more than one image. Prev/next chevrons render as edge
-// overlays on the image when navigation is available, and a
-// thumbnail strip along the bottom lets the user jump to any
-// attachment in the same message. Single-image messages collapse
-// to just the full-size image + close button.
+// UX invariants: Escape / backdrop-click / the close IconButton all
+// dismiss (via MUI `Dialog`'s `onClose`); `ArrowLeft` / `ArrowRight`
+// navigate when `images.length > 1`; prev/next chevrons and a
+// thumbnail strip live together in the bottom band; single-image
+// messages collapse to just the full-size image + close button.
 //
-// Byte flow unchanged vs. the thumbnail gallery: the `<img src>`
-// here points at the same `GET /api/chat/<session_id>/image/<uuid>`
-// route, so the browser reuses its already-cached response from
-// the thumbnail render -- no second fetch, no new inline-base64
-// path into the chat-detail JSON.
-//
-// All styling uses MUI theme tokens (`bgcolor: 'background.paper'`,
-// `color: 'text.primary'`, `borderColor: 'divider'`, `primary.main`)
-// so dark / light mode changes flow through automatically.
+// Byte flow: each `<img src>` hits the same
+// `GET /api/chat/<session_id>/image/<uuid>` route the gallery
+// already fetched, so the browser cache satisfies the modal load
+// with no new request and no new inline-base64 path into the
+// chat-detail JSON. All styling uses MUI theme tokens so the modal
+// follows dark / light mode changes automatically.
 export default function ImageLightboxModal({
   sessionId,
   images,
@@ -70,21 +60,11 @@ export default function ImageLightboxModal({
       onClose={onClose}
       maxWidth={false}
       PaperProps={{
-        // The modal's outer dimensions are fixed relative to the
-        // viewport (not the image), so navigating between images of
-        // different sizes no longer resizes or jitters the modal.
-        // The image inside scales to fit whatever space the flex
-        // layout grants it; small images sit in a larger frame and
-        // big images cap at the frame edge.
-        //
-        // The 95vw / 95vh cap leaves a thin strip of backdrop around
-        // the Paper so the dimmed background is still visible -- the
-        // point being that the user can see the chat content dimmed
-        // behind the modal -- while keeping the modal itself close to
-        // the viewport edges (Cursor's own modal behaves similarly).
-        // The `m: 0.5` override on MUI's default `m: 32px` Paper
-        // margin keeps the backdrop strip tight without letting the
-        // Paper butt directly against the viewport edge.
+        // Viewport-fixed dimensions (95vw / 95vh) keep the modal the
+        // same size regardless of which image is shown; the image
+        // inside scales to fit. `m: 0.5` overrides MUI's default 32px
+        // Paper margin so the backdrop strip stays thin but the Paper
+        // does not butt directly against the viewport edge.
         sx: {
           bgcolor: 'background.paper',
           m: 0.5,
