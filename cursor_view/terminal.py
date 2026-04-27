@@ -18,13 +18,20 @@ from cursor_view.cleanup import cleanup_orphan_temp_files
 
 logger = logging.getLogger(__name__)
 
-cleanup_orphan_temp_files()
-
-app = create_app()
-
 
 def run_server(port: int = 5000, debug: bool = False, no_browser: bool = False) -> None:
-    """Start the Flask development server, optionally auto-opening the browser."""
+    """Start the Flask development server, optionally auto-opening the browser.
+
+    Cache cleanup and Flask app construction happen here, not at module
+    load, so importing this module to read ``run_server``'s signature
+    (CLI dispatch in ``cursor_view/__main__.py``, the root-level
+    ``terminal.py`` shim, or introspection tools) does not trigger a
+    cache-directory sweep or Flask app construction as a side effect.
+    Mirrors the discipline already in
+    :func:`cursor_view.desktop.run_desktop`.
+    """
+    cleanup_orphan_temp_files()
+    app = create_app()
     logger.info("Starting server on port %s", port)
 
     if not no_browser:

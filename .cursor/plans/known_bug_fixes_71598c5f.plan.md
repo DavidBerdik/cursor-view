@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: fix_terminal_side_effects
     content: Move cleanup_orphan_temp_files() and create_app() out of cursor_view/terminal.py module scope into run_server(), mirroring run_desktop(); delete the module-level app symbol.
-    status: pending
+    status: completed
   - id: add_regression_tests
     content: "Add regression tests covering: a malformed chat is skipped (no ghost row) on full rebuild, the same on incremental apply, and (optional) iter_global_legacy_chatdata closes its connection on a JSON-decode failure."
     status: pending
