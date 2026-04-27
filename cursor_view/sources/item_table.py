@@ -104,30 +104,29 @@ def iter_global_legacy_chatdata(
     Tabs whose ``tabId`` is missing or whose bubbles carry no usable
     text are skipped silently.
     """
-    # TODO(bug): connection leak on the non-happy path. ``con = sqlite3.connect``
-    # runs inside the ``try``, and any exception from the ``j()`` call or the
-    # bubble-iteration loop below jumps straight to ``except Exception``
-    # without ever closing ``con``. The other iterators in this package use
-    # ``contextlib.closing`` (or ``con = None`` + outer ``try/finally``) to
-    # avoid this; adopting the same here is deferred to the follow-up
-    # bug-fix plan so this refactor stays behavior-preserving.
     try:
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-        chat_data = j(con.cursor(), "ItemTable", _LEGACY_CHATDATA_KEY)
-        if chat_data:
-            for tab in chat_data.get("tabs", []):
-                tab_id = tab.get("tabId")
-                if not tab_id:
-                    continue
-                for bubble in tab.get("bubbles", []):
-                    content = ""
-                    if "text" in bubble:
-                        content = bubble["text"]
-                    elif "content" in bubble:
-                        content = bubble["content"]
-                    if content and isinstance(content, str):
-                        role = "user" if bubble.get("type") == "user" else "assistant"
-                        yield tab_id, role, content
-        con.close()
-    except Exception as e:
-        logger.debug("Error processing global ItemTable: %s", e)
+    except sqlite3.DatabaseError as e:
+        logger.debug("Error processing global ItemTable %s: %s", db, e)
+        return
+    with closing(con):
+        try:
+            chat_data = j(con.cursor(), "ItemTable", _LEGACY_CHATDATA_KEY)
+        except sqlite3.DatabaseError as e:
+            logger.debug("Error processing global ItemTable %s: %s", db, e)
+            return
+        if not chat_data:
+            return
+        for tab in chat_data.get("tabs", []):
+            tab_id = tab.get("tabId")
+            if not tab_id:
+                continue
+            for bubble in tab.get("bubbles", []):
+                content = ""
+                if "text" in bubble:
+                    content = bubble["text"]
+                elif "content" in bubble:
+                    content = bubble["content"]
+                if content and isinstance(content, str):
+                    role = "user" if bubble.get("type") == "user" else "assistant"
+                    yield tab_id, role, content

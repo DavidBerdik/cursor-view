@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: fix_item_table_leak
     content: "Rewrite cursor_view/sources/item_table.py::iter_global_legacy_chatdata to use the iter_chat_from_item_table pattern: connect outside the try, narrow except to sqlite3.DatabaseError, wrap cursor work in contextlib.closing, drop the manual con.close() and the broad except Exception."
-    status: pending
+    status: completed
   - id: fix_terminal_side_effects
     content: Move cleanup_orphan_temp_files() and create_app() out of cursor_view/terminal.py module scope into run_server(), mirroring run_desktop(); delete the module-level app symbol.
     status: pending
