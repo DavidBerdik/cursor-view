@@ -10,9 +10,21 @@ looks buggy, add a `# TODO(bug):` comment describing the symptom and
 suspected cause, and leave the behavior unchanged unless explicitly
 asked to fix the bug.
 
-Motivating example: `cursor_view/chat_format.py` hard-codes a
-developer's username in a project-name fallback; it is annotated with
-`# TODO(bug):` but not removed.
+The marker has three required parts: the literal `# TODO(bug):`
+prefix, a one-line description of the **symptom** (what the user
+observes when the bug fires), and a follow-up sentence on the
+**suspected cause** (which invariant the code currently violates).
+A future contributor must be able to grep `TODO(bug):` and triage
+each hit without rereading the surrounding logic.
+
+There are no live `# TODO(bug):` markers in the tree at the moment;
+both retired examples (the swallow-and-stub exception handler in
+`cursor_view/chat_format.py::format_chat_for_frontend` and the
+connection leak in
+`cursor_view/sources/item_table.py::iter_global_legacy_chatdata`)
+now live in git history. When the next deferred bug surfaces, add
+the marker rather than silently rewriting the code path, then cite
+that file from this section.
 
 # Hardcoded user-specific values
 

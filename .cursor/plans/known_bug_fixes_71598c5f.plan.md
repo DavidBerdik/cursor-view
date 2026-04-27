@@ -19,16 +19,16 @@ todos:
     status: completed
   - id: rules_audit
     content: "Re-read every file under .cursor/rules/ and update any rule whose motivating example or wording is invalidated by these fixes — minimum: known-bugs.mdc must stop citing 'hard-codes a developer's username' (rewrite the motivating example or generalize), and python-standards.mdc must drop the 'bug #12 deferred' wording in the import-time-side-effects block."
-    status: pending
+    status: completed
   - id: rules_compliance_check
     content: Verify the diff against comments-style.mdc (no code-narrating comments, no stale TODO(bug):), python-standards.mdc (lazy %s logging in the new try/except, no underscore cross-package imports), sqlite-cursor-db.mdc (closing-based cleanup, read-only URI mode), and project-layout.mdc (no new top-level Python files, tests live under tests/).
-    status: pending
+    status: completed
   - id: docs_audit
     content: Re-read README.md and .github/CONTRIBUTING.md and update only if a section becomes inaccurate after the fixes — expected outcome is no change required, but confirm the chat_format.py and terminal.py descriptions in CONTRIBUTING.md still match.
-    status: pending
+    status: completed
   - id: test_suite_green
     content: Run python -m unittest discover -s tests and confirm every test (existing + new regressions) passes per project-layout.mdc.
-    status: pending
+    status: completed
 isProject: false
 ---
 

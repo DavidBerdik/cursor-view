@@ -249,6 +249,19 @@ path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
 special characters in diagram source, non-mermaid fence regression
 guard, and dark/light theme selection.
 
+`tests/test_known_bug_fixes.py` pins the contracts established by
+the [`known-bugs.mdc`](../.cursor/rules/known-bugs.mdc) fix-pass:
+`format_chat_for_frontend` raising on malformed input is contained
+by the per-chat skip-with-log boundary in
+`cursor_view/chat_index/rebuild.py` and
+`cursor_view/cache/delta/engine.py` (no synthetic-UUID ghost row in
+`chat_summary` on either the full rebuild path or the incremental
+apply path), and `iter_global_legacy_chatdata` releases its SQLite
+connection on the error path (driven by a missing `ItemTable` so
+`j()` raises `sqlite3.OperationalError`, asserted by capturing the
+connection and verifying a post-iter `execute` raises
+`ProgrammingError`).
+
 ## Frontend (`frontend/src/`)
 
 - `App.js`, `index.js`, `index.css`, `starry-night-theme.css` &mdash;

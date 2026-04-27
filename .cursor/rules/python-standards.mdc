@@ -65,14 +65,19 @@ mutation. Side-effecting work belongs inside a `main()` /
 Merely importing a module to read a symbol out of it must never
 touch the user's disk or process state.
 
-Motivating example: the pre-refactor `cursor_view/terminal.py` ran
-`cleanup_orphan_temp_files()` and `app = create_app()` at the top
-level, so anything that imported the module for `run_server`'s
-signature (including introspection tools) would trigger a
-cache-directory sweep and Flask construction as a side effect.
-(Filed as bug #12 in the structure-cleanup plan; the fix is deferred
-to the follow-up bug-fix plan, but new code must not repeat the
-pattern.)
+Canonical examples of the right shape:
+
+- `cursor_view/terminal.py::run_server` — `cleanup_orphan_temp_files()`
+  and `create_app()` are called inside the function, not at module
+  scope, so `from cursor_view.terminal import run_server`
+  (e.g. by `cursor_view/__main__.py` or the root-level
+  `terminal.py` shim) does no work.
+- `cursor_view/desktop/__init__.py::run_desktop` — the same
+  discipline for the pywebview launcher.
+
+The pre-refactor `cursor_view/terminal.py` ran both calls at
+module scope and is preserved in git history; new code must not
+repeat that pattern.
 
 # Logging
 
