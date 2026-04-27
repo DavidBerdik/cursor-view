@@ -83,7 +83,19 @@ def apply_delta(
                 chat = new_chats.get(cid)
                 if chat is None:
                     continue
-                formatted, messages = insert_chat(cur, chat, fts_enabled)
+                try:
+                    formatted, messages = insert_chat(cur, chat, fts_enabled)
+                except Exception:
+                    # A malformed chat must not abort the whole apply tx
+                    # (which would roll back every other cid in the
+                    # dirty set). _delete_cid_rows above already cleared
+                    # any prior rows for this cid, so skipping here
+                    # leaves the cache with no rows for the bad cid --
+                    # strictly better than the pre-fix swallow-and-stub
+                    # behavior, which produced an undeletable ghost row
+                    # under a synthetic UUID.
+                    logger.exception("Skipping chat that failed to insert; cid=%s", cid)
+                    continue
                 _upsert_composer_state(cur, chat, formatted, messages)
                 inserted += 1
 

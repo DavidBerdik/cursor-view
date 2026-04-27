@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: guard_insert_loops
     content: Wrap the per-chat _insert_chat call in cursor_view/chat_index/rebuild.py and cursor_view/cache/delta/engine.py with try/except that logs lazily (%s) and continues, so a single malformed chat is skipped instead of killing the whole refresh.
-    status: pending
+    status: completed
   - id: fix_item_table_leak
     content: "Rewrite cursor_view/sources/item_table.py::iter_global_legacy_chatdata to use the iter_chat_from_item_table pattern: connect outside the try, narrow except to sqlite3.DatabaseError, wrap cursor work in contextlib.closing, drop the manual con.close() and the broad except Exception."
     status: pending

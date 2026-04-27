@@ -77,7 +77,19 @@ def _build_index_to_temp(
             tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]
         ] = []
         for chat in chats:
-            formatted, messages = _insert_chat(cur, chat, fts_enabled)
+            try:
+                formatted, messages = _insert_chat(cur, chat, fts_enabled)
+            except Exception:
+                # A malformed chat must not kill the whole rebuild. Skip
+                # with a logged warning so the cache stays consistent
+                # (no ghost stub row, no synthetic UUID under the real
+                # cid) and the remaining chats land. See
+                # cursor_view/chat_format.py::format_chat_for_frontend
+                # for why bad input now propagates instead of returning
+                # a stub.
+                cid = (chat.get("session") or {}).get("composerId")
+                logger.exception("Skipping chat that failed to insert; cid=%s", cid)
+                continue
             formatted_chats.append((chat, formatted, messages))
         backfill_incremental_tables(con, formatted_chats, sources)
         now = str(int(time.time()))
