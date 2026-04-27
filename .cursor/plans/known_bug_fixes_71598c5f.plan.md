@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: add_regression_tests
     content: "Add regression tests covering: a malformed chat is skipped (no ghost row) on full rebuild, the same on incremental apply, and (optional) iter_global_legacy_chatdata closes its connection on a JSON-decode failure."
-    status: pending
+    status: completed
   - id: rules_audit
     content: "Re-read every file under .cursor/rules/ and update any rule whose motivating example or wording is invalidated by these fixes — minimum: known-bugs.mdc must stop citing 'hard-codes a developer's username' (rewrite the motivating example or generalize), and python-standards.mdc must drop the 'bug #12 deferred' wording in the import-time-side-effects block."
     status: pending
