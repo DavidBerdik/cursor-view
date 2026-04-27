@@ -133,6 +133,26 @@ def _compute_propagation_triggers(
     for tcid, parent in dirty.tool_call_parent_updates.items():
         cached_parent = raw_cached_tcp.get(tcid)
         if cached_parent != parent:
+            # TODO: When ``task-<tcid>`` is BOTH directly dirty (its
+            # own bubble or composerData rows changed hash) AND has
+            # an edge-churn entry here, the cid is processed twice
+            # in one apply transaction -- once by the primary
+            # ``_apply_chat_writes`` loop iterating
+            # ``dirty.modified_cids``, then again by the secondary
+            # loop after this trigger adds it to ``direct_cids`` and
+            # ``_propagate_subagent_dirtiness`` folds it into
+            # ``secondary_cids``. Both passes write the same content
+            # rows, so the final cache state is correct; the cost is
+            # one extra ``_delete_cid_rows`` + ``insert_chat`` +
+            # ``_upsert_composer_state`` cycle per overlapping cid.
+            # Hits frequently for first-time ``task_v2`` spawns
+            # where the parent's tool-call bubble and the
+            # subagent's own bubbles are both new in the same
+            # refresh window. Output is correct so this is a plain
+            # ``TODO:`` per ``.cursor/rules/known-bugs.mdc``, not
+            # a ``TODO(bug):``; a future cleanup could skip the
+            # ``add`` when ``f"task-{tcid}" in dirty.modified_cids``
+            # without changing observable behavior.
             direct_cids.add(f"task-{tcid}")
     return walk_starts, direct_cids
 
@@ -236,6 +256,32 @@ def _apply_secondary_pass(
     before extraction so the common case (no project shifts, no edge
     churn, no deletions) pays nothing for the gate.
     """
+    # TODO(bug): A cid in ``dirty.modified_cids`` whose primary
+    # extraction returns no chat (``new_chats.get(cid) is None`` --
+    # e.g. every bubble in ``cursorDiskKV`` was filtered out by the
+    # ``composerData.fullConversationHeadersOnly`` orphan invariant
+    # in ``cursor_view/cache/diff/global_db.py`` and the composer
+    # has no ``conversation`` array, so ``_finalize_sessions`` drops
+    # the session for empty messages) gets its ``chat_summary`` row
+    # deleted by ``_apply_chat_writes`` but never lands in
+    # ``primary_formatted``. ``project_shifted`` only iterates
+    # ``primary_formatted.items()``, so the cid never enters
+    # ``walk_starts`` -- and because the cid is in ``modified_cids``
+    # rather than ``deleted_cids`` (its source-row snapshot still
+    # holds at least one row, e.g. an unchanged pane-view key in a
+    # workspace ``ItemTable``), the deleted-parent trigger arm
+    # misses it too. ``task-<toolCallId>`` subagent descendants of
+    # this "soft-deleted" parent therefore keep the parent's
+    # now-stale project in ``chat_summary`` (and in
+    # ``composer_state``) until something else dirties them.
+    # Suspected cause: the trigger set assembled below treats
+    # "extraction yielded a chat with a different project" and
+    # "extraction yielded no chat at all" as different cases, but
+    # both functionally remove the parent's row from the inheritable
+    # set. Folding ``set(dirty.modified_cids) - set(primary_formatted)``
+    # into ``walk_starts`` would close the gap. The pre-gating code
+    # covered this case incidentally because every directly-dirty
+    # parent's descendants propagated regardless.
     project_shifted = {
         cid
         for cid, formatted in primary_formatted.items()

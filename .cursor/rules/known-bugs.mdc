@@ -17,14 +17,21 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-There are no live `# TODO(bug):` markers in the tree at the moment;
-both retired examples (the swallow-and-stub exception handler in
-`cursor_view/chat_format.py::format_chat_for_frontend` and the
-connection leak in
+One live `# TODO(bug):` marker is in the tree at the moment, in
+`cursor_view/cache/delta/propagation.py::_apply_secondary_pass`
+(soft-deletion trigger gap: a parent in `dirty.modified_cids`
+whose primary extraction returns no chat does not propagate to
+its `task-<toolCallId>` subagent descendants, leaving them with
+stale inherited project metadata until something else dirties
+them). The two retired examples (the swallow-and-stub exception
+handler in `cursor_view/chat_format.py::format_chat_for_frontend`
+and the connection leak in
 `cursor_view/sources/item_table.py::iter_global_legacy_chatdata`)
-now live in git history. When the next deferred bug surfaces, add
-the marker rather than silently rewriting the code path, then cite
-that file from this section.
+now live in git history.
+
+When the next deferred bug surfaces, add the marker rather than
+silently rewriting the code path, then cite that file from this
+section.
 
 # Hardcoded user-specific values
 
