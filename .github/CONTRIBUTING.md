@@ -257,7 +257,13 @@ guard, and dark/light theme selection.
   factory), `themeCookie.js` (dark/light cookie).
 - `contexts/` &mdash; `ColorContext.js` and `ThemeModeContext.js`, one
   React context per file.
-- `hooks/` &mdash; shared custom hooks: `useChatSummaries`,
+- `hooks/` &mdash; shared custom hooks: `useChatSummaries`
+  (fetch + `latestRef` + `AbortController` so a stale prefix is
+  cancelled on the wire, not just ignored on the client),
+  `useDebouncedValue` (coalesces a high-churn input value before it
+  reaches a fetching hook's dep array; `ChatList` pairs it with
+  `useChatSummaries` so typing into the search bar fires one
+  `/api/chats` request per pause instead of one per keystroke),
   `useExportFlow`, `useExportWarningPreference`, `useSavedSelection`
   (captures + restores the user's text selection across the
   context-menu open cycle), `useMermaid` (bootstraps the mermaid

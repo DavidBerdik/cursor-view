@@ -60,9 +60,49 @@ function useChatSummaries(query) {
 }
 ```
 
-`useChatSummaries` is the canonical example and is also the hook the
-follow-up bug-fix plan's bug #11 targets; the pattern above is the
-required shape once that fix lands.
+`useChatSummaries` is the canonical example. The hook also pairs the
+`latestRef` token with an `AbortController` per request so a stale
+response is not just *ignored* on the client but actually *cancelled*
+on the wire — every keystroke that bumps `latestRef` also calls
+`abortRef.current.abort()` and passes the new controller's `signal`
+into `axios.get(..., { signal })`. Without the abort, a slow Flask
+worker keeps running an FTS5 `MATCH` for a prefix the user has
+already moved past; with it, the server is freed the moment the
+prefix changes. Cancellation errors (`CanceledError` / `AbortError`)
+are swallowed in the `.catch` because they are the expected outcome
+of a superseded request, not a user-visible failure.
+
+# Debounce the dependency, not just the render
+
+Hooks whose `useEffect` fires a network request off a high-churn
+input (search box keystrokes, slider drags, mouse-driven filter
+ranges) must take their input *already debounced*. Debouncing the
+**render** with `useDeferredValue` is not enough: the effect's
+dependency array still sees every intermediate value, so one HTTP
+request fires per character and they pile up on the server even
+though the latest-id gate ignores all but the last response.
+
+The canonical shape pairs `useDebouncedValue` (`frontend/src/hooks/
+useDebouncedValue.js`) at the page level with the latest-id +
+`AbortController` pattern in the fetching hook:
+
+```jsx
+// Wrong: useDeferredValue only re-prioritizes the render that
+// reads the value; the effect dep still ticks per keystroke.
+const deferred = useDeferredValue(searchQuery.trim());
+const { data } = useChatSummaries(deferred);
+
+// Right: debounce the dependency itself so the effect dep is
+// stable across a typing burst, and keep the in-hook latest-id /
+// AbortController gate as a second line of defense for in-flight
+// races (manual refresh(), focus events, etc.).
+const debounced = useDebouncedValue(searchQuery.trim(), 200);
+const { data } = useChatSummaries(debounced);
+```
+
+`ChatList` is the canonical consumer: it feeds the debounced query
+into `useChatSummaries`, the "matching chats" subtitle, and
+`EmptyState` together so all three lag behind keystrokes in lockstep.
 
 # Stable callback references
 
@@ -117,7 +157,10 @@ function useSelection() {
 
 # Canonical hooks to read when writing a new one
 
-- `useChatSummaries` — fetch + cancellation + query refresh.
+- `useChatSummaries` — fetch + `latestRef` + `AbortController` +
+  `refresh()`.
+- `useDebouncedValue` — coalesce a high-churn input value before it
+  reaches a fetching hook's dep array.
 - `useExportFlow` — multi-step dialog state machine.
 - `useExportWarningPreference` — cookie-backed preference.
 - `useSavedSelection` — DOM-state capture / restore with an

@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { memo, useContext } from 'react';
 import { Link } from 'react-router-dom';
 import {
   alpha,
@@ -21,7 +21,14 @@ import { formatDate } from '../../utils/formatDate';
 // Single-chat card in the project group grid. The whole card is a
 // <Link> to the detail route so the entire surface is clickable; the
 // export button stops propagation so clicking it doesn't also navigate.
-export default function ChatCard({ chat, dontShowExportWarning, onExport }) {
+//
+// Wrapped in ``React.memo`` because hundreds of these cards render
+// inside a single ProjectGroup grid; each chatData swap from the
+// debounced search would otherwise reconcile every card even when
+// its row data hadn't changed. The parent supplies ``onExport`` and
+// ``dontShowExportWarning`` as ``useCallback``-stable / primitive
+// values so reference equality holds across renders.
+function ChatCard({ chat, dontShowExportWarning, onExport }) {
   const colors = useContext(ColorContext);
   const dateDisplay = formatDate(chat.date);
 
@@ -150,3 +157,5 @@ export default function ChatCard({ chat, dontShowExportWarning, onExport }) {
     </Card>
   );
 }
+
+export default memo(ChatCard);

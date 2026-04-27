@@ -67,6 +67,47 @@ import { formatDate } from '../../utils/formatDate';
   rather than copying the format-dialog -> warning-dialog ->
   `exportChat()` state machine again.
 
+# Memoize list-row components on hundreds-of-items lists
+
+When a single page renders a list whose row count routinely reaches
+hundreds (the chat-list grid is the motivating case — ~600 chats on
+one developer's install), wrap the row component (and any
+intermediate grouping component above it) in `React.memo` and make
+**every** callback prop the parent feeds in `useCallback`-stable.
+Without both halves of this discipline, any state change higher up
+the tree (search input, expand toggle, theme switch) re-reconciles
+the entire grid even when no row's data changed.
+
+`ProjectGroup` and `ChatCard` (`frontend/src/components/chat-list/`)
+are the canonical example. Two requirements together:
+
+- Both export `memo(Component)` so React skips reconciliation when
+  props are reference-equal.
+- The owning page (`ChatList`) wraps `handleProjectToggle`,
+  `handleCardExport`, `clearSearch`, and `handleSearchChange` in
+  `useCallback` with accurate deps, and passes a single
+  `(projectKey) => void` toggle handler instead of per-row arrow
+  closures like `onToggle={() => toggleProjectExpand(project.key)}`.
+  An inline closure recreates per render and silently busts the memo
+  -- the symptom is "memoization looks applied but doesn't help",
+  which is harder to diagnose than no memoization at all.
+
+The companion lever for "list of hundreds" UIs is `<Collapse
+mountOnEnter unmountOnExit>` on each grouping container. MUI's
+`<Collapse>` keeps children mounted by default; with hundreds of
+rows split across many collapsed groups, that means every list-data
+swap still walks every row's subtree even though the user can only
+see a fraction of them. The flags trade a one-time mount cost on
+expand for skipping the reconcile entirely while collapsed; on the
+chat-list grid that is a clear win because most groups are
+collapsed at any given moment.
+
+When in doubt: a list whose render time scales with the **total**
+row count, not the **visible** row count, is the symptom this rule
+is meant to prevent. Reach for memoization + stable callbacks
+first; reach for a virtualization library only when the visible
+window itself is too large for memoization to keep up.
+
 # Third-party imperative-DOM libraries
 
 When integrating a library whose primary output is imperative DOM mutation

@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React, { memo, useCallback, useContext } from 'react';
 import {
   alpha,
   Box,
@@ -18,7 +18,13 @@ import ChatCard from './ChatCard';
 // One collapsible card per distinct project: the header (folder icon,
 // project name, chat count chip, expand button, path subtitle) plus the
 // Collapse region that reveals a responsive grid of ChatCard siblings.
-export default function ProjectGroup({
+//
+// ``onToggle`` is ``(projectKey) => void`` (not a zero-arg closure),
+// so the parent can pass a single ``useCallback``-stable handler
+// shared by every group. The matching ``React.memo`` wrap below then
+// actually holds: an unchanged group's props no longer get
+// invalidated by a fresh per-render closure on every keystroke.
+function ProjectGroup({
   project,
   isExpanded,
   onToggle,
@@ -27,6 +33,15 @@ export default function ProjectGroup({
 }) {
   const colors = useContext(ColorContext);
   const chatCountLabel = `${project.chats.length} ${project.chats.length === 1 ? 'chat' : 'chats'}`;
+
+  const handleToggle = useCallback(() => {
+    onToggle(project.key);
+  }, [onToggle, project.key]);
+
+  const handleIconClick = useCallback((event) => {
+    event.stopPropagation();
+    onToggle(project.key);
+  }, [onToggle, project.key]);
 
   return (
     <Box sx={{ mb: 4 }}>
@@ -54,7 +69,7 @@ export default function ProjectGroup({
               backgroundColor: alpha(colors.highlightColor, 0.02),
             },
           }}
-          onClick={onToggle}
+          onClick={handleToggle}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -86,10 +101,7 @@ export default function ProjectGroup({
                   bgcolor: alpha(colors.highlightColor, 0.8),
                 },
               }}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggle();
-              }}
+              onClick={handleIconClick}
             >
               {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
             </IconButton>
@@ -100,7 +112,14 @@ export default function ProjectGroup({
         </Box>
       </Paper>
 
-      <Collapse in={isExpanded}>
+      {/*
+        ``mountOnEnter unmountOnExit`` keeps collapsed groups out of
+        the DOM. With hundreds of chats spread across many projects
+        most groups are collapsed at any given moment; without these
+        flags every ChatCard would still be reconciled (and laid out
+        with display:none) on every list-data swap.
+      */}
+      <Collapse in={isExpanded} mountOnEnter unmountOnExit>
         <Grid container spacing={3}>
           {project.chats.map((chat, index) => (
             <Grid size={{ xs: 12, sm: 6, md: 4 }} key={chat.session_id || `chat-${index}`}>
@@ -116,3 +135,5 @@ export default function ProjectGroup({
     </Box>
   );
 }
+
+export default memo(ProjectGroup);

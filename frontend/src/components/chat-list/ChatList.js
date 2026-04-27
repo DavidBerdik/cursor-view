@@ -1,6 +1,6 @@
 import React, {
+  useCallback,
   useContext,
-  useDeferredValue,
   useMemo,
   useState,
 } from 'react';
@@ -16,6 +16,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { ColorContext } from '../../contexts/ColorContext';
 import { ThemeModeContext } from '../../contexts/ThemeModeContext';
 import { useChatSummaries } from '../../hooks/useChatSummaries';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useExportFlow } from '../../hooks/useExportFlow';
 import ExportFormatDialog from '../export/ExportFormatDialog';
 import ExportWarningDialog from '../export/ExportWarningDialog';
@@ -23,13 +24,19 @@ import EmptyState from './EmptyState';
 import ProjectGroup from './ProjectGroup';
 import SearchBar from './SearchBar';
 
+const SEARCH_DEBOUNCE_MS = 200;
+
 const ChatList = () => {
   const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
   const [expandedProjects, setExpandedProjects] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
-  const deferredSearchQuery = useDeferredValue(searchQuery.trim());
-  const { chatData, loading, error, refresh } = useChatSummaries(deferredSearchQuery);
+  // Debouncing the *dependency* of useChatSummaries' fetch effect is
+  // what keeps a fast typist from firing one /api/chats request per
+  // keystroke; useDeferredValue would only re-prioritize the render,
+  // not the network call.
+  const debouncedSearchQuery = useDebouncedValue(searchQuery.trim(), SEARCH_DEBOUNCE_MS);
+  const { chatData, loading, error, refresh } = useChatSummaries(debouncedSearchQuery);
   const {
     format,
     setFormat,
@@ -67,28 +74,31 @@ const ChatList = () => {
     return Array.from(projectMap.values());
   }, [chatData.items]);
 
-  const toggleProjectExpand = (projectKey) => {
+  // Stable callbacks keep React.memo on ProjectGroup / ChatCard
+  // effective: a fresh closure per render would invalidate the memo
+  // and re-reconcile every row on every keystroke.
+  const handleProjectToggle = useCallback((projectKey) => {
     setExpandedProjects((previous) => ({
       ...previous,
       [projectKey]: !previous[projectKey],
     }));
-  };
+  }, []);
 
-  const clearSearch = () => {
+  const clearSearch = useCallback(() => {
     setSearchQuery('');
-  };
+  }, []);
 
-  const handleSearchChange = (event) => {
+  const handleSearchChange = useCallback((event) => {
     setSearchQuery(event.target.value);
-  };
+  }, []);
 
   // Intercepts the click inside the <Link>-wrapped Card so hitting
   // the export button doesn't also navigate to the chat detail route.
-  const handleCardExport = (event, sessionId) => {
+  const handleCardExport = useCallback((event, sessionId) => {
     event.preventDefault();
     event.stopPropagation();
     requestExport(sessionId);
-  };
+  }, [requestExport]);
 
   if (loading && chatData.items.length === 0) {
     return (
@@ -116,7 +126,7 @@ const ChatList = () => {
             Cursor Chat History
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
-            {deferredSearchQuery
+            {debouncedSearchQuery
               ? `${chatData.total} matching chats`
               : `${chatData.total} chats indexed`}
           </Typography>
@@ -167,7 +177,7 @@ const ChatList = () => {
 
       {groupedProjects.length === 0 ? (
         <EmptyState
-          searchQuery={deferredSearchQuery}
+          searchQuery={debouncedSearchQuery}
           onClearSearch={clearSearch}
           onRetry={refresh}
         />
@@ -177,7 +187,7 @@ const ChatList = () => {
             key={project.key}
             project={project}
             isExpanded={!!expandedProjects[project.key]}
-            onToggle={() => toggleProjectExpand(project.key)}
+            onToggle={handleProjectToggle}
             onExport={handleCardExport}
             dontShowExportWarning={dontShow}
           />
