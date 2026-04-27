@@ -244,6 +244,21 @@ the `title`-prepended `_search_blob`); and an in-place
 refresh path (exercising the `_composer_hash` payload that now
 includes `title` for parity with the served shape).
 
+`tests/test_chat_index_sort_order.py` pins the `createdAt`-first
+priority of `chat_summary.sort_key_ms` (the column the home-page
+`ORDER BY sort_key_ms DESC` query reads): a chat with a newer
+`composerData.createdAt` sorts ahead of one with a newer
+`lastUpdatedAt`, so the per-project card grid stays in the order
+users see on the cards. Cursor bumps `lastUpdatedAt` on
+navigation-only writes (see
+[`.cursor/rules/sqlite-cursor-db.mdc`](../.cursor/rules/sqlite-cursor-db.mdc)
+"Invalidation: hash rows, don't stat files"), which would
+otherwise re-shuffle the list whenever a user idly clicked
+through a chat. The module also pins the `lastUpdatedAt`
+fallback so a legacy composer that lacks `createdAt` still
+resolves a sensible position instead of sinking to
+`sort_key_ms = 0`.
+
 `tests/test_export_html_mermaid.py` covers the mermaid HTML export
 path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
 special characters in diagram source, non-mermaid fence regression

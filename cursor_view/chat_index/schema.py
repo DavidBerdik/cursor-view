@@ -59,6 +59,19 @@ logger = logging.getLogger(__name__)
 #        there on first launch and keeps reads from hitting a
 #        ``no such column: title`` error against the previous-version
 #        cache. Current version.
+#        A later sort-key-priority change rides under v3 without a
+#        bump for the same reason the v2 carve-outs above did.
+#        ``cursor_view.timestamps.session_sort_key_ms`` now prefers
+#        ``composerData.createdAt`` over ``lastUpdatedAt`` so the
+#        per-project card grid orders chats by the same field the
+#        cards display, instead of re-shuffling whenever Cursor
+#        bumps ``lastUpdatedAt`` on a navigation-only write. v3
+#        itself has not yet shipped publicly, so existing
+#        ``chat_summary.sort_key_ms`` values only live on developer
+#        machines; those caches regenerate via the UI's Refresh
+#        button (force=True synchronous rebuild) or by deleting
+#        ``chat-index.sqlite3``. Once v3 ships, any *future* change
+#        of this shape would need a real version bump.
 INDEX_SCHEMA_VERSION = 3
 
 

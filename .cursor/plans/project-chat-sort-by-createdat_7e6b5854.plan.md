@@ -4,28 +4,27 @@ overview: Make the per-project chat list sort by creation timestamp (most recent
 todos:
   - id: flip_sort_priority
     content: Edit cursor_view/timestamps.py::session_sort_key_ms to prefer createdAt then fall back to lastUpdatedAt; update its docstring to explain the priority is intentionally aligned with session_display_date_seconds and to call out why lastUpdatedAt is the wrong sort key (Cursor bumps it on navigation-only writes per .cursor/rules/sqlite-cursor-db.mdc).
-    status: pending
+    status: completed
   - id: document_no_schema_bump
     content: "Edit cursor_view/chat_index/schema.py: leave INDEX_SCHEMA_VERSION at 3, but extend the v2 carve-out paragraph in the History block (or append a parenthetical to the v3 entry) to record that the createdAt-first sort_key_ms change rides under v3 because v3 has not yet been released; developers with a stale local cache hit the UI's Refresh button or delete chat-index.sqlite3 to regenerate it, matching the v2 precedent."
-    status: pending
+    status: completed
   - id: add_regression_test
     content: "Add tests/test_chat_index_sort_order.py with at least two cases: (1) two synthetic chats where createdAt order is opposite to lastUpdatedAt order, and list_summaries returns them in createdAt-DESC order; (2) a chat with only lastUpdatedAt still sorts correctly via the fallback. Use the same synthetic-Cursor-DB harness shape as tests/test_chat_index_titles.py."
-    status: pending
+    status: completed
   - id: rules_audit
     content: "Re-read every file under .cursor/rules/ and verify none reference the old lastUpdatedAt-first sort priority as canonical. Expected outcome: no rule edits required, but the audit must be performed and any contradicting wording rewritten in the same change per .cursor/rules/comments-style.mdc 'Rule drift'."
-    status: pending
+    status: completed
   - id: rules_compliance_check
-    content: "Verify the diff against comments-style.mdc (no code-narrating comments, no stale TODO(bug):), python-standards.mdc (no f-string logging, typed signatures preserved), sqlite-cursor-db.mdc 'Cache tables' (no schema bump needed because v3 has not shipped; the History block already documents the v2 escape hatch and the new note follows the same pattern), chat-index-refresh.mdc (refresh routing is unchanged; UI Refresh = force=True synchronous rebuild path is the upgrade lever), and project-layout.mdc (no new top-level Python files; tests under tests/)."
-    status: pending
+    content: Verify the diff against comments-style.mdc (no code-narrating comments, no stale TODO(bug):), python-standards.mdc (no f-string logging, typed signatures preserved), sqlite-cursor-db.mdc 'Cache tables' (no schema bump needed because v3 has not shipped; the History block already documents the v2 escape hatch and the new note follows the same pattern), chat-index-refresh.mdc (refresh routing is unchanged; UI Refresh = force=True synchronous rebuild path is the upgrade lever), and project-layout.mdc (no new top-level Python files; tests under tests/).
+    status: completed
   - id: docs_audit
     content: Re-read README.md and .github/CONTRIBUTING.md and update only if a section becomes inaccurate. Expected outcome is no change required (README mentions 'View timestamps of conversations' generically; CONTRIBUTING mentions sort_key without naming the priority); if any sentence asserts lastUpdatedAt priority specifically, rewrite it in the same change per .cursor/rules/project-layout.mdc 'Documentation sync'.
-    status: pending
+    status: completed
   - id: run_tests
     content: Run python -m unittest discover -s tests and confirm every test (existing + new sort-order regression) passes per .cursor/rules/project-layout.mdc.
-    status: pending
+    status: completed
 isProject: false
 ---
-
 
 # Sort project chats by creation timestamp
 
