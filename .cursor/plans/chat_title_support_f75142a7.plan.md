@@ -6,7 +6,7 @@ todos:
     content: Add `_real_chat_title` helper and `title` field to `format_chat_for_frontend` in `cursor_view/chat_format.py` (including the exception-path stub).
     status: pending
   - id: schema-column
-    content: Add `title TEXT NOT NULL DEFAULT ''` to the `chat_summary` DDL in `cursor_view/chat_index/schema.py` and extend the `INDEX_SCHEMA_VERSION` docstring's v2 history paragraph (without bumping the constant).
+    content: Add `title TEXT NOT NULL DEFAULT ''` to the `chat_summary` DDL in `cursor_view/chat_index/schema.py`, bump `INDEX_SCHEMA_VERSION` from 2 to 3, and add a `3 -> added title column to chat_summary` entry to the docstring's history block (moving the "Current version" marker from v2 to v3).
     status: pending
   - id: rows-insert-read
     content: Update `_insert_chat` (INSERT + title sourcing), `_search_blob` (prepend title), and `_summary_row_to_api` (return title) in `cursor_view/chat_index/rows.py`.
@@ -36,7 +36,7 @@ todos:
     content: Run `python -m unittest discover -s tests` and confirm green.
     status: pending
   - id: rule-audit
-    content: Audit every file under `.cursor/rules/` for drift caused by this change; update `sqlite-cursor-db.mdc` (cross-ref to v2 history) and `chat-index-refresh.mdc` (document the pre-ship schema-without-bump carve-out).
+    content: Audit every file under `.cursor/rules/` for drift caused by this change. The v3 schema bump routes through the existing synchronous-rebuild path, so no rule edits are expected; confirm during the audit and document the reasoning in the PR description if any rule does need a touch-up.
     status: pending
   - id: new-rule-check
     content: Decide whether any new cross-cutting convention emerged that warrants a new `.cursor/rules/*.mdc` file; if not, document the reasoning in the PR description rather than adding a rule.
@@ -62,7 +62,7 @@ Cursor stores the human-readable chat title as the JSON field **`name`** on `com
    - matches regex `^Global Chat [0-9a-f]{8}$`
    The cache stores `""` for synthetic titles so UI / export / search code can treat title as a simple `if title:` gate without re-running the classifier.
 
-2. **Cache schema.** Add a `title TEXT NOT NULL DEFAULT ''` column to `chat_summary` in [`cursor_view/chat_index/schema.py`](cursor_view/chat_index/schema.py). Per the user's instruction, **do not** bump `INDEX_SCHEMA_VERSION`; instead extend the block comment under `v2` (same treatment given to the `chat_image` table landing) explaining developers delete their cache DB or use the Refresh button.
+2. **Cache schema.** Add a `title TEXT NOT NULL DEFAULT ''` column to `chat_summary` in [`cursor_view/chat_index/schema.py`](cursor_view/chat_index/schema.py) and bump `INDEX_SCHEMA_VERSION` from `2` to `3`. A shipped release has gone out since this plan was first drafted, so the v2 "no shipped caches to invalidate" carve-out (used for the `chat_image` landing) no longer applies — any column add to `chat_summary` is a row-shape change and must route through `ChatIndex.ensure_current`'s synchronous-rebuild branch, per [`chat-index-refresh.mdc`](.cursor/rules/chat-index-refresh.mdc). Add a new `3 -> added title column to chat_summary (...)` paragraph to the existing history block in `schema.py` and move the "Current version" marker from v2 down to v3; do not extend the v2 paragraph.
 
 3. **Composer hash.** Include `title` in the `_composer_hash` payload in [`cursor_view/cache/delta/composer_rows.py`](cursor_view/cache/delta/composer_rows.py) so the watermark reflects the shape served by the API. (Correctness is already covered because a `name` edit flips `source_row.row_hash` for `composerData:<cid>`; this is for completeness with the served payload, mirroring why `project_name` is already in the hash.)
 
@@ -94,7 +94,7 @@ flowchart LR
 ## Key file changes
 
 - [`cursor_view/chat_format.py`](cursor_view/chat_format.py): add `_SYNTHETIC_TITLE_RE` (module-level compiled regex, per [`python-standards.mdc`](.cursor/rules/python-standards.mdc)) and `_real_chat_title(title)`; in `format_chat_for_frontend` add `"title": _real_chat_title((chat.get("session") or {}).get("title"))` to the returned dict (and to the exception-path stub for parity).
-- [`cursor_view/chat_index/schema.py`](cursor_view/chat_index/schema.py): extend `chat_summary` DDL with `title TEXT NOT NULL DEFAULT ''`. Extend the `INDEX_SCHEMA_VERSION` docstring's `v2` history paragraph to list the `title` column alongside the `chat_image` addition, citing the same delete-or-Refresh escape hatch. Do **not** bump `INDEX_SCHEMA_VERSION`.
+- [`cursor_view/chat_index/schema.py`](cursor_view/chat_index/schema.py): extend `chat_summary` DDL with `title TEXT NOT NULL DEFAULT ''`. Bump `INDEX_SCHEMA_VERSION` from `2` to `3`, append a new `3 -> added title column to chat_summary` history entry below the existing v2 paragraph, and move the "Current version" marker from v2 down to v3. The bump folds into the SHA-256 computed by [`cursor_view/chat_index/fingerprint.py`](cursor_view/chat_index/fingerprint.py) and is also written to the `meta.schema_version` row by `_rebuild`, so `ChatIndex.ensure_current` routes upgraders through the synchronous full-rebuild branch on first launch — no `no such column: title` window for users on a shipped cache.
 - [`cursor_view/chat_index/rows.py`](cursor_view/chat_index/rows.py): 
   - `_insert_chat`: add `title` to the INSERT column list and VALUES tuple, sourcing it from `formatted.get("title") or ""`.
   - `_search_blob`: prepend `title` to the field list so FTS matches hit titles.
@@ -124,12 +124,12 @@ Running `python -m unittest discover -s tests` must stay green, per [`project-la
 
 All implementation steps must respect the existing `.cursor/rules/`. After implementation, audit each rule and update in the same PR where the rule drifts from reality (per [`comments-style.mdc`](.cursor/rules/comments-style.mdc) "Rule drift" section):
 
-- [`sqlite-cursor-db.mdc`](.cursor/rules/sqlite-cursor-db.mdc) — the "Cache tables" section enumerates `chat_summary` columns by listing the file; the current wording stays accurate, but the v2 history inline with `schema.py` needs a cross-reference. Add one sentence noting the `title` column landed under v2 without a bump, same escape hatch as `chat_image`.
+- [`sqlite-cursor-db.mdc`](.cursor/rules/sqlite-cursor-db.mdc) — the "Cache tables" section's prose about `INDEX_SCHEMA_VERSION` bumps and the synchronous-rebuild routing already covers a clean version bump, so no rule edit is needed for the v3 bump itself. The rule's mention of `chat_image` landing under v2 without a bump remains accurate as a historical note. Re-read the section during the audit to confirm wording still tracks reality.
 - [`project-layout.mdc`](.cursor/rules/project-layout.mdc) — mentions `tests/test_chat_index_incremental.py` as the home for new incremental-refresh regression tests. The new `tests/test_chat_index_titles.py` covers a `chat_summary` column + cache flow end-to-end (not specifically the incremental-refresh path), so no rule change needed, but the added file must be referenced in `.github/CONTRIBUTING.md`.
 - [`python-standards.mdc`](.cursor/rules/python-standards.mdc) — soft 400-line / 100-line limits. `chat_index/rows.py` is already documented as intentionally slightly over the 400-line limit; the added `title` handling is ~5 lines. Fine.
 - [`react-components.mdc`](.cursor/rules/react-components.mdc) — `ChatCard.js` and `ChatDetail.js` both remain well under 250 lines after the title addition. Fine.
 - [`comments-style.mdc`](.cursor/rules/comments-style.mdc) — every new comment must explain *why*, not narrate. The title-classifier helper gets a docstring explaining why synthetic fallbacks are filtered (i.e., extraction always invents a title string for downstream passes; the cache stores empty when synthetic so render-time gating is a simple falsy check).
-- [`chat-index-refresh.mdc`](.cursor/rules/chat-index-refresh.mdc) — schema shape changes usually require the synchronous rebuild branch. Since `INDEX_SCHEMA_VERSION` is intentionally not bumped here (per the user's instruction) the rule's invariants are *not* enforced for this change — callers with an old cache will see `no such column: title` on read. This is acceptable only because the project has no shipped customers and the escape hatch is documented. **Add a paragraph to [`chat-index-refresh.mdc`](.cursor/rules/chat-index-refresh.mdc) codifying the "pre-ship escape" carve-out** (with a forward-looking note that once the next shipped release lands, any future schema change must bump the version to route through the synchronous path). Without this update the rule would be stale.
+- [`chat-index-refresh.mdc`](.cursor/rules/chat-index-refresh.mdc) — adding the `title` column is a row-shape change, which the rule's "Invariant: never serve rows under a different schema version" section already requires to route through the synchronous rebuild branch. Bumping `INDEX_SCHEMA_VERSION` to 3 is what triggers that route via `_cached_schema_version` in `ChatIndex.ensure_current`, so the rule's invariants are honored unchanged. No rule edit required.
 - If a new convention emerges from this change that is not already captured in an existing rule (e.g., "title display conventions for API consumers"), spin up a new rule file under `.cursor/rules/` — but only if the convention is genuinely cross-cutting; a one-off UI detail is not rule-worthy.
 
 ## Documentation
