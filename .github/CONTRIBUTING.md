@@ -140,7 +140,15 @@ The cache SQLite layout has two kinds of tables, owned by
   Both the full rebuild and the per-cid delete-then-insert in
   `cache/delta/engine.py` go through
   `cursor_view.chat_index.rows._insert_chat`, so the row shape is
-  identical between the rebuild and delta paths. `chat_image`
+  identical between the rebuild and delta paths. `chat_summary`
+  carries the per-session card-grid metadata (project / root path /
+  date / workspace id / db path / message count / preview / sort
+  key / `title`); the `title` column stores Cursor's
+  `composerData.name` when present and an empty string when
+  extraction's synthetic `(untitled)` / `Chat <8hex>` /
+  `Global Chat <8hex>` placeholders have been classified out by
+  `cursor_view.chat_format._real_chat_title`, so consumers can gate
+  rendering with a plain truthiness check. `chat_image`
   materializes one BLOB row per attached image (keyed by
   `(session_id, position, image_index)`) so the chat-index is the
   single cache of record &mdash; Cursor's on-disk image files may be
@@ -216,7 +224,25 @@ modules plus a shared helper, all under `tests/`:
   export's blank-line separator between `<img>` and the trailing
   `---` thematic break, and the HTML export's
   `<a href=... target=_blank rel=noopener>` wrapper around every
-  `<img>` with matching `.message-images a` / `a:hover` CSS.
+  `<img>` with matching `.message-images a` / `a:hover` CSS. Also
+  pins the chat-title export shape: a Markdown export with a real
+  title promotes to `# {title}` and prepends a `- **Title:**`
+  bullet (untitled exports keep the legacy
+  `# Cursor Chat: {project_name}` heading byte-for-byte), and an
+  HTML export with a real title swaps the head `<title>`, `<h1>`,
+  and emits a new `Title:` info-strip row that is omitted entirely
+  for untitled chats.
+
+`tests/test_chat_index_titles.py` covers the `chat_summary.title`
+column added under schema v3: a real `composerData.name`
+round-trips end-to-end through `format_chat_for_frontend`,
+`_insert_chat`, `list_summaries`, and `get_chat`; synthetic
+extraction placeholders collapse to `""`; FTS and the LIKE
+fallback both find a chat by a phrase from its title (exercising
+the `title`-prepended `_search_blob`); and an in-place
+`composerData.name` rename surfaces through the incremental
+refresh path (exercising the `_composer_hash` payload that now
+includes `title` for parity with the served shape).
 
 `tests/test_export_html_mermaid.py` covers the mermaid HTML export
 path: fence-to-div rewrite, vendored JS inlining, HTML escaping of

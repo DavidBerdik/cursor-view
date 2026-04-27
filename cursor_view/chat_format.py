@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import uuid
 
 from cursor_view.projects.git import extract_project_from_git_repos
@@ -9,6 +10,13 @@ from cursor_view.projects.inference import extract_project_name_from_path
 from cursor_view.timestamps import session_display_date_seconds
 
 logger = logging.getLogger(__name__)
+
+# Synthetic placeholders invented by ``cursor_view/extraction/passes/`` when
+# Cursor itself never assigned a ``composerData.name``. The two regex shapes
+# match the ``"Chat <8hex>"`` and ``"Global Chat <8hex>"`` fallbacks emitted
+# from the finalize pass; ``""`` and ``"(untitled)"`` are the literal-string
+# variants. Compiled at module load per python-standards.mdc.
+_SYNTHETIC_TITLE_RE = re.compile(r"^(?:Chat|Global Chat) [0-9a-f]{8}$")
 
 
 def coalesce_consecutive_messages_by_role(messages):
@@ -68,6 +76,28 @@ def coalesce_consecutive_messages_by_role(messages):
         if m["content"] == "Content unavailable" and m["images"]:
             m["content"] = ""
     return out
+
+
+def _real_chat_title(title):
+    """Return a trimmed Cursor-assigned title, or ``""`` for synthetic placeholders.
+
+    Extraction always invents a title string (``"(untitled)"``,
+    ``"Chat <8hex>"``, ``"Global Chat <8hex>"``) so downstream passes
+    can rely on the field being populated. Those fallbacks carry no
+    user-visible signal, so they collapse to ``""`` here. Storing the
+    empty string in the cache lets every downstream consumer (UI cards,
+    chat-detail header, Markdown / HTML exports, FTS search blob) gate
+    rendering with a plain ``if title:`` check rather than re-running
+    this classifier.
+    """
+    if not isinstance(title, str):
+        return ""
+    trimmed = title.strip()
+    if not trimmed or trimmed == "(untitled)":
+        return ""
+    if _SYNTHETIC_TITLE_RE.match(trimmed):
+        return ""
+    return trimmed
 
 
 def messages_for_json_export(messages):
@@ -169,6 +199,7 @@ def format_chat_for_frontend(chat):
             "session_id": session_id,
             "workspace_id": workspace_id,
             "db_path": db_path,
+            "title": _real_chat_title((chat.get("session") or {}).get("title")),
         }
     except Exception as e:
         # TODO(bug): swallowing every exception and returning a stub with a
@@ -187,4 +218,5 @@ def format_chat_for_frontend(chat):
             "session_id": str(uuid.uuid4()),
             "workspace_id": "error",
             "db_path": "Error retrieving database path",
+            "title": "",
         }

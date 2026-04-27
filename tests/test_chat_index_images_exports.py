@@ -1,12 +1,20 @@
-"""A8 / A9 export regression cases for image-bearing messages.
+"""Export regressions for image-bearing messages and chat-title rendering.
 
-Pins the Markdown and HTML exporter behavior called out in
-``.cursor/plans/image_attachment_post-impl_followup_2b026aae.plan.md``
-sections A8 (Markdown blank-line separator before ``---``) and A9
-(HTML anchor wrapper + CSS for the image gallery).
+Pins three concerns that share the same in-process exporter harness:
+
+- A8 (``.cursor/plans/image_attachment_post-impl_followup_2b026aae.plan.md``)
+  -- Markdown blank-line separator between the last ``<img>`` and the
+  trailing ``---`` thematic break.
+- A9 (same plan) -- HTML anchor wrapper + CSS for the image gallery
+  so the export's ``<img>`` thumbnails open the inlined data URI in
+  a new tab.
+- Chat-title support
+  (``.cursor/plans/chat_title_support_f75142a7.plan.md``) -- header
+  / heading / info-strip switching on ``chat.title`` for both
+  Markdown and HTML exports.
 
 Both exporters read ``session_id``, ``date``, ``project.name``,
-``project.rootPath``, and ``messages[*].{role,content,images}``
+``project.rootPath``, ``title``, and ``messages[*].{role,content,images}``
 directly from the chat dict, so these tests feed
 ``_export_chat_fixture``-built fixtures in-process without needing
 the Cursor-DB harness used by the core / regressions sibling modules.
@@ -16,6 +24,9 @@ Related siblings:
   ``chat_image`` scenarios + two original coalescer unit cases.
 - ``tests/test_chat_index_images_regressions.py`` -- E1 regressions
   on the ``chat_image`` pipeline and the coalescer post-loop.
+- ``tests/test_chat_index_titles.py`` -- end-to-end (cache + API +
+  search + incremental refresh) coverage for the ``title`` column;
+  the title-export cases here are the per-format complement.
 
 Shared ``_export_chat_fixture`` helper lives in
 ``tests/_image_test_helpers.py``.
@@ -183,6 +194,91 @@ class HtmlExportImageTest(unittest.TestCase):
             out,
             "text-only message must not emit a data-URI anchor; "
             "A9's wrapper applies only to image-bearing messages",
+        )
+
+
+class MarkdownExportTitleTest(unittest.TestCase):
+    """Markdown header must switch shape on ``chat.title`` presence.
+
+    Pins both halves of the branch in
+    :func:`cursor_view.export.markdown._markdown_header_lines`:
+    a real title promotes to the H1 and prepends a
+    ``- **Title:**`` bullet, while an empty title keeps today's
+    ``# Cursor Chat: {project_name}`` heading and bullet list
+    untouched so users with a long archive of pre-title exports
+    don't see spurious diffs the next time they re-export an
+    untitled chat.
+    """
+
+    def test_titled_chat_promotes_title_to_h1_and_adds_bullet(self) -> None:
+        from cursor_view.export.markdown import generate_markdown
+
+        chat = _export_chat_fixture(
+            [{"role": "user", "content": "hi", "images": []}],
+            title="My great plan",
+        )
+        out = generate_markdown(chat)
+        self.assertIn("# My great plan\n", out)
+        self.assertIn("- **Title:** My great plan\n", out)
+        self.assertIn("- **Project:** Test\n", out)
+        self.assertNotIn("# Cursor Chat: Test", out)
+
+    def test_untitled_chat_keeps_legacy_header(self) -> None:
+        from cursor_view.export.markdown import generate_markdown
+
+        chat = _export_chat_fixture(
+            [{"role": "user", "content": "hi", "images": []}],
+            title="",
+        )
+        out = generate_markdown(chat)
+        self.assertIn("# Cursor Chat: Test\n", out)
+        self.assertNotIn("- **Title:**", out)
+
+
+class HtmlExportTitleTest(unittest.TestCase):
+    """HTML ``<title>`` / ``<h1>`` / info-strip must switch on ``chat.title``.
+
+    Locks down the three branched interpolations in
+    :func:`cursor_view.export.html.generate_standalone_html`:
+    titled chats use ``Cursor Chat - {title}`` for the head
+    ``<title>``, the bare ``{title}`` for the page ``<h1>``, and
+    add a ``Title:`` info-strip row above the project / path /
+    date / session-id rows. Untitled chats keep the legacy
+    ``Cursor Chat - {project_name}`` / ``Cursor Chat: {project_name}``
+    shape and omit the info-strip row entirely so the meta strip
+    never renders an empty ``Title:`` label.
+    """
+
+    def test_titled_chat_emits_title_in_head_h1_and_info_strip(self) -> None:
+        from cursor_view.export.html import generate_standalone_html
+
+        chat = _export_chat_fixture(
+            [{"role": "user", "content": "hi", "images": []}],
+            title="My great plan",
+        )
+        out = generate_standalone_html(chat)
+        self.assertIn("<title>Cursor Chat - My great plan</title>", out)
+        self.assertIn("<h1>My great plan</h1>", out)
+        self.assertIn(
+            '<div class="info-item"><span class="info-label">Title:</span> '
+            '<span>My great plan</span></div>',
+            out,
+        )
+
+    def test_untitled_chat_keeps_legacy_head_and_h1_without_title_row(self) -> None:
+        from cursor_view.export.html import generate_standalone_html
+
+        chat = _export_chat_fixture(
+            [{"role": "user", "content": "hi", "images": []}],
+            title="",
+        )
+        out = generate_standalone_html(chat)
+        self.assertIn("<title>Cursor Chat - Test</title>", out)
+        self.assertIn("<h1>Cursor Chat: Test</h1>", out)
+        self.assertNotIn(
+            '<span class="info-label">Title:</span>',
+            out,
+            "untitled exports must not render an empty Title: info row",
         )
 
 

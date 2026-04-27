@@ -198,19 +198,27 @@ def _bubble_with_both_shapes_same_uuid(
     }
 
 
-def _export_chat_fixture(messages: list[dict[str, Any]]) -> dict[str, Any]:
+def _export_chat_fixture(
+    messages: list[dict[str, Any]],
+    *,
+    title: str = "",
+) -> dict[str, Any]:
     """Return a minimal chat dict in the shape the Markdown / HTML exporters accept.
 
     The exporters read ``session_id``, ``date``, ``project.name``,
-    ``project.rootPath``, and ``messages[*].{role,content,images}``
+    ``project.rootPath``, ``title``, and ``messages[*].{role,content,images}``
     directly from the dict; they do not go through the chat-index
-    cache, so the A8 and A9 regression tests can feed fixtures
-    in-process without building a Cursor-DB harness.
+    cache, so the A8 / A9 image-export and chat-title export
+    regressions can feed fixtures in-process without building a
+    Cursor-DB harness. ``title`` defaults to ``""`` so existing
+    image regression callers continue to exercise the title-absent
+    legacy header shape unchanged.
     """
     return {
         "session_id": "export-test",
         "date": 1_700_000_000,
         "project": {"name": "Test", "rootPath": "/tmp"},
+        "title": title,
         "messages": messages,
     }
 

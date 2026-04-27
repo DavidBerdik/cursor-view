@@ -4,49 +4,49 @@ overview: Surface Cursor's per-chat generated title (stored as `composerData.nam
 todos:
   - id: format-plumb
     content: Add `_real_chat_title` helper and `title` field to `format_chat_for_frontend` in `cursor_view/chat_format.py` (including the exception-path stub).
-    status: pending
+    status: completed
   - id: schema-column
     content: Add `title TEXT NOT NULL DEFAULT ''` to the `chat_summary` DDL in `cursor_view/chat_index/schema.py`, bump `INDEX_SCHEMA_VERSION` from 2 to 3, and add a `3 -> added title column to chat_summary` entry to the docstring's history block (moving the "Current version" marker from v2 to v3).
-    status: pending
+    status: completed
   - id: rows-insert-read
     content: Update `_insert_chat` (INSERT + title sourcing), `_search_blob` (prepend title), and `_summary_row_to_api` (return title) in `cursor_view/chat_index/rows.py`.
-    status: pending
+    status: completed
   - id: composer-hash
     content: Add `title` to the payload hashed by `_composer_hash` in `cursor_view/cache/delta/composer_rows.py` so the watermark reflects the served shape.
-    status: pending
+    status: completed
   - id: export-md
     content: Branch `_markdown_header_lines` in `cursor_view/export/markdown.py` on `chat.get('title')` to produce title-aware H1 and bullet list.
-    status: pending
+    status: completed
   - id: export-html
     content: Branch `generate_standalone_html` in `cursor_view/export/html.py` on `chat.get('title')` for the `<title>`, `<h1>`, and optional `Title:` info-strip row (with `html.escape`).
-    status: pending
+    status: completed
   - id: frontend-card
     content: Render `chat.title` as a bold `subtitle2` above the date row in `frontend/src/components/chat-list/ChatCard.js`, gated on truthiness.
-    status: pending
+    status: completed
   - id: frontend-detail
     content: Render `chat.title` as an `h4` between the back-button row and `ChatMetaPanel` in `frontend/src/components/chat-detail/ChatDetail.js`, gated on truthiness.
-    status: pending
+    status: completed
   - id: tests-new
     content: Create `tests/test_chat_index_titles.py` covering real-title round-trip, synthetic-title stripping, FTS-search by title, and incremental-refresh title rename.
-    status: pending
+    status: completed
   - id: tests-exports
     content: Extend `tests/test_chat_index_images_exports.py` (or a suitable sibling) with Markdown and HTML export title-presence / absence assertions.
-    status: pending
+    status: completed
   - id: tests-green
     content: Run `python -m unittest discover -s tests` and confirm green.
-    status: pending
+    status: completed
   - id: rule-audit
     content: Audit every file under `.cursor/rules/` for drift caused by this change. The v3 schema bump routes through the existing synchronous-rebuild path, so no rule edits are expected; confirm during the audit and document the reasoning in the PR description if any rule does need a touch-up.
-    status: pending
+    status: completed
   - id: new-rule-check
     content: Decide whether any new cross-cutting convention emerged that warrants a new `.cursor/rules/*.mdc` file; if not, document the reasoning in the PR description rather than adding a rule.
-    status: pending
+    status: completed
   - id: docs-readme
     content: Update the Features list in `README.md` to mention chat titles in the card grid, detail header, and all three exports.
-    status: pending
+    status: completed
   - id: docs-contributing
     content: "Update `.github/CONTRIBUTING.md`: add `title` to the `chat_summary` column list and list `tests/test_chat_index_titles.py` under the test-files section."
-    status: pending
+    status: completed
 isProject: false
 ---
 

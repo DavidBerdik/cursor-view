@@ -61,8 +61,18 @@ def _preview_from_messages(messages: list[dict[str, Any]]) -> str:
     return _trim_preview(first_user or first_any or fallback)
 
 
-def _search_blob(project: dict[str, Any], messages: list[dict[str, Any]], preview: str) -> str:
+def _search_blob(
+    title: str,
+    project: dict[str, Any],
+    messages: list[dict[str, Any]],
+    preview: str,
+) -> str:
+    # ``title`` comes first so the FTS bm25 ranker weights chat-title
+    # matches above project / preview / body matches; users typing a
+    # title fragment into the home-page search bar should land on the
+    # named chat ahead of any incidental in-message references.
     fields = [
+        title,
         project.get("name", ""),
         project.get("rootPath", ""),
         preview,
@@ -123,8 +133,9 @@ def _insert_chat(
     messages = coalesce_consecutive_messages_by_role(formatted.get("messages", []))
     session_id = formatted["session_id"]
     project = formatted.get("project") or {}
+    title = formatted.get("title") or ""
     preview = _preview_from_messages(messages)
-    search_blob = _search_blob(project, messages, preview)
+    search_blob = _search_blob(title, project, messages, preview)
     sort_key_ms = session_sort_key_ms(chat.get("session", {}))
     cur.execute(
         """
@@ -137,8 +148,9 @@ def _insert_chat(
             db_path,
             message_count,
             preview,
-            sort_key_ms
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            sort_key_ms,
+            title
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             session_id,
@@ -150,6 +162,7 @@ def _insert_chat(
             len(messages),
             preview,
             sort_key_ms,
+            title,
         ),
     )
     cur.executemany(
@@ -437,4 +450,5 @@ def _summary_row_to_api(row: sqlite3.Row) -> dict[str, Any]:
         "db_path": row["db_path"],
         "message_count": row["message_count"],
         "preview": row["preview"],
+        "title": row["title"],
     }

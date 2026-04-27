@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 # History:
 #   1 -> initial schema (content tables only).
 #   2 -> added composer_state / source_row / tool_call_parent for the
-#        incremental-refresh path. Current version. Note that the
-#        later bubble-ordering fix (extraction now sorts bubbles by
+#        incremental-refresh path. Note that the later bubble-ordering
+#        fix (extraction now sorts bubbles by
 #        ``composerData.fullConversationHeadersOnly`` instead of the
 #        alphabetical bubbleId order cursorDiskKV returned) did NOT
 #        bump the version: the scrambled caches never shipped to
@@ -48,7 +48,18 @@ logger = logging.getLogger(__name__)
 #        landed under v2 for the same reason -- no shipped caches to
 #        invalidate, and the same delete-or-Refresh escape hatch
 #        covers developers who need to pick up the new table.
-INDEX_SCHEMA_VERSION = 2
+#   3 -> added the ``title`` column to ``chat_summary`` so the
+#        Cursor-assigned chat title (``composerData.name``) surfaces
+#        in the home-page card grid, the chat-detail header, the
+#        Markdown / HTML / JSON exports, and the FTS search blob.
+#        Unlike the v2 carve-outs, a shipped release exists by the
+#        time this column lands, so the row-shape change MUST go
+#        through ``ChatIndex.ensure_current``'s synchronous-rebuild
+#        branch -- bumping the constant is what routes upgraders
+#        there on first launch and keeps reads from hitting a
+#        ``no such column: title`` error against the previous-version
+#        cache. Current version.
+INDEX_SCHEMA_VERSION = 3
 
 
 def _create_schema(con: sqlite3.Connection) -> None:
@@ -70,7 +81,8 @@ def _create_schema(con: sqlite3.Connection) -> None:
             db_path TEXT NOT NULL,
             message_count INTEGER NOT NULL,
             preview TEXT NOT NULL,
-            sort_key_ms INTEGER NOT NULL
+            sort_key_ms INTEGER NOT NULL,
+            title TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE chat_message (

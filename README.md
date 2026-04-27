@@ -94,10 +94,11 @@ Delete that folder to reset preferences.
 ## Features
 
 - Browse all Cursor chat sessions
-- Search through chat history
+- Search through chat history (queries also match Cursor-assigned chat titles)
 - Export chats as HTML, JSON, or Markdown
 - Organize chats by project
 - View timestamps of conversations
+- View Cursor-assigned chat titles inline in the card grid, the chat-detail header, and the Markdown / HTML / JSON exports; untitled chats fall back to the existing project-based heading
 - Render mermaid diagrams inline in the chat view and in HTML exports
 - View image attachments inline in the chat, with a full-size modal on click (prev/next chevrons + keyboard navigation when a message has multiple images); HTML exports keep the same images clickable and open them in a new browser tab
 

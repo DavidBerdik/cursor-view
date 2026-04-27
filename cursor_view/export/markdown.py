@@ -40,9 +40,13 @@ def _render_message_images_markdown(images: list[dict[str, Any]]) -> list[str]:
 def _markdown_header_lines(chat: dict[str, Any]) -> list[str]:
     """Return the leading header block for a chat's Markdown export.
 
-    Covers the ``# Cursor Chat: ...`` title, the four info bullets
-    (project / path / date / session id), and the trailing ``---``
-    thematic break plus its blank line before the message stream.
+    When Cursor assigned a real title (``chat["title"]`` non-empty),
+    the H1 becomes ``# {title}`` and a leading ``- **Title:**`` bullet
+    appears above the existing project info; otherwise the heading
+    falls back to the legacy ``# Cursor Chat: {project_name}`` shape
+    and the bullet list stays byte-for-byte identical to the
+    pre-title output, so existing untitled exports are unaffected.
+
     Date formatting falls back to ``"Unknown date"`` when the
     ``date`` field is missing or unparseable so the header never
     bubbles an exception out of the export path.
@@ -58,14 +62,22 @@ def _markdown_header_lines(chat: dict[str, Any]) -> list[str]:
     project_name = chat.get("project", {}).get("name", "Unknown Project")
     project_path = chat.get("project", {}).get("rootPath", "Unknown Path")
     session_display = chat.get("session_id", "Unknown")
+    title = chat.get("title") or ""
 
-    return [
-        f"# Cursor Chat: {project_name}",
-        "",
+    heading = f"# {title}" if title else f"# Cursor Chat: {project_name}"
+    info_bullets = [
         f"- **Project:** {project_name}",
         f"- **Path:** {project_path}",
         f"- **Date:** {date_display}",
         f"- **Session ID:** {session_display}",
+    ]
+    if title:
+        info_bullets.insert(0, f"- **Title:** {title}")
+
+    return [
+        heading,
+        "",
+        *info_bullets,
         "",
         "---",
         "",

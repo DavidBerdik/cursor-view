@@ -181,11 +181,37 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
         # Get project info
         project_name = chat.get('project', {}).get('name', 'Unknown Project')
         project_path = chat.get('project', {}).get('rootPath', 'Unknown Path')
+        title = chat.get('title') or ''
         safe_project_name = html.escape(project_name)
         safe_project_path = html.escape(project_path)
         safe_date_display = html.escape(date_display)
         safe_session_id = html.escape(chat.get('session_id', 'Unknown'))
+        # ``quote=True`` is defense-in-depth: the title currently only
+        # interpolates inside element bodies, but a future refactor that
+        # moves it into an attribute (e.g. ``<meta name="og:title"
+        # content="...">``) must not silently re-introduce an injection
+        # path. Cheaper to escape quotes here than to audit every
+        # downstream interpolation site on every change.
+        safe_title = html.escape(title, quote=True)
         logger.info("Project: %s, Path: %s, Date: %s", project_name, project_path, date_display)
+
+        # ``<title>`` and ``<h1>`` switch shape on a real Cursor-assigned
+        # title; the ``Title:`` info-strip row is omitted entirely when
+        # absent so untitled exports do not render an empty
+        # "Title:" label next to the project / path / date / session id
+        # bullets.
+        if title:
+            head_title = f"Cursor Chat - {safe_title}"
+            page_heading = safe_title
+            title_info_row = (
+                '        <div class="info-item">'
+                '<span class="info-label">Title:</span> '
+                f'<span>{safe_title}</span></div>\n'
+            )
+        else:
+            head_title = f"Cursor Chat - {safe_project_name}"
+            page_heading = f"Cursor Chat: {safe_project_name}"
+            title_info_row = ""
 
         messages = chat.get('messages', [])
         logger.info("Found %s messages for the chat.", len(messages))
@@ -199,17 +225,17 @@ def generate_standalone_html(chat, theme_mode: str = "dark"):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cursor Chat - {safe_project_name}</title>
+    <title>{head_title}</title>
     <style>
 {style_block}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Cursor Chat: {safe_project_name}</h1>
+        <h1>{page_heading}</h1>
     </div>
     <div class="chat-info">
-        <div class="info-item"><span class="info-label">Project:</span> <span>{safe_project_name}</span></div>
+{title_info_row}        <div class="info-item"><span class="info-label">Project:</span> <span>{safe_project_name}</span></div>
         <div class="info-item"><span class="info-label">Path:</span> <span>{safe_project_path}</span></div>
         <div class="info-item"><span class="info-label">Date:</span> <span>{safe_date_display}</span></div>
         <div class="info-item"><span class="info-label">Session ID:</span> <span>{safe_session_id}</span></div>

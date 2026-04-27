@@ -212,6 +212,12 @@ const ChatDetail = () => {
         </Button>
       </Box>
 
+      {chat.title && (
+        <Typography variant="h4" fontWeight={700} sx={{ mb: 2 }}>
+          {chat.title}
+        </Typography>
+      )}
+
       <ChatMetaPanel chat={chat} />
 
       <Typography variant="h5" gutterBottom fontWeight="600" sx={{ mt: 4, mb: 3 }}>

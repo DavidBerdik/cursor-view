@@ -44,6 +44,16 @@ export default function ChatCard({ chat, dontShowExportWarning, onExport }) {
       }}
     >
       <CardContent>
+        {chat.title && (
+          <Typography
+            variant="subtitle2"
+            fontWeight={700}
+            noWrap
+            sx={{ mb: 1, color: 'text.primary' }}
+          >
+            {chat.title}
+          </Typography>
+        )}
         <Box
           sx={{
             display: 'flex',

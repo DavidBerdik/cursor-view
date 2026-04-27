@@ -72,6 +72,7 @@ def _composer_hash(
         "workspace_id": chat_formatted.get("workspace_id", ""),
         "db_path": chat_formatted.get("db_path", ""),
         "date": chat_formatted.get("date"),
+        "title": chat_formatted.get("title", ""),
         "messages": [
             {"role": m.get("role"), "content": m.get("content")} for m in messages
         ],
