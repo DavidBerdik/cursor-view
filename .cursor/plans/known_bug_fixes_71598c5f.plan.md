@@ -4,7 +4,7 @@ overview: "Fix the three known-broken behaviors in the backend: chat_format's sw
 todos:
   - id: fix_chat_format
     content: Delete the except-and-stub handler in cursor_view/chat_format.py::format_chat_for_frontend so formatting errors propagate; remove uuid import only if unused after the deletion.
-    status: pending
+    status: completed
   - id: guard_insert_loops
     content: Wrap the per-chat _insert_chat call in cursor_view/chat_index/rebuild.py and cursor_view/cache/delta/engine.py with try/except that logs lazily (%s) and continues, so a single malformed chat is skipped instead of killing the whole refresh.
     status: pending
