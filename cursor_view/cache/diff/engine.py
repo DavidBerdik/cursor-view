@@ -1,4 +1,4 @@
-"""Top-level orchestrator: walk every source, hash, classify, propagate."""
+"""Top-level orchestrator: walk every source, hash, classify."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from cursor_view.cache.diff.cache_state import (
 from cursor_view.cache.diff.global_db import _diff_global_db
 from cursor_view.cache.diff.propagation import (
     _process_deletions,
-    _propagate_subagent_dirtiness,
     _trim_comp2ws_observability,
 )
 from cursor_view.cache.diff.types import DirtySet
@@ -45,6 +44,17 @@ def compute_source_diff(
     created v2 cache they are empty, and the diff reports every current
     source row as modified so the apply step performs an initial
     populate.
+
+    Subagent dirty-set propagation is intentionally NOT performed here.
+    The ``task-<toolCallId>`` descendant walk that used to fold every
+    subagent of a dirty parent into ``modified_cids`` now lives in
+    :mod:`cursor_view.cache.delta.propagation` and is gated on real
+    project-resolution shifts (or parent deletion / ``tool_call_parent``
+    edge churn). Cursor bumps ``lastUpdatedAt`` and rewrites bubble JSON
+    on navigation-only events, so "any source row of the parent
+    changed" is a far broader trigger than Pass 6's inheritance
+    invariant actually requires; gating at apply time -- once we know
+    the post-extraction project tuple -- keeps the walk surgical.
     """
     cur = cache_con.cursor()
     cached_rows = _load_cached_source_rows(cur)
@@ -77,20 +87,6 @@ def compute_source_diff(
         if parent in dirty.deleted_cids:
             dirty.tool_call_parent_updates.setdefault(tcid, None)
 
-    # Subagent propagation uses the POST-change view of
-    # ``tool_call_parent`` so links that appeared in this refresh (a
-    # newly-fired tool-call bubble linking its ``task-<toolCallId>``
-    # child) immediately fold the child into ``modified_cids``.
-    # Without the merge the walk would only see links from previous
-    # refreshes and miss first-time subagent spawns.
-    merged_tcp = dict(cached_tcp)
-    for tcid, parent in dirty.tool_call_parent_updates.items():
-        if parent is None:
-            merged_tcp.pop(tcid, None)
-        else:
-            merged_tcp[tcid] = parent
-
-    _propagate_subagent_dirtiness(dirty, merged_tcp)
     _trim_comp2ws_observability(dirty)
 
     return dirty

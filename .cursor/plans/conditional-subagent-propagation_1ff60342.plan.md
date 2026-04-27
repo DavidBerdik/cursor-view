@@ -4,43 +4,43 @@ overview: Cut wasteful subagent dirty-set propagation by gating the `task-<toolC
 todos:
   - id: stop-walking-in-diff
     content: Edit cursor_view/cache/diff/engine.py to remove _propagate_subagent_dirtiness call + merged_tcp build; replace with intent comment pointing forward to apply-time propagation in cache/delta/engine.py per .cursor/rules/comments-style.mdc.
-    status: pending
+    status: completed
   - id: reshape-propagation-helper
     content: "Edit cursor_view/cache/diff/propagation.py: change _propagate_subagent_dirtiness to accept explicit triggers: set[str] frontier and return secondary_cids: set[str], keeping _MAX_PARENT_DEPTH cycle guard and dirty.subagent_propagated_cids book-keeping. Update docstring to say propagation is now apply-time and gated."
-    status: pending
+    status: completed
   - id: thread-cached-tcp
     content: Edit cursor_view/cache/delta/cached_state.py to expose the cached tool_call_parent map to the apply path (extra attribute on CachedExtractionState), so engine.py can compare edge churn without a second SELECT.
-    status: pending
+    status: completed
   - id: apply-delta-gating
     content: "Edit cursor_view/cache/delta/engine.py: snapshot cached (workspace_id, project_name, project_root_path) for modified_cids before delete/insert; track project_shifted; build triggers from project_shifted | deleted_cids | edge-churn parents | task-<tcid> for changed edges; call gated propagation walk; run secondary scoped extract_chats and apply inside the same BEGIN IMMEDIATE tx; extend logger.info to include project-shifted-parents and secondary-inserted counters using lazy %-style logging per python-standards.mdc."
-    status: pending
+    status: completed
   - id: split-helpers-if-needed
     content: If apply_delta exceeds ~100 lines, split new logic into _compute_propagation_triggers / _snapshot_cached_project / _apply_secondary_pass private helpers named after the pass they perform, keeping the top-level body as a short recipe per .cursor/rules/python-standards.mdc.
-    status: pending
+    status: completed
   - id: update-types-docstring
     content: "Edit cursor_view/cache/diff/types.py: rewrite the docstring on DirtySet.subagent_propagated_cids to say it's populated by the apply-time gated walk and is empty after compute_source_diff returns."
-    status: pending
+    status: completed
   - id: add-propagation-gating-tests
     content: "Add tests/test_chat_index_propagation_gating.py with four cases: (1) parent bubble append without project shift does NOT propagate (assert child rowid unchanged), (2) parent project promotion DOES propagate to task-* child, (3) parent deletion propagates and child re-inherits via cached_state.ancestor_comp2ws, (4) new tool-call edge propagates only the targeted task-<tcid> child not its sibling. Use the same synthetic-Cursor-DB harness shape as tests/test_chat_index_incremental.py per .cursor/rules/project-layout.mdc."
-    status: pending
+    status: completed
   - id: update-existing-test-if-needed
     content: "Audit tests/test_chat_index_incremental.py::test_tool_call_bubble_reresolves_task_subagent: the assertion on dirty.subagent_propagated_cids may need to read the dirty set after _apply_delta instead of after _compute_source_diff. Adjust without weakening any other assertion."
-    status: pending
+    status: completed
   - id: rules-audit
     content: "Re-read every file under .cursor/rules/ per .cursor/rules/comments-style.mdc 'Rule drift'. Expected: update sqlite-cursor-db.mdc 'Cache tables' tool_call_parent paragraph (the line that says the walk 'flags subagent descendants of a modified parent') to describe the new gating; verify chat-index-refresh.mdc, comments-style.mdc, known-bugs.mdc, python-standards.mdc, project-layout.mdc, frontend/react/image/mermaid rules need no edits."
-    status: pending
+    status: completed
   - id: rules-compliance-check
     content: Verify the diff against comments-style.mdc (intent comments only), python-standards.mdc (size limits, lazy %-style logging, typed signatures, no import-time side effects), sqlite-cursor-db.mdc (apply uses the existing writable connection / IN-list chunked under SQLITE_MAX_VARIABLE_NUMBER), chat-index-refresh.mdc (no schema bump, INDEX_SCHEMA_VERSION stays at 3, routing unchanged), project-layout.mdc (edits inside cursor_view/cache/, tests in tests/, no new top-level Python files).
-    status: pending
+    status: completed
   - id: docs-audit
     content: "Re-read README.md and .github/CONTRIBUTING.md per .cursor/rules/project-layout.mdc 'Documentation sync'. Update CONTRIBUTING.md: the cache/diff/propagation.py line-item description and the tool_call_parent paragraph (lines ~177-179) must reflect that propagation is apply-time and gated on project-resolution shift / parent deletion / edge churn. README.md needs no update."
-    status: pending
+    status: completed
   - id: run-tests
     content: Run python -m unittest discover -s tests and confirm every test passes (existing chat-index incremental / titles / sort-order / images / exports / known-bug-fixes plus the new propagation-gating module) per .cursor/rules/project-layout.mdc.
-    status: pending
+    status: completed
   - id: empirical-sanity-check
     content: "Optional but recommended: run python3 terminal.py against the developer's Cursor install, trigger an incremental refresh that previously logged a lopsided 'Incremental chat-index refresh: 23242 modified (inserted 505, 22737 subagent-propagated)' style line, and capture before/after counts to confirm modified is now close to directly-dirty plus the small project-shifted subset."
-    status: pending
+    status: completed
 isProject: false
 ---
 

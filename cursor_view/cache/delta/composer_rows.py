@@ -1,14 +1,17 @@
-"""Per-composer row shaping: delete, re-extract, hash, and upsert watermarks."""
+"""Per-composer row shaping: delete, re-extract, hash, upsert, write."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
-from typing import Any
+from typing import Any, Callable
 
 from cursor_view.extraction import CachedExtractionState, extract_chats
 from cursor_view.timestamps import session_sort_key_ms
+
+logger = logging.getLogger(__name__)
 
 # Sentinel matching the string written to ``comp2ws`` for composers
 # without a workspace in ``_collect_global_bubbles`` /
@@ -116,6 +119,48 @@ def _upsert_composer_state(
             len(messages),
         ),
     )
+
+
+def _apply_chat_writes(
+    cur: sqlite3.Cursor,
+    cids: set[str] | list[str],
+    new_chats: dict[str, dict[str, Any]],
+    insert_chat: Callable[
+        [sqlite3.Cursor, dict[str, Any], bool],
+        tuple[dict[str, Any], list[dict[str, Any]]],
+    ],
+    fts_enabled: bool,
+) -> tuple[int, dict[str, dict[str, Any]]]:
+    """Run delete-then-insert-then-upsert over ``cids``; return ``(inserted_count, formatted_per_cid)``.
+
+    Shared by both phases of :func:`cursor_view.cache.delta.engine.apply_delta`:
+    the primary loop over ``dirty.modified_cids`` and the secondary
+    loop over the apply-time propagation gate's secondary set. The
+    ``formatted_per_cid`` map is returned alongside the insert count
+    so the caller can compare new-vs-cached project tuples (project-
+    shift detection) and reseed the secondary extraction's ancestor
+    maps without re-running ``format_chat_for_frontend``.
+
+    A malformed chat is skipped with a logged warning per
+    :file:`.cursor/rules/known-bugs.mdc`; the prior swallow-and-stub
+    behavior produced ghost rows under synthetic UUIDs.
+    """
+    inserted = 0
+    formatted_per_cid: dict[str, dict[str, Any]] = {}
+    for cid in cids:
+        _delete_cid_rows(cur, cid, fts_enabled)
+        chat = new_chats.get(cid)
+        if chat is None:
+            continue
+        try:
+            formatted, messages = insert_chat(cur, chat, fts_enabled)
+        except Exception:
+            logger.exception("Skipping chat that failed to insert; cid=%s", cid)
+            continue
+        _upsert_composer_state(cur, chat, formatted, messages)
+        formatted_per_cid[cid] = formatted
+        inserted += 1
+    return inserted, formatted_per_cid
 
 
 def _extract_modified_chats(

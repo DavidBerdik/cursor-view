@@ -65,18 +65,33 @@ Subpackages:
     `global_db.py` and `workspace_db.py` split the per-source-DB
     scans (`cursorDiskKV` / legacy chatdata vs. workspace
     `ItemTable` + `workspace.json`); `propagation.py` runs the
-    post-hash classification (deletions, subagent-parent-chain
-    propagation, observability trimming).
+    post-hash deletion classification, the
+    `workspace_comp2ws_dirty` observability trim, and owns the
+    reusable subagent-descendant BFS helper that the apply-time
+    gate in `cache/delta/propagation.py` calls. The diff itself
+    no longer walks the subagent-parent chain &mdash; that walk is
+    deferred to apply time so it can be gated on real
+    project-resolution shifts (or parent deletion / edge churn)
+    instead of every parent that happened to have a row-hash flip.
   - `cache/delta/` &mdash; the single-transaction write pass.
     `engine.py` holds the `apply_delta` orchestrator;
     `cached_state.py` seeds scoped extraction with ancestor +
-    `tool_call_parent` state; `composer_rows.py` does per-composer
-    delete / re-extract / upsert; `project_only.py` is the
-    workspace-scoped project refresh for `workspace_project_dirty`
-    entries; `metadata.py` reconciles `tool_call_parent`,
-    `source_row`, and the `meta` book-keeping rows; `backfill.py`
-    runs the one-shot full-rebuild backfill that populates the delta
-    tables below.
+    `tool_call_parent` state (carrying both the merged Pass-5-ready
+    map and a pre-merge raw snapshot the apply-time gate consumes
+    for edge-churn detection); `composer_rows.py` does per-composer
+    delete / re-extract / upsert plus the shared `_apply_chat_writes`
+    delete-then-insert-then-upsert loop both apply phases use;
+    `propagation.py` is the apply-time subagent-propagation gate
+    (snapshot cached project, detect project shifts, build trigger
+    set, walk descendants, augment cached state for the secondary
+    extraction, write the propagated chats &mdash; all inside the same
+    `BEGIN IMMEDIATE` transaction `engine.py` opened, mirroring the
+    diff side's `engine`/`propagation` split); `project_only.py` is
+    the workspace-scoped project refresh for
+    `workspace_project_dirty` entries; `metadata.py` reconciles
+    `tool_call_parent`, `source_row`, and the `meta` book-keeping
+    rows; `backfill.py` runs the one-shot full-rebuild backfill
+    that populates the delta tables below.
 - `export/` &mdash; chat export generators: `themes.py` (palette),
   `markdown.py` (`.md`), `markdown_fences.py` (Cursor fence
   normalization), `html.py` (standalone HTML assembler &mdash; imports
@@ -174,9 +189,19 @@ The cache SQLite layout has two kinds of tables, owned by
   - `tool_call_parent` &mdash; persisted
     `toolCallId -> parent_composer_id` map. Lets the refresh
     resolve `task-<toolCallId>` subagent parents without scanning
-    every bubble in the global DB, and drives the
-    dirtiness-propagation walk that flags subagent descendants of a
-    modified parent.
+    every bubble in the global DB, and drives the apply-time gated
+    propagation walk in `cursor_view/cache/delta/propagation.py`.
+    The walk fires only when a directly-modified parent's
+    post-extraction `chat_summary` triple
+    (`workspace_id`, `project_name`, `project_root_path`) actually
+    shifts versus the cached row, when the parent lands in
+    `dirty.deleted_cids`, or when a `tool_call_parent_updates`
+    entry differs from the cached map (new edge / rewired parent /
+    removed edge). A parent whose bubble JSON changed without
+    shifting its project no longer drags every descendant subagent
+    into the apply loop &mdash; that was the dominant source of the
+    "23242 modified (inserted 505, 22737 subagent-propagated)"-style
+    refresh logs the gate exists to fix.
 
 ## Running the tests
 
@@ -259,6 +284,23 @@ fallback so a legacy composer that lacks `createdAt` still
 resolves a sensible position instead of sinking to
 `sort_key_ms = 0`.
 
+`tests/test_chat_index_propagation_gating.py` pins the four
+invariants the apply-time subagent-propagation gate in
+`cursor_view/cache/delta/propagation.py` was introduced to
+enforce: (1) a parent bubble append without project shift does
+NOT propagate (the subagent's `chat_message` rowids stay
+byte-for-byte identical, witnessing that the gate skipped the
+descendant entirely); (2) a parent project promotion (e.g. via a
+new pane-view key) DOES propagate so the `task-*` child
+re-inherits the new workspace; (3) a parent deletion propagates
+and the child's Pass 6 walk falls through to `(global)` because
+`cached_state.ancestor_comp2ws` deliberately excludes deleted
+cids; (4) a new `tool_call_parent` edge propagates only the
+targeted `task-<tcid>` child and leaves the unchanged sibling
+subagent untouched, which is the surgical-trigger guarantee that
+distinguishes the new gating from the pre-implementation "every
+parent's `task-*` descendants" walk.
+
 `tests/test_export_html_mermaid.py` covers the mermaid HTML export
 path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
 special characters in diagram source, non-mermaid fence regression
@@ -269,13 +311,15 @@ the [`known-bugs.mdc`](../.cursor/rules/known-bugs.mdc) fix-pass:
 `format_chat_for_frontend` raising on malformed input is contained
 by the per-chat skip-with-log boundary in
 `cursor_view/chat_index/rebuild.py` and
-`cursor_view/cache/delta/engine.py` (no synthetic-UUID ghost row in
-`chat_summary` on either the full rebuild path or the incremental
-apply path), and `iter_global_legacy_chatdata` releases its SQLite
-connection on the error path (driven by a missing `ItemTable` so
-`j()` raises `sqlite3.OperationalError`, asserted by capturing the
-connection and verifying a post-iter `execute` raises
-`ProgrammingError`).
+`cursor_view/cache/delta/composer_rows.py::_apply_chat_writes`
+(shared by both apply phases, so the boundary covers the
+incremental delta path the same way the rebuild path covers the
+full re-index; no synthetic-UUID ghost row in `chat_summary`
+either way), and `iter_global_legacy_chatdata` releases its
+SQLite connection on the error path (driven by a missing
+`ItemTable` so `j()` raises `sqlite3.OperationalError`, asserted
+by capturing the connection and verifying a post-iter `execute`
+raises `ProgrammingError`).
 
 ## Frontend (`frontend/src/`)
 

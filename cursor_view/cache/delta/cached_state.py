@@ -10,27 +10,42 @@ from cursor_view.cache.diff import DirtySet
 from cursor_view.extraction import CachedExtractionState
 
 
-def _load_cached_tool_call_parent(
-    cur: sqlite3.Cursor, updates: dict[str, str | None]
+def _load_raw_cached_tool_call_parent(cur: sqlite3.Cursor) -> dict[str, str]:
+    """Snapshot the cache's ``tool_call_parent`` table verbatim.
+
+    Returned map is the pre-merge view -- it does not yet account for
+    ``dirty.tool_call_parent_updates``. Two consumers want it in this
+    shape: :func:`_merge_tool_call_parent_updates` produces the
+    Pass-5 friendly merged form, and the apply-time edge-churn
+    detector in :mod:`cursor_view.cache.delta.propagation` compares
+    this snapshot against the staged updates to decide which
+    ``task-<toolCallId>`` children need to ride the secondary
+    extraction pass.
+    """
+    cur.execute("SELECT tool_call_id, parent_composer_id FROM tool_call_parent")
+    return {row[0]: row[1] for row in cur.fetchall()}
+
+
+def _merge_tool_call_parent_updates(
+    raw: dict[str, str], updates: dict[str, str | None]
 ) -> dict[str, str]:
-    """Return the persisted ``tool_call_parent`` map with staged updates applied.
+    """Apply staged ``tool_call_parent`` upserts / deletes to the raw cache map.
 
     Pass 5 of scoped extraction prefers the in-memory map built by
     scoped Pass 2 for toolCallIds both halves cover, so we only need
     the cached view to cover toolCallIds whose parent bubble was NOT
-    in the dirty set. Applying the staged upserts/deletes here lets
+    in the dirty set. Folding the staged upserts/deletes in here lets
     ``_link_task_subagents_to_parents`` resolve parents correctly even
     when a fresh bubble's cid isn't itself in ``modified_cids`` (e.g.
     a pane-key-only promotion).
     """
-    cur.execute("SELECT tool_call_id, parent_composer_id FROM tool_call_parent")
-    tcp: dict[str, str] = {row[0]: row[1] for row in cur.fetchall()}
+    merged = dict(raw)
     for tcid, parent in updates.items():
         if parent is None:
-            tcp.pop(tcid, None)
+            merged.pop(tcid, None)
         else:
-            tcp[tcid] = parent
-    return tcp
+            merged[tcid] = parent
+    return merged
 
 
 def _load_ancestor_state(
@@ -74,11 +89,24 @@ def _load_ancestor_state(
 def _compose_cached_state(
     cur: sqlite3.Cursor, dirty: DirtySet
 ) -> CachedExtractionState:
-    """Assemble the :class:`CachedExtractionState` for scoped extraction."""
-    tcp = _load_cached_tool_call_parent(cur, dirty.tool_call_parent_updates)
+    """Assemble the :class:`CachedExtractionState` for scoped extraction.
+
+    Carries both the merged Pass-5-ready ``tool_call_parent`` and the
+    pre-merge ``raw_cached_tool_call_parent`` snapshot so the
+    apply-time subagent-propagation gate in
+    :mod:`cursor_view.cache.delta.propagation` can compare new edges
+    against the cache without re-running the SELECT inside the
+    ``BEGIN IMMEDIATE`` transaction. Extraction itself only reads the
+    merged form; the raw map is a transport payload.
+    """
+    raw_tcp = _load_raw_cached_tool_call_parent(cur)
+    merged_tcp = _merge_tool_call_parent_updates(
+        raw_tcp, dirty.tool_call_parent_updates
+    )
     ancestor_comp2ws, ancestor_inferred = _load_ancestor_state(cur, dirty)
     return CachedExtractionState(
-        tool_call_parent=tcp,
+        tool_call_parent=merged_tcp,
         ancestor_comp2ws=ancestor_comp2ws,
         ancestor_inferred_project=ancestor_inferred,
+        raw_cached_tool_call_parent=raw_tcp,
     )

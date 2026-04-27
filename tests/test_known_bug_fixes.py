@@ -156,7 +156,15 @@ class MalformedChatSkippedTest(BaseChatIndexImageTest):
             "format_chat_for_frontend",
             side_effect=self._format_with_bad_cid_raising,
         ):
-            with self.assertLogs("cursor_view.cache.delta.engine", level="ERROR") as logs:
+            # The skip-with-log boundary lives in
+            # ``cursor_view/cache/delta/composer_rows.py::_apply_chat_writes``
+            # (shared by the primary and secondary apply phases), so the
+            # log line fires under that module's logger after the
+            # apply-time-propagation-gate split lifted the helper out of
+            # ``cache/delta/engine.py``.
+            with self.assertLogs(
+                "cursor_view.cache.delta.composer_rows", level="ERROR"
+            ) as logs:
                 self._refresh(ci)
 
         ids = self._summary_session_ids()

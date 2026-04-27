@@ -141,9 +141,23 @@ split into two roles:
     builds. Without it, every refresh that touches a `task-*`
     subagent would force a full global-bubble scan to re-resolve
     its parent. The refresh uses this table both to resolve
-    subagent parents in scoped Pass 5 and to propagate dirtiness
-    from modified parents down the subagent chain
-    (`cursor_view/cache/diff/propagation.py::_propagate_subagent_dirtiness`).
+    subagent parents in scoped Pass 5 and to drive the gated
+    apply-time subagent-propagation walk in
+    `cursor_view/cache/delta/propagation.py::_apply_secondary_pass`
+    (mirroring the diff-side split: the apply-time gate lives in
+    `delta/propagation.py`, and its reusable BFS lives in
+    `cursor_view/cache/diff/propagation.py::_propagate_subagent_dirtiness`).
+    The walk fires only when the parent's post-extraction
+    `chat_summary` triple actually shifts versus the cached row,
+    when the parent lands in `dirty.deleted_cids`, or when a
+    `tool_call_parent_updates` entry differs from the cached map
+    (new edge / rewired parent / removed edge). A parent whose
+    bubble JSON changed without shifting its project no longer
+    drags its descendants in — the over-broad "any modified
+    parent's `task-*` descendants" form of this walk is what
+    produced the lopsided "23242 modified (inserted 505, 22737
+    subagent-propagated)"-style refresh logs the gate exists to
+    fix.
 
 When you touch any of these tables, update this rule and
 `cursor_view/chat_index/schema.py` in the same change. Schema drift

@@ -63,10 +63,13 @@ class CachedExtractionState:
     cached map without pre-filtering to the dirty set.
     """
 
-    # Persisted toolCallId -> parent_composer_id map. Pass 5 merges
-    # this with the in-memory map populated by scoped Pass 2, preferring
-    # in-memory entries (first-seen semantics) for toolCallIds that
-    # both halves cover.
+    # Persisted toolCallId -> parent_composer_id map, already merged
+    # with the diff's staged ``tool_call_parent_updates`` so first-time
+    # tool-call bubbles' children are reachable on the same refresh
+    # that recorded the edge. Pass 5 merges this further with the
+    # in-memory map populated by scoped Pass 2, preferring in-memory
+    # entries (first-seen semantics) for toolCallIds that both halves
+    # cover.
     tool_call_parent: Dict[str, str] = field(default_factory=dict)
     # Pre-resolved comp2ws entries for composers that may appear as
     # ancestors when Pass 6 walks the subagent parent chain. Only
@@ -77,6 +80,19 @@ class CachedExtractionState:
     # set. Only consulted when the current run's ``sessions[ancestor]``
     # has no ``_inferred_project`` of its own.
     ancestor_inferred_project: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Pre-merge view of ``tool_call_parent`` straight off the cache
+    # table. Extraction itself does not read this field -- Pass 5
+    # consumes ``tool_call_parent`` (the merged form above). It is
+    # carried on this dataclass purely as a transport so the
+    # apply-time subagent-propagation gate in
+    # :mod:`cursor_view.cache.delta.propagation` can detect edge
+    # churn (new tool-call edges, rewired parents, deletions) by
+    # comparing the new ``tool_call_parent_updates`` against this
+    # snapshot, without paying for a second
+    # ``SELECT FROM tool_call_parent`` inside the ``BEGIN IMMEDIATE``
+    # apply transaction. Empty for full-rebuild callers, since they
+    # never enter the apply path.
+    raw_cached_tool_call_parent: Dict[str, str] = field(default_factory=dict)
 
 
 def _merge_global_composer_into_meta(meta: dict, cid: str, data: dict) -> None:

@@ -62,9 +62,17 @@ class DirtySet:
     source_row_snapshot: dict[SourceKey, SourceRowRecord] = field(default_factory=dict)
     # Subset of ``modified_cids`` that entered the set via subagent
     # parent-chain propagation (``task-<toolCallId>`` descendants of a
-    # dirty parent). Tracked for observability so the refresh log can
-    # distinguish content-driven dirtiness from link-driven dirtiness;
-    # apply behavior is identical for propagated and direct cids.
+    # propagation trigger). Populated by the apply-time gated walk in
+    # :mod:`cursor_view.cache.delta.propagation`, NOT by
+    # :func:`cursor_view.cache.diff.compute_source_diff` -- the diff
+    # leaves this set empty so the apply step can build the trigger
+    # frontier from real project shifts (post-extraction
+    # ``chat_summary`` tuple differs from the cached row), parent
+    # deletions, and ``tool_call_parent`` edge churn instead of every
+    # parent that happened to have a row-hash flip. Tracked for
+    # observability so the refresh log can distinguish content-driven
+    # dirtiness from link-driven dirtiness; apply behavior is
+    # identical for propagated and direct cids.
     subagent_propagated_cids: set[str] = field(default_factory=set)
 
     def has_changes(self) -> bool:

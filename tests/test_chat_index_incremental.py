@@ -349,9 +349,17 @@ class IncrementalRefreshTest(unittest.TestCase):
 
         dirty = self._refresh(ci)
         self.assertIn(parent_cid, dirty.modified_cids)
-        # Child was pulled into the dirty set via subagent propagation,
-        # not via its own row-hash diff; the observability bucket from
-        # todo 8 tracks exactly this.
+        # Child was pulled into the dirty set by the apply-time
+        # propagation gate's edge-churn arm: the new tool-call bubble
+        # stages ``tool_call_parent_updates[tcid] = parent_cid`` with
+        # no prior cached entry, so ``_compute_propagation_triggers``
+        # adds ``task-<tcid>`` to its ``direct_cids`` bucket and the
+        # walk in ``cursor_view/cache/delta/propagation.py`` folds the
+        # child into ``modified_cids`` and ``subagent_propagated_cids``
+        # (the observability bucket the refresh log reads). Reading
+        # the dirty set after ``_refresh`` returns is what lets the
+        # test see that post-apply state -- the diff itself leaves
+        # ``subagent_propagated_cids`` empty under the new gating.
         self.assertIn(child_cid, dirty.modified_cids)
         self.assertIn(child_cid, dirty.subagent_propagated_cids)
 
