@@ -8,10 +8,8 @@ import sqlite3
 
 from cursor_view.cache.diff.hashing import (
     _LEGACY_CHATDATA_KEY,
-    _bubble_id_from_kv_key,
     _composer_id_from_kv_key,
     _hash_value,
-    _header_bubble_ids_from_composer,
     _legacy_tab_ids,
     _tool_call_id_from_bubble,
 )
@@ -40,14 +38,19 @@ def _diff_global_cursor_disk_kv(
 
     Orphan bubbles -- ``bubbleId:<cid>:<bid>`` rows whose ``<bid>`` is
     absent from the composer's ``fullConversationHeadersOnly`` array --
-    do not stage ``tool_call_parent`` upserts. Cursor prunes those
-    bubbles out of its canonical transcript (summarization checkpoints,
-    conversation restarts) but leaves the row on disk; persisting a
-    dead ``toolu_*`` pointer from one would resurrect a stale subagent
-    parent link on the next refresh's ``task-<toolCallId>`` lookup.
-    The row hash is still recorded so hash churn on an orphan continues
-    to flip the cid into ``modified_cids`` and a re-extract properly
-    drops it via the matching filter in ``_collect_global_bubbles``.
+    still stage ``tool_call_parent`` upserts: an upstream-model-unique
+    ``toolCallId`` is a structural edge, not display content, and the
+    spawned ``task-<toolCallId>`` subagent composer outlives any
+    Cursor-side pruning of the parent bubble (summarization
+    checkpoints, conversation restarts). Suppressing the edge here
+    orphans the subagent on Pass 5 and surfaces it as ``(unknown)`` /
+    ``(global)`` even though its real parent is alive (Cause 1 in
+    the project-resolution diagnostic). Display-side suppression of
+    orphan rows happens in ``_collect_global_bubbles`` (no message,
+    no URIs, no ``comp_meta`` seed, no ``db_path`` write); the row
+    hash is still recorded here so hash churn on an orphan flips the
+    cid into ``modified_cids`` and a re-extract picks up the latest
+    state.
     """
     try:
         cur.execute(
@@ -64,18 +67,6 @@ def _diff_global_cursor_disk_kv(
         logger.debug("Error scanning cursorDiskKV in %s: %s", db_path_str, e)
         return
 
-    # Build the per-cid allowlist of canonical bubbleIds before the
-    # bubble rows are processed. ``None`` means "legacy composer, no
-    # headers array" -- the orphan filter is disabled for that cid and
-    # every bubble flows through unchanged, matching the encounter-order
-    # fallback in ``_collect_global_bubbles``.
-    header_allowlist_by_cid: dict[str, frozenset[str] | None] = {}
-    for key, value in rows:
-        if key.startswith("composerData:"):
-            cid = _composer_id_from_kv_key(key)
-            if cid:
-                header_allowlist_by_cid[cid] = _header_bubble_ids_from_composer(value)
-
     for key, value in rows:
         row_hash = _hash_value(value)
         cid = _composer_id_from_kv_key(key)
@@ -86,11 +77,6 @@ def _diff_global_cursor_disk_kv(
         if cid:
             dirty.modified_cids.add(cid)
         if key.startswith("bubbleId:"):
-            allowlist = header_allowlist_by_cid.get(cid)
-            if allowlist is not None:
-                bid = _bubble_id_from_kv_key(key)
-                if bid and bid not in allowlist:
-                    continue
             tcid = _tool_call_id_from_bubble(value)
             if tcid:
                 dirty.tool_call_parent_updates.setdefault(tcid, cid)

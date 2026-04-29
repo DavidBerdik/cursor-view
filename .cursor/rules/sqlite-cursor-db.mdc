@@ -182,32 +182,53 @@ that array (summarization checkpoints, conversation restarts,
 "reset to this point" UX) without deleting the corresponding
 `bubbleId:*` rows, so extraction must treat any bubble whose
 `bubbleId` is absent from the headers array of a composer that HAS
-a non-empty headers array as stale and drop it — no message, no
-URI into project inference, no `tool_call_parent` upsert, no
-`comp_meta` seed, no `db_path` write. The fallback "append in
-encounter order" path is reserved for composers whose headers
-array is missing or empty (legacy Cursor builds that predate the
-array); every bubble still flows through for those composers so
-the chat surfaces with all the content Cursor kept.
+a non-empty headers array as stale **for display purposes** — no
+message, no URI into project inference, no `comp_meta` seed, no
+`db_path` write. The fallback "append in encounter order" path is
+reserved for composers whose headers array is missing or empty
+(legacy Cursor builds that predate the array); every bubble still
+flows through for those composers so the chat surfaces with all
+the content Cursor kept.
+
+`tool_call_parent` upserts are the **one carve-out** to the orphan
+filter. A `toolFormerData.toolCallId` is an upstream-model-unique
+structural edge keyed by an opaque `toolu_*` / `call_*` id, not
+user-visible content. The `task-<toolCallId>` subagent composer
+the parent bubble spawned persists in `cursorDiskKV` independently
+of any later headers-array rewrite the parent undergoes, so
+suppressing the edge here orphans the subagent on Pass 5 and
+surfaces it as `(unknown)` / `(global)` even when its real parent
+is alive. That failure mode is "Cause 1" in the project-resolution
+diagnostic
+(`cursor_view/extraction/diagnostics/trace.py::trace_project_resolution`)
+and was the original symptom for `task-toolu_01XvF39QpU8SG7TECB7EWnWg`
+in the install this rule was authored against.
 
 Two places enforce the invariant and must stay in sync:
 
 - `cursor_view/extraction/passes/global_bubbles.py::_collect_global_bubbles`
-  — the in-memory side of Pass 2. Drops orphans from messages,
-  URIs, `tool_call_parent`, and the `sessions[cid]` seed.
+  — the in-memory side of Pass 2. Records `tool_call_parent` for
+  every bubble that carries a `toolFormerData.toolCallId` (orphan
+  or not) BEFORE the orphan-skip; only the display-side side
+  effects (messages, URIs, `comp_meta` seed, `db_path` write) are
+  suppressed for orphans.
 - `cursor_view/cache/diff/global_db.py::_diff_global_cursor_disk_kv`
-  — the persisted side. Builds a per-cid header allowlist from
-  `composerData:*` rows before hashing bubble rows and suppresses
-  `tool_call_parent_updates` staging for any bubble absent from its
-  composer's allowlist. The row hash is still recorded in
-  `source_row_snapshot` so hash churn on an orphan continues to
-  flip its cid into `modified_cids` and a re-extract properly
-  drops it via the matching filter on the extraction side.
+  — the persisted side. Stages `tool_call_parent_updates` for every
+  changed bubble row that carries a `toolCallId`, with no
+  headers-array gate. The row hash is still recorded in
+  `source_row_snapshot` so hash churn on an orphan flips its cid
+  into `modified_cids` and a re-extract picks up the latest
+  display-side state via the orphan filter on the extraction side.
 
 Regression guards:
 `tests/test_chat_index_incremental.py::test_orphan_bubble_filtered_full_rebuild`,
 `::test_orphan_bubble_filtered_incremental`,
-`::test_orphan_tool_call_bubble_not_linked`, and
+`::test_orphan_bubble_still_records_tool_call_parent` (pins the
+carve-out: the edge survives, the display payload is suppressed),
+`::test_orphan_bubble_subagent_inherits_parent_workspace` (pins
+the end-to-end Cause 1 fix: subagent inherits the parent's
+workspace via the cached edge even when the parent's tool-call
+bubble is orphan-filtered), and
 `::test_legacy_composer_still_includes_all_bubbles` (locks down
 the legacy encounter-order fallback so future edits to the orphan
 filter can't accidentally drop legacy composers' bubbles).

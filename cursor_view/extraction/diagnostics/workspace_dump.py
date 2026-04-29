@@ -1,8 +1,14 @@
-"""Optional workspace/global-DB diagnostics, gated by ``CURSOR_CHAT_DIAGNOSTICS``.
+"""Coarse "what does this Cursor install look like?" log dump.
 
-Kept in its own module so the main extraction pipeline reads as a sequence
-of extraction passes without being interrupted by ~60 lines of probe code.
+Gated by the ``CURSOR_CHAT_DIAGNOSTICS`` environment variable; the
+extraction pipeline calls :func:`dump_workspace_diagnostics` once at
+the top of :func:`cursor_view.extraction.extract_chats` when the
+variable is set. Errors are caught so a probe failure cannot block
+the real extraction path, but they are logged with a traceback so the
+user sees why the probe itself misbehaved.
 """
+
+from __future__ import annotations
 
 import logging
 import os
@@ -24,13 +30,7 @@ def diagnostics_enabled() -> bool:
 
 
 def dump_workspace_diagnostics(root: pathlib.Path) -> None:
-    """Log a summary of tables/keys in the first workspace and the global DB.
-
-    Intended as a one-shot probe to help users investigate why their chats
-    are or aren't showing up. Errors are caught so a probe failure does
-    not block the real extraction pipeline, but they are logged with a
-    traceback so the user can see why the probe itself misbehaved.
-    """
+    """Log a summary of tables/keys in the first workspace and the global DB."""
     try:
         _dump_first_workspace(root)
         _dump_global_storage(root)

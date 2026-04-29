@@ -63,15 +63,24 @@ def _collect_global_bubbles(
     whose id is absent from that array is stale state Cursor itself
     does not show (summarization checkpoints, conversation restarts,
     "reset to this point" UX leave the bubble rows behind on disk) and
-    must be dropped entirely: no message, no URIs into project
-    inference, no ``tool_call_parent`` upsert, no ``comp_meta`` seed,
-    no ``db_path`` write. The legacy encounter-order fallback is
-    reserved for composers whose headers array is missing or empty
-    (old Cursor builds that predate the array); those bubbles are
-    still appended via ``_UNMAPPED_BUBBLE_ORDINAL`` so the chat
-    surfaces with every message it has. Regression guards live at
-    ``tests/test_chat_index_incremental.py::test_orphan_bubble_filtered_full_rebuild``
-    and ``::test_orphan_bubble_filtered_incremental``.
+    is dropped from every display-side side effect: no message, no
+    URIs into project inference, no ``comp_meta`` seed, no ``db_path``
+    write. ``tool_call_parent`` upserts are the one carve-out -- a
+    ``toolFormerData.toolCallId`` is an upstream-model-unique
+    structural edge, not user-visible content, and the spawned
+    ``task-<toolCallId>`` subagent composer still exists in
+    ``cursorDiskKV`` even after Cursor pruned the parent bubble out
+    of the canonical transcript. Skipping the edge orphans the
+    subagent in Passes 5 + 6 and surfaces it as ``(unknown)`` /
+    ``(global)`` (root-cause Cause 1 in the project-resolution
+    diagnostic). The legacy encounter-order fallback is reserved for
+    composers whose headers array is missing or empty (old Cursor
+    builds that predate the array); those bubbles are still appended
+    via ``_UNMAPPED_BUBBLE_ORDINAL`` so the chat surfaces with every
+    message it has. Regression guards live at
+    ``tests/test_chat_index_incremental.py::test_orphan_bubble_filtered_full_rebuild``,
+    ``::test_orphan_bubble_filtered_incremental``, and
+    ``::test_orphan_bubble_still_records_tool_call_parent``.
 
     When ``cids`` is given, bubbles are fetched via
     :func:`iter_bubbles_for_cids` so only rows in the dirty set are
@@ -106,12 +115,26 @@ def _collect_global_bubbles(
         image_refs,
     ) in bubble_iter:
         ordinal_map = bubble_order_by_cid.get(cid) or {}
-        if ordinal_map and bubble_id not in ordinal_map:
-            # Orphan: Cursor pruned this bubble out of the composer's
-            # canonical transcript but left the row on disk. Skip every
-            # side effect -- URIs, tool_call_parent, comp_meta seed,
-            # db_path write -- so stale state can't resurrect a dead
-            # project inference hint or subagent parent link.
+        is_orphan = bool(ordinal_map) and bubble_id not in ordinal_map
+        if tool_call is not None:
+            tcid, _name = tool_call
+            # Cursor stamps each tool invocation with the upstream model
+            # provider's tool-call id (e.g. Anthropic's ``toolu_*``, OpenAI's
+            # ``call_*``). These are unique per model invocation, so a
+            # collision here would indicate a bubble replay or storage
+            # anomaly; first-seen wins for determinism. Recorded BEFORE
+            # the orphan-skip below because ``task-<toolCallId>``
+            # subagent composers persist independently of the parent
+            # bubble's headers-array status: dropping the edge here
+            # leaves the subagent unable to inherit a project even
+            # though its real parent is still alive.
+            tool_call_parent.setdefault(tcid, cid)
+        if is_orphan:
+            # Display-side side effects (URIs into project inference,
+            # comp_meta seed, db_path write, the message itself) stay
+            # suppressed so a pruned turn cannot resurrect a dead
+            # project hint or surface stale text. Only the structural
+            # tool_call_parent edge above survives.
             if debug_enabled:
                 orphan_counts[cid] += 1
             continue
@@ -121,14 +144,6 @@ def _collect_global_bubbles(
             bubble_file_uris_by_cid[cid].extend(file_uris)
         if folder_uris:
             bubble_folder_uris_by_cid[cid].extend(folder_uris)
-        if tool_call is not None:
-            tcid, _name = tool_call
-            # Cursor stamps each tool invocation with the upstream model
-            # provider's tool-call id (e.g. Anthropic's ``toolu_*``, OpenAI's
-            # ``call_*``). These are unique per model invocation, so a
-            # collision here would indicate a bubble replay or storage
-            # anomaly; first-seen wins for determinism.
-            tool_call_parent.setdefault(tcid, cid)
         if cid not in comp_meta:
             comp_meta[cid] = {"title": f"Chat {cid[:8]}", "createdAt": None, "lastUpdatedAt": None}
             comp2ws[cid] = "(global)"

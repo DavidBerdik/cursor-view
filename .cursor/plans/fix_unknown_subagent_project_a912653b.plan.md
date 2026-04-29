@@ -7,25 +7,25 @@ todos:
     status: completed
   - id: diagnostic
     content: Extend cursor_view/extraction/diagnostics.py with trace_project_resolution(cid) plus a python -m entry point, using read-only SQLite + lazy %-logging.
-    status: pending
+    status: completed
   - id: run-diagnostic
     content: Run the diagnostic against task-toolu_01XvF39QpU8SG7TECB7EWnWg and identify which of Causes 1-4 fires.
-    status: pending
+    status: completed
   - id: fix-targeted
     content: Implement the targeted fix for whichever cause was confirmed (orphan-filter relaxation, scoped Pass 6 cached-edge fallback, dead-chain accept, or orphan-task soft-delete).
-    status: pending
+    status: completed
   - id: regression-test
     content: Add a synthetic-Cursor-DB regression test in tests/test_chat_index_incremental.py covering the chosen cause; ensure python -m unittest discover -s tests stays green.
-    status: pending
+    status: completed
   - id: rule-review
     content: Review every .cursor/rules/*.mdc rule the change touches (sqlite-cursor-db, comments-style, known-bugs, project-layout, python-standards, chat-index-refresh) and update any that drifted.
-    status: pending
+    status: completed
   - id: docs-sync
     content: Update README.md (Troubleshooting section for the diagnostic CLI) and .github/CONTRIBUTING.md (Project layout) per project-layout.mdc Documentation sync, only where the change is user-visible or layout-affecting.
-    status: pending
+    status: completed
   - id: final-review
     content: "Final pass: re-read all touched files for sibling bugs (cycle handling, propagation gate triggers, chat_format fallback ladder, %-style logging, RO SQLite connections, no silent code-path deletions per known-bugs.mdc)."
-    status: pending
+    status: completed
 isProject: false
 ---
 

@@ -102,4 +102,31 @@ Delete that folder to reset preferences.
 - Render mermaid diagrams inline in the chat view and in HTML exports
 - View image attachments inline in the chat, with a full-size modal on click (prev/next chevrons + keyboard navigation when a message has multiple images); HTML exports keep the same images clickable and open them in a new browser tab
 
+## Troubleshooting
+
+### A chat shows up under "(unknown)" / "(global)"
+
+The home page groups chats by project. Most chats inherit a project
+from the workspace they were started in, but the occasional chat
+&mdash; usually a `task-<toolCallId>` subagent spawned by another
+chat &mdash; can land on the literal sentinel triple `Project:
+(unknown)`, `Path: (unknown)`, `Workspace: (global)`. There are
+four distinct root causes, and a built-in CLI diagnostic classifies
+which one is firing for any specific chat. Run it against the
+chat's session id (visible in the chat-detail URL after `/chat/`):
+
+```
+python3 -m cursor_view.extraction.diagnostics --cid task-toolu_xxxxxxxxxxxxxxxxxxxx
+```
+
+The diagnostic opens your Cursor source databases and the local
+chat-index cache **read-only** (it never modifies any file) and
+prints a one-line classification mapping the symptom to one of
+four documented causes (orphan-filter drop, scoped-mode walk gap,
+dead-chain top, deleted parent). After running a refresh through
+the Refresh button or with `cursor-view --no-browser` and reopening
+the chat, the same diagnostic is the fastest way to confirm the
+fix took effect. Pass `--json` to get the raw trace dict if you
+need to file an issue with the full evidence trail.
+
 _Originally built by [Sahar Mor](https://www.linkedin.com/in/sahar-mor/)._

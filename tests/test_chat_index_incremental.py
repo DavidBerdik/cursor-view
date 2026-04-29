@@ -649,12 +649,24 @@ class IncrementalRefreshTest(unittest.TestCase):
             "Incremental refresh must keep the orphan dropped and reflect the edit",
         )
 
-    def test_orphan_tool_call_bubble_not_linked(self) -> None:
-        """Orphan bubbles' ``toolFormerData.toolCallId`` must not populate ``tool_call_parent``.
+    def test_orphan_bubble_still_records_tool_call_parent(self) -> None:
+        """Orphan bubbles' ``toolFormerData.toolCallId`` MUST populate ``tool_call_parent``.
 
-        Linking an orphan would resurrect a dead subagent parent
-        pointer for a future ``task-<toolCallId>`` lookup and let
-        stale state override the canonical transcript.
+        ``tool_call_parent`` is a structural edge keyed by an
+        upstream-model-unique ``toolCallId``, not display content.
+        Cursor prunes parent bubbles out of
+        ``fullConversationHeadersOnly`` (summarization checkpoints,
+        conversation restarts) but the spawned ``task-<toolCallId>``
+        subagent composer outlives those rewrites in ``cursorDiskKV``.
+        Suppressing the edge for orphan bubbles surfaces the subagent
+        as ``(unknown)`` / ``(global)`` even when its real parent is
+        alive (Cause 1 in the project-resolution diagnostic in
+        :mod:`cursor_view.extraction.diagnostics`).
+
+        The orphan's display side effects (its text / role) MUST
+        still be filtered; only the edge survives. This test pins
+        both halves of that invariant in one body so a future regression
+        can't relax just one side without reopening the other.
         """
         parent_cid = "bbbbbbbb-3333-3333-3333-333333333333"
         orphan_tcid = "toolu_orphan"
@@ -672,10 +684,85 @@ class IncrementalRefreshTest(unittest.TestCase):
 
         self._build_index()
 
-        self.assertNotIn(
+        self.assertIn(
             orphan_tcid,
             self._tool_call_parent_ids(),
-            "Orphan bubble's toolCallId must not be written to tool_call_parent",
+            "Orphan bubble's toolCallId must be written to tool_call_parent so "
+            "the spawned task-<toolCallId> subagent can still resolve its parent",
+        )
+        rows = self._messages_with_rowid(parent_cid)
+        self.assertEqual(
+            [(r[2], r[3]) for r in rows],
+            [("user", "parent ask")],
+            "Orphan bubble's display payload must NOT surface in chat_message",
+        )
+
+    def test_orphan_bubble_subagent_inherits_parent_workspace(self) -> None:
+        """Cause 1 regression: subagent inherits parent's ws even when parent's tool-call bubble is orphaned.
+
+        Reproduces the exact failure mode the diagnostic surfaced for
+        ``task-toolu_01XvF39QpU8SG7TECB7EWnWg``: parent fires a
+        ``task_v2`` tool call, Cursor later prunes that bubble out of
+        the parent's ``fullConversationHeadersOnly`` array (the
+        bubble row stays on disk), and the spawned subagent's
+        composer is still in ``cursorDiskKV``. Before the fix, Pass
+        2's orphan filter dropped the ``tool_call_parent`` upsert and
+        Pass 5 had no edge to follow, so the subagent landed on
+        ``(global)`` / ``(unknown)``. After the fix the edge is
+        recorded and Pass 6 inherits the parent's workspace.
+        """
+        parent_cid = "bbbbbbbb-4444-4444-4444-444444444444"
+        tcid = "toolu_orphaned_parent_call"
+        child_cid = f"task-{tcid}"
+        # Parent has a non-empty headers array that EXCLUDES the
+        # tool-call bubble id ("b_orphan_call"), so the parent's
+        # tool-call bubble is an orphan from extraction's point of
+        # view but still lives on disk. Pane-view key promotes the
+        # parent into a real workspace so the subagent has a
+        # non-``(global)`` ws_id to inherit.
+        _put_kv(
+            self.global_db,
+            f"composerData:{parent_cid}",
+            _composer("Parent (orphan tool call)", headers=[("b_intro", 1)]),
+        )
+        _put_item(
+            self.ws_db,
+            f"workbench.panel.aichat.view.{parent_cid}",
+            {"paneId": "p1"},
+        )
+        _put_kv(self.global_db, f"bubbleId:{parent_cid}:b_intro", _bubble("parent ask"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{parent_cid}:b_orphan_call",
+            _bubble("calling tool", role_type=2, tool_call_id=tcid),
+        )
+
+        # Subagent composer is independent: its ``task-<tcid>`` cid
+        # carries the canonical link back to the parent via the tool
+        # call id, not via any field on its own composerData.
+        _put_kv(self.global_db, f"composerData:{child_cid}", _composer("Child"))
+        _put_kv(self.global_db, f"bubbleId:{child_cid}:b1", _bubble("child work"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{child_cid}:b2",
+            _bubble("child done", role_type=2),
+        )
+
+        self._build_index()
+
+        self.assertIn(
+            tcid,
+            self._tool_call_parent_ids(),
+            "Orphan-filter relaxation must persist the tool_call_parent edge",
+        )
+        child_summary = self._summary(child_cid)
+        self.assertIsNotNone(child_summary)
+        self.assertEqual(
+            child_summary[2],
+            self.ws_id,
+            "Subagent must inherit the parent's workspace via the cached "
+            "tool_call_parent edge even when the parent's tool-call bubble "
+            "is orphan-filtered out of the canonical transcript",
         )
 
     # ---------------------------------------------------------------

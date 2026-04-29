@@ -51,8 +51,16 @@ Subpackages:
   under `passes/` (`workspace_messages.py`, `global_bubbles.py`,
   `global_composers.py`, `uri_fallbacks.py`, `task_subagents.py`,
   `subagent_inheritance.py`, `item_table_chats.py`, `finalize.py`)
-  so each pass reads as a unit. `diagnostics.py` holds the optional
-  probe gated by the `CURSOR_CHAT_DIAGNOSTICS` environment variable.
+  so each pass reads as a unit. `diagnostics/` holds the optional
+  probes: `workspace_dump.py` is the coarse "what tables / key
+  prefixes does this Cursor install have?" log dump that the
+  pipeline runs once at the top of `extract_chats` when
+  `CURSOR_CHAT_DIAGNOSTICS` is set, and `trace.py` plus
+  `probes.py` / `walker.py` back the per-cid resolution-trace CLI
+  invoked via `python -m cursor_view.extraction.diagnostics --cid <id>`,
+  which classifies a chat's `(unknown)` / `(global)` symptom into
+  one of four documented root causes (orphan-filter drop,
+  scoped-mode walk gap, dead-chain top, deleted parent).
   `extract_chats` also accepts an optional `cids` set so the cache's
   incremental refresh can re-extract only the composers whose source
   rows actually changed.

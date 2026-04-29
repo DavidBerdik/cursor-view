@@ -16,8 +16,11 @@ alwaysApply: true
   `cursor_view/chat_index/`, `cursor_view/desktop/`,
   `cursor_view/export/` (with a `vendor/` sub-subpackage for committed
   third-party browser assets — currently `mermaid.min.js`),
-  `cursor_view/extraction/` (with a `passes/`
-  sub-subpackage for the per-pass modules), `cursor_view/images/`,
+  `cursor_view/extraction/` (with a `passes/` sub-subpackage for the
+  per-pass modules and a `diagnostics/` sub-subpackage for the
+  optional `CURSOR_CHAT_DIAGNOSTICS`-gated workspace dump plus the
+  `python -m cursor_view.extraction.diagnostics --cid <id>` per-cid
+  resolution-trace CLI), `cursor_view/images/`,
   `cursor_view/projects/`, `cursor_view/sources/`.
 - Do not create a new top-level Python file unless it is a shim for an
   existing package entry point. Ad-hoc utilities (e.g. the deleted
