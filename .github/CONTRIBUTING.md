@@ -41,9 +41,15 @@ Subpackages:
   rebuild and incremental paths. On a fingerprint miss, the cache
   runs a row-hash diff against the Cursor source DBs (see `cache/`
   below) and applies the resulting per-composer delta in a single
-  transaction, falling back to a full rebuild only on
-  `force_refresh`, schema drift, `DatabaseError`, or a missing cache
-  file.
+  transaction. The home page Refresh button (`force_refresh=True`)
+  routes through the same delta path as the SWR background worker
+  via the shared `ChatIndex._run_synchronous_delta_or_rebuild`
+  helper, so a manual refresh pays the diff cost rather than the
+  full build-to-temp + atomic-swap cost. The helper falls back to a
+  full rebuild only when the cache is missing, the `meta` table is
+  unreadable (`DatabaseError`), `schema_version` does not match
+  `INDEX_SCHEMA_VERSION`, or `compute_source_diff` / `apply_delta`
+  themselves raise `DatabaseError`.
 - `extraction/` &mdash; pipeline that scans Cursor's SQLite databases
   and produces chat sessions. `core.py` holds the `extract_chats`
   orchestrator, the `CachedExtractionState` helper dataclass, and

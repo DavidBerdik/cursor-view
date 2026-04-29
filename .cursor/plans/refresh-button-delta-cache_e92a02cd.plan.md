@@ -4,49 +4,49 @@ overview: Reroute the home page Refresh button (which currently forces a full ca
 todos:
   - id: impl-helper
     content: Add `_run_synchronous_delta_or_rebuild` helper in `cursor_view/chat_index/index.py` that holds `_rebuild_build_lock`, runs `compute_source_diff` + `apply_delta`, and falls back to `_rebuild` inside the same lock on `sqlite3.DatabaseError` or apply exception.
-    status: pending
+    status: completed
   - id: impl-force-branch
     content: "Rewrite the `if force:` branch of `ensure_current` to: re-check `db_path.exists()`, route to `_rebuild` on missing-cache / `sqlite3.DatabaseError` / `cached_schema != str(INDEX_SCHEMA_VERSION)`, otherwise call the new shared helper. Keep concurrency under `_rebuild_build_lock` for the entire critical section."
-    status: pending
+    status: completed
   - id: impl-bg-reuse
     content: Refactor `_background_refresh_worker` to call the same shared helper so the two paths cannot drift on fallback semantics; verify the structured log line in `cursor_view/cache/delta/engine.py::_log_refresh_summary` still fires for the manual-refresh path.
-    status: pending
+    status: completed
   - id: rule-refresh-update
     content: "Update `.cursor/rules/chat-index-refresh.mdc`: move `force=True` out of the synchronous-rebuild bullet list, document the new \"synchronous delta with rebuild fallback\" path, and explain that the rebuild fallback is gated on the same correctness signals as before (missing cache / `DatabaseError` / schema drift / apply failure). Cite both the new helper and `_background_refresh_worker` as canonical call sites."
-    status: pending
+    status: completed
   - id: rule-known-bugs-check
     content: Re-read `.cursor/rules/known-bugs.mdc` and ensure no live `# TODO(bug):` markers were silently removed and no suspicious-but-out-of-scope code path was rewritten without one.
-    status: pending
+    status: completed
   - id: rule-comments-style-check
     content: Re-read `.cursor/rules/comments-style.mdc` and audit every comment added in this change to confirm it explains intent / invariants / non-obvious platform behavior, never re-narrates the code.
-    status: pending
+    status: completed
   - id: rule-python-standards-check
     content: "Re-read `.cursor/rules/python-standards.mdc` and confirm: lazy `%s`-style logging in any new log lines, typed signatures on the new helper, no new module > ~400 lines or function > ~100 lines, no module-load side effects in `cursor_view/chat_index/index.py`."
-    status: pending
+    status: completed
   - id: rule-sqlite-cursor-db-check
     content: "Re-read `.cursor/rules/sqlite-cursor-db.mdc` and confirm: read-only URI form for any source-DB read added (none expected); writable cache connections continue to use the `_connect(read_only=False)` context manager so connection cleanup uses `try/finally` rather than `if 'con' in locals(): con.close()`."
-    status: pending
+    status: completed
   - id: rule-project-layout-check
     content: Re-read `.cursor/rules/project-layout.mdc` and confirm no new top-level Python file is created and no module crosses the 400-line soft limit. If `cursor_view/chat_index/index.py` grows past ~400 lines after the change, propose a split of `ensure_current`'s helper out into a new module under the same subpackage.
-    status: pending
+    status: completed
   - id: doc-contributing
     content: "Update `.github/CONTRIBUTING.md`: revise the `chat_index/` paragraph that lists `force_refresh` as a full-rebuild trigger so it instead documents the synchronous-delta-with-rebuild-fallback path. Mention the shared helper by name."
-    status: pending
+    status: completed
   - id: doc-readme
     content: Audit `README.md` for any user-facing claims about Refresh latency or full-rebuild semantics. Update only if such claims exist; otherwise leave unchanged and record the no-op decision in the PR description.
-    status: pending
+    status: completed
   - id: test-force-uses-delta
     content: "Add a regression test in `tests/test_chat_index_incremental.py` that builds an index, mutates a single bubble, calls `ensure_current(force=True)`, and asserts: (a) `_rebuild` was NOT called (use `patch.object(ci, '_rebuild', wraps=ci._rebuild)`), (b) `apply_delta` was called, (c) the new bubble shows up via `list_summaries`. Mirror the patching style used by `test_schema_version_bump_forces_synchronous_rebuild` and `test_source_fingerprint_bump_uses_background_refresh`."
-    status: pending
+    status: completed
   - id: test-force-fallback
     content: "Add a regression test that pins the rebuild fallback: simulate `apply_delta` raising `sqlite3.DatabaseError`, call `ensure_current(force=True)`, and assert `_rebuild` was called exactly once and the cache ends up usable (a follow-up `list_summaries` succeeds)."
-    status: pending
+    status: completed
   - id: test-existing-still-pass
     content: Run the full `python -m unittest discover -s tests` suite and confirm no pre-existing tests regress (especially `test_schema_version_bump_forces_synchronous_rebuild`, `test_source_fingerprint_bump_uses_background_refresh`, and `test_chat_index_propagation_gating`).
-    status: pending
+    status: completed
   - id: bug-final-pass
     content: "Final bug-hunt pass over `cursor_view/chat_index/index.py` and the apply-delta seam: confirm `_rebuild_build_lock` covers both delta and fallback inside the force branch, the `db_path.exists()` re-check inside the lock matches the existing double-check pattern, no connection leaks were introduced (each `_connect` invocation is consumed by exactly one `with` block), and any genuinely suspicious out-of-scope path got a `# TODO(bug):` marker per `.cursor/rules/known-bugs.mdc` rather than a silent rewrite."
-    status: pending
+    status: completed
 isProject: false
 ---
 

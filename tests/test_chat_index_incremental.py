@@ -849,6 +849,134 @@ class IncrementalRefreshTest(unittest.TestCase):
         bg.assert_called_once()
         rebuild.assert_not_called()
 
+    def test_force_refresh_uses_delta_path(self) -> None:
+        """``force=True`` must drive the incremental delta apply, not a full rebuild.
+
+        Pins the contract the home page Refresh button relies on:
+        when the cache exists, is readable, and stamped with the
+        current ``INDEX_SCHEMA_VERSION``, a manual refresh runs
+        through ``ChatIndex._run_synchronous_delta_or_rebuild`` and
+        applies a per-composer delta. ``_rebuild`` is reserved as
+        a correctness fallback. Wraps both methods with
+        ``unittest.mock.patch.object(..., wraps=...)`` so the test
+        observes call counts without changing behavior, mirroring
+        the patching style of
+        ``test_schema_version_bump_forces_synchronous_rebuild`` /
+        ``test_source_fingerprint_bump_uses_background_refresh``.
+        """
+        cid = self._seed_trivial_chat()
+        ci = self._build_index()
+        before = self._messages_with_rowid(cid)
+        self.assertEqual(len(before), 2)
+
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b2",
+            _bubble("yo EDITED", role_type=2),
+        )
+
+        original_rebuild = ci._rebuild
+        original_apply = ci._apply_delta
+        with patch.object(
+            ci, "_rebuild", wraps=original_rebuild
+        ) as rebuild, patch.object(
+            ci, "_apply_delta", wraps=original_apply
+        ) as apply_delta:
+            ci.ensure_current(force=True)
+
+        rebuild.assert_not_called()
+        apply_delta.assert_called_once()
+
+        after = self._messages_with_rowid(cid)
+        self.assertTrue(
+            any("EDITED" in row[3] for row in after),
+            "Manual refresh must surface the mutated bubble through the delta path",
+        )
+
+    def test_force_refresh_recovers_from_corrupt_meta(self) -> None:
+        """A corrupt cache on the manual-refresh path must not surface as a 500.
+
+        ``ensure_current``'s force-arm fingerprint pre-check reads
+        the cache's ``meta`` table, so a corrupt or missing ``meta``
+        raises ``sqlite3.DatabaseError`` before the build lock is
+        even acquired. The pre-check swallows that error and lets
+        ``_run_synchronous_delta_or_rebuild`` run, which detects
+        the same unreadability under the lock and falls back to a
+        full rebuild. The follow-up ``list_summaries`` call is the
+        proof-of-life witness that the rebuild really produced a
+        usable cache.
+        """
+        cid = self._seed_trivial_chat()
+        ci = self._build_index()
+
+        con = sqlite3.connect(self.cache_path)
+        try:
+            con.execute("DROP TABLE meta")
+            con.commit()
+        finally:
+            con.close()
+
+        original_rebuild = ci._rebuild
+        with patch.object(ci, "_rebuild", wraps=original_rebuild) as rebuild:
+            ci.ensure_current(force=True)
+
+        rebuild.assert_called_once()
+
+        contents = {row[3] for row in self._messages_with_rowid(cid)}
+        self.assertIn(
+            "yo",
+            contents,
+            "Rebuild fallback after corrupt-meta recovery must repopulate "
+            "the cache from the source DBs",
+        )
+
+    def test_force_refresh_falls_back_to_rebuild_on_apply_error(self) -> None:
+        """A delta apply that raises ``DatabaseError`` must escalate to a full rebuild.
+
+        Simulates the corruption-style failure
+        ``_run_synchronous_delta_or_rebuild`` is meant to recover
+        from: ``apply_delta`` raises ``sqlite3.DatabaseError`` mid
+        single-tx write, the helper logs the failure and falls
+        through to ``_rebuild`` so the cache is never left in a
+        half-applied state. The follow-up ``list_summaries`` call
+        is the proof-of-life witness that the rebuild really
+        produced a usable cache (and surfaced the post-mutation
+        content), not just that ``_rebuild`` was invoked.
+        """
+        cid = self._seed_trivial_chat()
+        ci = self._build_index()
+
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b2",
+            _bubble("yo POST-FALLBACK", role_type=2),
+        )
+
+        original_rebuild = ci._rebuild
+        with patch.object(
+            ci, "_rebuild", wraps=original_rebuild
+        ) as rebuild, patch.object(
+            ci,
+            "_apply_delta",
+            side_effect=sqlite3.DatabaseError("simulated apply failure"),
+        ):
+            ci.ensure_current(force=True)
+
+        rebuild.assert_called_once()
+
+        payload = ci.list_summaries()
+        contents = {row[3] for row in self._messages_with_rowid(cid)}
+        self.assertIn(
+            "yo POST-FALLBACK",
+            contents,
+            "Rebuild fallback must materialize the post-mutation source rows",
+        )
+        self.assertGreaterEqual(
+            payload["total"],
+            1,
+            "list_summaries must succeed against the post-fallback cache",
+        )
+
     def test_legacy_composer_still_includes_all_bubbles(self) -> None:
         """No headers array => legacy encounter-order fallback keeps every bubble.
 

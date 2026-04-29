@@ -1,8 +1,10 @@
 """``ChatIndex`` orchestrator: refresh routing, connection lifecycle, public API.
 
-Schema-drift routing (``_cached_schema_version`` plus the
-synchronous-rebuild branch of :meth:`ChatIndex.ensure_current`) sets
-the module's mandatory floor slightly above the 400-line soft limit:
+Refresh-routing housekeeping (``_cached_schema_version``, the
+synchronous-rebuild branch of :meth:`ChatIndex.ensure_current`, and
+the shared :meth:`ChatIndex._run_synchronous_delta_or_rebuild` helper
+that the manual-refresh and background-refresh paths both call into)
+sets this module's mandatory floor above the 400-line soft limit:
 those helpers read ``ChatIndex`` instance state (``_rebuild_build_lock``,
 ``db_path``, ``_bg_*``) and cannot be extracted to a sibling module
 without pulling that state with them. See
@@ -155,21 +157,51 @@ class ChatIndex:
         """Refresh the index if source DBs changed or a rebuild was requested.
 
         This method is the canonical refresh-routing switch that
-        :file:`.cursor/rules/chat-index-refresh.mdc` codifies:
-        ``force=True``, a missing cache file, corrupt ``meta``
-        (``sqlite3.DatabaseError``), or schema-version drift all
-        route to a synchronous rebuild; a pure source-fingerprint
-        miss routes to stale-while-revalidate via
-        :meth:`_schedule_background_refresh`. Schema drift blocks
-        (rather than SWR-scheduling) because serving old-shape rows
-        under a new-shape reader is a correctness bug, not a
-        freshness issue.
+        :file:`.cursor/rules/chat-index-refresh.mdc` codifies. There
+        are three dispatch arms:
+
+        - **Synchronous delta** (caller blocks while a delta is
+          applied): ``force=True`` from the home page Refresh
+          button. The work runs through
+          :meth:`_run_synchronous_delta_or_rebuild` so the same
+          code path that ``_background_refresh_worker`` takes also
+          covers manual refreshes, with a full rebuild reserved as
+          a correctness fallback.
+        - **Synchronous rebuild** (caller blocks until the cache is
+          rebuilt from scratch): missing cache file, corrupt
+          ``meta`` (``sqlite3.DatabaseError``), or schema-version
+          drift. Schema drift blocks instead of SWR-scheduling
+          because serving old-shape rows under a new-shape reader
+          is a correctness bug, not a freshness one.
+        - **Stale-while-revalidate**: a pure source-fingerprint
+          miss when the on-disk shapes are still current; handed
+          off to :meth:`_schedule_background_refresh` so callers do
+          not pay the refresh latency.
         """
         source_fingerprint, sources = self._current_source_fingerprint()
 
         if force:
+            # Cheap fingerprint pre-check avoids the build-lock
+            # acquisition for the common "user clicked Refresh but
+            # nothing changed source-side" case. A corrupt cache
+            # surfaces here as ``DatabaseError`` from the meta-row
+            # read inside ``_cached_index_up_to_date``; swallow it
+            # and let the helper's rebuild fallback run -- mirrors
+            # the unreadable-cache handling on the SWR arm below.
+            # The body of the lock re-fingerprints so a racing
+            # background worker that finished while we were
+            # waiting cannot trick us into writing under a stale
+            # fingerprint.
+            try:
+                if self._cached_index_up_to_date(source_fingerprint):
+                    return
+            except sqlite3.DatabaseError:
+                pass
             with self._rebuild_build_lock:
-                self._rebuild(source_fingerprint, sources)
+                fp, srcs = self._current_source_fingerprint()
+                self._run_synchronous_delta_or_rebuild(
+                    fp, srcs, log_context="on manual refresh"
+                )
             return
 
         if not self.db_path.exists():
@@ -244,53 +276,104 @@ class ChatIndex:
         Holds ``_rebuild_build_lock`` so delta applies and fallback
         rebuilds don't race force-refresh or first-build. Under the
         lock, re-fingerprints the sources (another worker may have
-        finished while we were waiting) then picks between the delta
-        path and a full rebuild; any
-        :class:`sqlite3.DatabaseError`, schema-version mismatch, or
-        failed delta apply falls through to a rebuild so the cache
-        is never left in a broken state.
+        finished while we were waiting) then defers to
+        :meth:`_run_synchronous_delta_or_rebuild` for the same
+        delta-with-rebuild-fallback dispatch the manual-refresh
+        path uses, so the two refresh entry points cannot drift on
+        what counts as a recoverable apply-time failure.
         """
         try:
             with self._rebuild_build_lock:
                 fp, sources = self._current_source_fingerprint()
-                try:
-                    if self._cached_index_up_to_date(fp):
-                        return
-                    cached_schema = self._read_meta_value("schema_version")
-                except sqlite3.DatabaseError:
-                    logger.warning(
-                        "Existing chat index is unreadable during background refresh; rebuilding"
-                    )
-                    self._rebuild(fp, sources)
-                    return
-                if cached_schema != str(INDEX_SCHEMA_VERSION):
-                    # Primary schema-drift handling now lives on the
-                    # synchronous path in ``ensure_current``; this arm
-                    # is defense-in-depth for the rare case where a
-                    # background refresh was already queued (e.g. on a
-                    # fingerprint miss) and then raced a schema bump
-                    # landing before the worker took the build lock.
-                    logger.info(
-                        "Chat index schema drift (%s -> %s); falling back to full rebuild",
-                        cached_schema,
-                        INDEX_SCHEMA_VERSION,
-                    )
-                    self._rebuild(fp, sources)
-                    return
-                try:
-                    dirty = self._compute_source_diff(sources)
-                    self._apply_delta(dirty, fp, sources)
-                except sqlite3.DatabaseError:
-                    logger.warning(
-                        "Incremental chat-index refresh failed; falling back to full rebuild",
-                        exc_info=True,
-                    )
-                    self._rebuild(fp, sources)
+                self._run_synchronous_delta_or_rebuild(
+                    fp, sources, log_context="during background refresh"
+                )
         except Exception:
             logger.exception("Background chat index refresh failed")
         finally:
             with self._bg_schedule_lock:
                 self._bg_refresh_thread = None
+
+    def _run_synchronous_delta_or_rebuild(
+        self,
+        source_fingerprint: str,
+        sources: list[dict[str, Any]],
+        *,
+        log_context: str,
+    ) -> None:
+        """Apply a delta under the build lock; fall back to ``_rebuild`` on correctness or apply errors.
+
+        Caller must already hold ``_rebuild_build_lock`` and own the
+        decision to refresh (the up-to-date fast path lives on the
+        caller side so this helper can be reused from contexts that
+        intentionally re-run after waiting on the lock).
+
+        The fallback path covers four signals, each of which rules
+        out the delta path on its own:
+
+        - the cache file vanished after the lock was taken (a user
+          deleted ``chat-index.sqlite3`` mid-refresh);
+        - the cache's ``meta`` table is unreadable
+          (``sqlite3.DatabaseError``);
+        - ``schema_version`` does not match
+          ``INDEX_SCHEMA_VERSION`` (shape drift);
+        - ``compute_source_diff`` or ``apply_delta`` raises a
+          ``sqlite3.DatabaseError`` while running the diff or the
+          single-transaction apply.
+
+        ``log_context`` is interpolated into the unreadability
+        warning so manual-refresh and background-refresh log lines
+        stay distinguishable even though the routing logic is
+        shared.
+        """
+        if not self.db_path.exists():
+            # apply_delta needs an existing cache to write into;
+            # treat a missing file like the dedicated missing-cache
+            # branch in ``ensure_current`` does for the non-force
+            # flow and rebuild from scratch.
+            self._rebuild(source_fingerprint, sources)
+            return
+        # Both ``_cached_index_up_to_date`` and ``_read_meta_value``
+        # open the cache to read the ``meta`` table, so a corrupt
+        # cache surfaces as ``DatabaseError`` from either call. Wrap
+        # them together so the rebuild fallback covers both, matching
+        # the pre-refactor ``_background_refresh_worker`` contract
+        # (the synchronous-rebuild routing in ``ensure_current``
+        # owns the same defense for the non-force arms).
+        try:
+            if self._cached_index_up_to_date(source_fingerprint):
+                return
+            cached_schema = self._read_meta_value("schema_version")
+        except sqlite3.DatabaseError:
+            logger.warning(
+                "Existing chat index is unreadable %s; rebuilding", log_context
+            )
+            self._rebuild(source_fingerprint, sources)
+            return
+        if cached_schema != str(INDEX_SCHEMA_VERSION):
+            # Primary schema-drift handling for the non-force flow
+            # already lives on the synchronous arm of
+            # ``ensure_current``. This branch is the defense-in-depth
+            # arm for the rare case where a background refresh was
+            # already queued on a fingerprint miss and then raced a
+            # schema bump landing before the worker took the lock,
+            # plus the manual-refresh path's correctness gate.
+            logger.info(
+                "Chat index schema drift (%s -> %s); falling back to full rebuild",
+                cached_schema,
+                INDEX_SCHEMA_VERSION,
+            )
+            self._rebuild(source_fingerprint, sources)
+            return
+        try:
+            dirty = self._compute_source_diff(sources)
+            self._apply_delta(dirty, source_fingerprint, sources)
+        except sqlite3.DatabaseError:
+            logger.warning(
+                "Incremental chat-index refresh failed; falling back to full rebuild",
+                exc_info=True,
+            )
+            self._rebuild(source_fingerprint, sources)
 
     def _cached_index_up_to_date(self, source_fingerprint: str) -> bool:
         """True iff the on-disk index matches the current source fingerprint and schema version."""

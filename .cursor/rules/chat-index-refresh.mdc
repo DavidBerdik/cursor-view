@@ -8,34 +8,58 @@ alwaysApply: false
 
 `ChatIndex.ensure_current` in
 `cursor_view/chat_index/index.py` is the canonical switch for deciding
-which refresh recipe runs against the cache. It picks between two
-paths across four triggers:
+which refresh recipe runs against the cache. It picks between three
+paths:
 
+- **Synchronous delta** (caller blocks while the existing
+  per-composer diff and apply pass run end-to-end) is the
+  manual-refresh path: `force=True` from the home page Refresh
+  button. The work routes through
+  `ChatIndex._run_synchronous_delta_or_rebuild`, which is the
+  shared helper the SWR background worker also calls into so the
+  manual and background entry points cannot drift on what counts
+  as a recoverable apply-time failure. The helper falls back to a
+  full rebuild on the same correctness signals listed below
+  (missing cache, unreadable `meta`, schema drift) plus any
+  `sqlite3.DatabaseError` raised by `compute_source_diff` /
+  `apply_delta` itself.
 - **Synchronous rebuild** (caller blocks until the new cache is
   ready) runs on:
-  - `force=True` (manual refresh from the UI);
   - missing cache file (first-build);
   - cache that raises `sqlite3.DatabaseError` while its `meta`
     rows are being read (corruption);
   - `schema_version` meta row that does not match
     `INDEX_SCHEMA_VERSION` (schema drift).
+
+  These are the correctness-gated triggers that the synchronous
+  delta arm escalates to via the shared helper, and that
+  `ensure_current`'s non-force arms hit directly.
 - **Stale-while-revalidate** (caller is handed the current
   snapshot, a background worker refreshes off the request path)
   runs when the only signal is a source-DB fingerprint miss; the
   on-disk row shapes are still current, so serving them until the
   refresh lands is safe.
 
+Note: `force=True` used to drive a synchronous full rebuild
+unconditionally. It now drives a synchronous **delta** with the
+full-rebuild fallback above, because the home page Refresh button
+should not pay the build-to-temp + atomic-swap cost on every
+click when an incremental apply would suffice.
+
 # Invariant: never serve rows under a different schema version
 
 Do not add a condition to `_cached_index_up_to_date` that returns
-`False` without first deciding which of the two paths it belongs on.
-The deciding question is "does this change affect row **shape** or
-just row **freshness**?". Shape drift (columns added/removed,
-semantics changed, FTS schema rewritten) is a correctness bug if
-the cache is served during the rebuild and must route through the
-synchronous branch. Freshness drift (source DB mtimes moved,
-content hashes changed) is safe to serve stale and should stay on
-SWR so the API latency stays bounded.
+`False` without first deciding which of the three dispatch paths
+above it belongs on. The deciding question is "does this change
+affect row **shape** or just row **freshness**?". Shape drift
+(columns added/removed, semantics changed, FTS schema rewritten)
+is a correctness bug if the cache is served during the rebuild
+and must route through the synchronous-rebuild branch (or, on
+the manual-refresh arm, escalate from synchronous-delta to
+synchronous-rebuild via the shared helper's correctness-gate
+fallback). Freshness drift (source DB mtimes moved, content
+hashes changed) is safe to serve stale and should stay on SWR so
+the API latency stays bounded.
 
 The `_cached_schema_version` helper exists specifically so the
 router can distinguish the two without reading the `meta` table
@@ -53,7 +77,18 @@ pick synchronous vs. background before dispatch.
   [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc).
 - Canonical routing switch: `ChatIndex.ensure_current` in
   `cursor_view/chat_index/index.py`.
+- Shared apply-time helper that the manual-refresh and
+  background-refresh paths both call into (and that owns the
+  delta-with-rebuild-fallback contract):
+  `ChatIndex._run_synchronous_delta_or_rebuild` in the same module.
 - Regression guards:
   `tests/test_chat_index_incremental.py::test_schema_version_bump_forces_synchronous_rebuild`
   and `::test_source_fingerprint_bump_uses_background_refresh` lock
-  down both sides of the routing decision.
+  down the schema-drift and SWR sides of the routing decision;
+  `::test_force_refresh_uses_delta_path`,
+  `::test_force_refresh_falls_back_to_rebuild_on_apply_error`, and
+  `::test_force_refresh_recovers_from_corrupt_meta` lock down the
+  synchronous-delta arm, its apply-time rebuild fallback, and the
+  pre-check's swallow-and-continue handling of a corrupt cache
+  (so a stale `meta` table never surfaces as a 500 from the
+  manual-refresh path).
