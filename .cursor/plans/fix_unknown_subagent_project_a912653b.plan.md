@@ -4,7 +4,7 @@ overview: Diagnose why the `task-toolu_01XvF39QpU8SG7TECB7EWnWg` ("Explore Bruno
 todos:
   - id: explanation
     content: Write up the root-cause explanation (Causes 1-4) for the user before any code changes.
-    status: pending
+    status: completed
   - id: diagnostic
     content: Extend cursor_view/extraction/diagnostics.py with trace_project_resolution(cid) plus a python -m entry point, using read-only SQLite + lazy %-logging.
     status: pending
@@ -27,6 +27,69 @@ todos:
     content: "Final pass: re-read all touched files for sibling bugs (cycle handling, propagation gate triggers, chat_format fallback ladder, %-style logging, RO SQLite connections, no silent code-path deletions per known-bugs.mdc)."
     status: pending
 isProject: false
+---
+
+## Root-cause explanation
+
+### What the screenshot is telling us
+
+Three pieces of metadata on the chat-detail header narrow the failure mode down to a single code path:
+
+- **`Workspace: (global)`** is the literal sentinel string written into `comp2ws[cid]` by `[cursor_view/extraction/passes/global_bubbles.py](cursor_view/extraction/passes/global_bubbles.py)` line 134 the first time a composer is encountered through the global `cursorDiskKV` store. So Pass 2 *did* see this chat — it was not lost, and it is not coming from the workspace `state.vscdb` ItemTable scrape (Pass 1) which would have stamped a real workspace id.
+- **`Project: (unknown)` / `Path: (unknown)`** is the literal sentinel returned by `[cursor_view/extraction/passes/finalize.py](cursor_view/extraction/passes/finalize.py)` line 58: `project = ws_project or {"name": "(unknown)", "rootPath": "(unknown)"}`. That branch only fires when **all** of the following are simultaneously true for this cid:
+  1. `comp2ws[cid] == "(global)"` — no workspace was found.
+  2. `ws_proj["(global)"]` is unset — there is no project keyed against the global sentinel (there never is).
+  3. `sessions[cid]["_inferred_project"]` is `None` — Pass 4 (bubble URI fallback) and Pass 3 (`composerData` URI fallback) both produced nothing.
+- **`DB: state.vscdb`** is just the global-storage path — the value comes from `sessions[cid]["db_path"]` which `[cursor_view/extraction/passes/global_bubbles.py](cursor_view/extraction/passes/global_bubbles.py)` line 119 stamps with the global `cursorDiskKV` file path. This is consistent with the chat being a `task-*` subagent persisted only in the global store.
+
+So the chat was successfully extracted and Pass 2 did its job; what failed is the **ancestor-inheritance chain that subagents rely on** in Passes 5 and 6.
+
+### Why subagents need ancestor inheritance in the first place
+
+Cursor names every `task_v2`-spawned subagent composer `task-<toolCallId>` and persists it with `subagentInfo: null` (documented at the top of `[cursor_view/extraction/passes/task_subagents.py](cursor_view/extraction/passes/task_subagents.py)` lines 7-12). That means a subagent composer carries:
+
+- No `workspaceIdentifier` of its own.
+- No `originalFileStates` / attached-file URIs.
+- No bubble URIs (its bubbles only contain its own conversation).
+- No `subagentInfo.parentComposerId` link back to the agent that spawned it.
+
+Every other resolution path the pipeline has (workspace ItemTable, `composerData.workspaceIdentifier`, `composerData` file URIs, bubble URIs) returns nothing for these chats by construction. The **only** signal that ties a `task-<toolCallId>` subagent to a project is the parent agent's bubble that fired the tool call: the parent's bubble has `toolFormerData.toolCallId == <toolCallId>`, and `[cursor_view/extraction/passes/global_bubbles.py](cursor_view/extraction/passes/global_bubbles.py)` lines 124-131 record that as `tool_call_parent[toolCallId] = parent_cid`. Pass 5 (`_link_task_subagents_to_parents`) reads that map to set `subagent_parent[task-<toolCallId>] = parent_cid`; Pass 6 (`_apply_subagent_inheritance`) walks the parent chain (capped at 8 hops by `_MAX_PARENT_DEPTH`) and copies the first ancestor's resolved `comp2ws` (or `_inferred_project`) onto the child.
+
+For the chat in the screenshot to land on the `(unknown)` / `(global)` sentinel triple, that walk produced nothing. There are exactly four ways for the walk to produce nothing, and they correspond one-to-one with the four root causes enumerated below.
+
+### Why this specific chat (`task-toolu_01XvF39QpU8SG7TECB7EWnWg`)
+
+The session id has the canonical `task-<toolCallId>` shape, and the chat title `Explore Bruno test collection` is a real Cursor-assigned `composerData.name` (not one of the synthetic `Chat <8hex>` / `Global Chat <8hex>` placeholders that `[cursor_view/chat_format.py](cursor_view/chat_format.py)` lines 81-100 collapses to `""`). The "Explore" title prefix is what Cursor stamps on subagent composers spawned by the `explore` tool variant of `task_v2`. So the chat is:
+
+- A `task_v2`-spawned **explore subagent**, persisted with `subagentInfo: null` (the modern shape Pass 5 was written for).
+- Spawned by some parent agent that called the `explore` tool with `toolCallId == toolu_01XvF39QpU8SG7TECB7EWnWg`.
+- One nested layer deep at minimum, possibly more — explore subagents are commonly spawned **by other subagents** (e.g. a `generalPurpose` agent that itself is a `task-*` composer).
+
+The failure must be one of:
+
+1. **Orphan-bubble drop on the parent.** The parent agent's bubble that fired the `toolu_01XvF39QpU8SG7TECB7EWnWg` tool call exists in `cursorDiskKV` but is **absent from the parent's `composerData.fullConversationHeadersOnly` array** (Cursor pruned it during a "reset to this point" / summarization checkpoint / conversation restart while leaving the bubble row on disk). The orphan-bubble invariant in `[cursor_view/extraction/passes/global_bubbles.py](cursor_view/extraction/passes/global_bubbles.py)` lines 108-117 then deliberately skips **every** side effect for that row, including the `tool_call_parent[tcid] = cid` upsert. Pass 5 finds no edge, Pass 6 has nothing to walk, finalize stamps the sentinel.
+
+   This is consistent with how Cursor's UX behaves: deleting / collapsing a turn that contained a subagent-spawning tool call leaves both the bubble (key still on disk) and the subagent's composer (separate row) in place, but breaks the only edge that ties them together once `fullConversationHeadersOnly` is rewritten without the bubble id.
+
+2. **Scoped-mode walk gap.** The chain crosses through a non-dirty `task-*` ancestor. Scoped re-extraction only seeds `subagent_parent` for cids in `sessions.keys()` (Pass 5 line 54), and `sessions` only contains the dirty set in scoped mode. `[cursor_view/cache/delta/cached_state.py](cursor_view/cache/delta/cached_state.py)` `_load_ancestor_state` seeds `ancestor_comp2ws` and `ancestor_inferred_project` for non-dirty composers but does **not** seed an analogous `ancestor_subagent_parent`, so when Pass 6 walks past a non-dirty `task-*` link in the chain, `subagent_parent.get(ancestor)` returns `None` even though the persisted `tool_call_parent` table contains the edge. The walk dies at the first non-dirty subagent.
+
+   This failure mode is consistent with the chat showing `(unknown)` *across refreshes* but only after the chain originally resolved correctly — i.e. the pipeline once knew the answer, the non-dirty boundary forgot it.
+
+3. **Dead chain at the top.** The chain walks all the way up to a top-level chat that is itself a `(global)` composer with no workspace, no `composerData` URIs, no bubble URIs, and no `subagentInfo` parent. This happens when the user spawned the explore subagent from a Cursor session that was not attached to a workspace (a chat opened from the global tray, a chat in a window with no folder open, a `cursor` CLI invocation with no `--project`). Pass 6's walk reaches the top legitimately and stops; finalize stamps the sentinel because there is nothing to inherit. This is the "steady trickle of these is expected" branch the docstring at `[cursor_view/extraction/passes/finalize.py](cursor_view/extraction/passes/finalize.py)` lines 30-37 calls out.
+
+4. **Edge legitimately deleted.** The parent composer was deleted by the user but the `task-*` child row remains in `cursorDiskKV`, and the cache's `tool_call_parent` row was cleaned up by a previous incremental-refresh delete. Pass 5 cannot find an edge; Pass 6 has nothing to walk. The chat is a true orphan and arguably should be soft-deleted from the cache during the next refresh rather than displayed at all.
+
+### Most likely candidate before diagnostics
+
+Without inspecting the user's `cursorDiskKV` directly, the prior on these four is roughly:
+
+- Cause 1 has been observed in the wild for this exact pattern: "a deleted parent turn that still has a subagent". The orphan-filter invariant is intentional for messages and URIs (those would surface as ghost data) but the `tool_call_parent` upsert is a different kind of side effect — it is a structural edge, not user-visible content, and dropping it is what produces the symptom in the screenshot.
+- Cause 2 is plausible only if the cache has been cold-rebuilt at least once where the chain resolved correctly — i.e. the user has seen this chat with a real project before. If the chat has *always* shown `(unknown)`, Cause 2 is ruled out.
+- Cause 3 is plausible only if the user can recall spawning the chat from a workspace-less Cursor session. Given the chat's title references Bruno (and the workspace contains `mcps/user-bruno-mcp/`), the parent chat almost certainly *did* have a workspace, which makes Cause 3 unlikely.
+- Cause 4 is unlikely unless the user remembers deleting a parent chat.
+
+The recommended order of operations is therefore: (a) build the diagnostic, (b) run it against this cid, (c) implement *one* of the four targeted fixes above. The plan below does exactly that.
+
 ---
 
 ## Background: how a chat earns a project
