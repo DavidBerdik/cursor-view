@@ -22,18 +22,23 @@ function nextMermaidId() {
 // that a stale render (e.g. a theme flip that triggers a new render while
 // the old one is still in flight) cannot overwrite the fresher result.
 //
-// ``initialSvg`` and ``initialError`` are produced by prerenderMermaidDiagrams
-// in ChatDetail's fetch effect (before setLoading(false)) and cover both
-// the happy path and the error path:
+// The render effect always validates with mermaid.parse before calling
+// mermaid.render and treats a parse rejection as terminal for that pass.
+// This is the invariant that keeps theme flips idempotent: mermaid.render
+// injects a "bomb" SVG into document.body as a side effect when its
+// internal parse fails, and that DOM mutation cannot be undone from the
+// .catch handler — without the parse-first guard, every dark/light toggle
+// on a chat containing an invalid diagram would leave one more orphaned
+// bomb at the end of the page. prerenderMermaidDiagrams enforces the same
+// invariant on the pre-paint path; both pipelines are documented together
+// in mermaid-rendering.mdc.
 //
-//  - ``initialSvg`` present  → diagram is valid; start in rendered state,
-//    skip the first-mount mermaid.render call entirely.
-//  - ``initialError`` present → diagram failed mermaid.parse; start directly
-//    in the error+source state. mermaid.render is never called for this
-//    diagram, which prevents mermaid from injecting its bomb-graphic error
-//    element into document.body (a visible side effect of a failed render).
-//  - Neither present          → no pre-render data (e.g. cache miss); the
-//    useEffect runs normally on first mount.
+// ``initialSvg`` / ``initialError`` come from prerenderMermaidDiagrams in
+// ChatDetail's fetch effect (before setLoading(false)) so MermaidBlock
+// starts in the correct state on first paint. When either is set,
+// skipFirstRenderRef suppresses the redundant first-mount render; theme
+// flips still go through the effect so valid diagrams re-render with the
+// new theme.
 export default function MermaidBlock({ source, initialSvg, initialError }) {
   const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
@@ -42,9 +47,8 @@ export default function MermaidBlock({ source, initialSvg, initialError }) {
   const [renderError, setRenderError] = useState(initialError ?? null);
   // Tracks the latest render attempt so stale async results are discarded.
   const latestRef = useRef(0);
-  // Skip the first-mount render when pre-render data is available for either
-  // the success or error case. Theme-flip re-renders still go through the
-  // effect so the SVG is regenerated with the new theme.
+  // Skip the redundant first-mount render when prerenderMermaidDiagrams
+  // already produced a usable result (svg or error) for this source.
   const skipFirstRenderRef = useRef(Boolean(initialSvg) || Boolean(initialError));
 
   useEffect(() => {
@@ -64,26 +68,37 @@ export default function MermaidBlock({ source, initialSvg, initialError }) {
     });
 
     const id = ++latestRef.current;
-    const renderId = nextMermaidId();
 
-    mermaid
-      .render(renderId, source)
-      .then(({ svg: renderedSvg }) => {
-        if (id !== latestRef.current) {
-          return;
-        }
-        setSvg(renderedSvg);
-        setRenderError(null);
-      })
-      .catch((err) => {
+    (async () => {
+      try {
+        await mermaid.parse(source);
+      } catch (parseErr) {
         if (id !== latestRef.current) {
           return;
         }
         // Surface the parser message and fall back to source view so the
         // user can see what went wrong without losing the raw text.
+        setRenderError(parseErr?.message ?? String(parseErr));
+        setMode('source');
+        return;
+      }
+
+      const renderId = nextMermaidId();
+      try {
+        const { svg: renderedSvg } = await mermaid.render(renderId, source);
+        if (id !== latestRef.current) {
+          return;
+        }
+        setSvg(renderedSvg);
+        setRenderError(null);
+      } catch (err) {
+        if (id !== latestRef.current) {
+          return;
+        }
         setRenderError(err?.message ?? String(err));
         setMode('source');
-      });
+      }
+    })();
   }, [source, darkMode]);
 
   const toggleMode = () =>

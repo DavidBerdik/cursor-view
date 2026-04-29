@@ -4,34 +4,34 @@ overview: Prevent `MermaidBlock` from re-invoking `mermaid.render` on a theme fl
 todos:
   - id: review-mermaidblock
     content: Re-read `frontend/src/components/MermaidBlock.js`, `frontend/src/utils/prerenderMermaidDiagrams.js`, and `frontend/src/hooks/useMermaid.js` end-to-end before editing so the fix lands as a minimal diff against the existing patterns.
-    status: pending
+    status: completed
   - id: implement-parse-first
     content: In `frontend/src/components/MermaidBlock.js`, refactor the render `useEffect` body so it calls `mermaid.parse(source)` first inside its own try/catch (with a `latestRef` gate), short-circuits to `setRenderError` + `setMode('source')` on a parse failure, and only calls `mermaid.render` when parse succeeded. Preserve the existing `mermaid.initialize`, `latestRef` cancellation, and post-render success/error handling.
-    status: pending
+    status: completed
   - id: update-comments
     content: Update the comment block at the top of `frontend/src/components/MermaidBlock.js` and the inline comments in the render effect so they accurately describe the new invariant (parse-first prevents `mermaid.render` from injecting a bomb element on every theme flip), and drop the previous comment text that overstated what `skipFirstRenderRef` alone guarantees. Comments must follow `.cursor/rules/comments-style.mdc` (intent-only, no narration of mechanics).
-    status: pending
+    status: completed
   - id: lint-frontend
     content: Run `ReadLints` on `frontend/src/components/MermaidBlock.js` after the edit and resolve any new lint errors.
-    status: pending
+    status: completed
   - id: update-mermaid-rule
     content: Update `.cursor/rules/mermaid-rendering.mdc` so the 'Theme sync' (or a new sibling) section documents the parse-first invariant in *both* the runtime path (`MermaidBlock`'s effect) and the prerender path (`prerenderMermaidDiagrams`), citing each file path. The rule must explain why (mermaid.render injects the bomb on a failed parse) so a future contributor cannot regress the invariant by accident.
-    status: pending
+    status: completed
   - id: update-known-bugs-rule
     content: Add a one-line entry to the 'retired examples' section of `.cursor/rules/known-bugs.mdc` citing the bomb-on-theme-flip fix in `frontend/src/components/MermaidBlock.js`. Do NOT add a `TODO(bug):` marker - the bug is being fixed in this change, not deferred.
-    status: pending
+    status: completed
   - id: review-other-rules
     content: Walk every file under `.cursor/rules/` and confirm none of the others (`comments-style.mdc`, `frontend-hooks.mdc`, `react-components.mdc`, `project-layout.mdc`, plus the backend-focused ones) need updating. Document the conclusion inline in the chat reply when handing the change back.
-    status: pending
+    status: completed
   - id: verify-docs
     content: Re-read the mermaid-related lines in `README.md` (currently a single bullet near line 102) and the `MermaidBlock` paragraph in `.github/CONTRIBUTING.md` (under the `components/` section) and confirm both stay accurate. Per `.cursor/rules/project-layout.mdc`, this fix does not change layout or user-facing setup/binary/features, so no edits should be required - record that finding explicitly.
-    status: pending
+    status: completed
   - id: manual-verify
     content: "Manually verify the fix on `http://127.0.0.1:5000/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378`: toggle dark/light at least four times and confirm no new bomb SVG appears at the bottom of the page; also confirm the in-block 'Mermaid parse error: ...' caption + source fallback still render for the broken diagram, and that a valid diagram in another chat still re-renders with the new theme on each toggle."
-    status: pending
+    status: completed
   - id: final-bug-review
     content: "Final review pass: re-read `frontend/src/components/MermaidBlock.js`, `frontend/src/hooks/useMermaid.js`, `frontend/src/utils/prerenderMermaidDiagrams.js`, and `frontend/src/components/MessageMarkdown.js` looking for adjacent bugs - missing `latestRef` gates after `await` boundaries, stale singletons, leaked DOM nodes from prior render attempts, theme/source dep mismatches in the effect, race conditions between the prerender Map and prop identity in `MessageMarkdown`'s `replaceNode`, etc. Report any findings (and whether they warrant a `TODO(bug):` marker per `.cursor/rules/known-bugs.mdc`) before declaring the fix complete."
-    status: pending
+    status: completed
 isProject: false
 ---
 

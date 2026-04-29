@@ -124,9 +124,12 @@ function directly inside a React render function — only inside effects.
   `MessageMarkdown` level so the singleton is always configured before any
   block renders.
 - `MermaidBlock` (in `frontend/src/components/MermaidBlock.js`) owns the
-  per-block async `mermaid.render` call, the diagram/source toggle state,
-  the `latestRef` cancellation pattern (per
-  [`frontend-hooks.mdc`](frontend-hooks.mdc)), and the error fallback UI.
-  It also re-initializes mermaid immediately before each `mermaid.render`
-  call because React runs child effects before parent effects, so the
-  parent's `useMermaid` effect may not have run yet on the first mount.
+  per-block async `mermaid.parse` + `mermaid.render` sequence (with the
+  parse-first guard pinned in
+  [`mermaid-rendering.mdc`](mermaid-rendering.mdc) under "Parse before
+  render"), the diagram/source toggle state, the `latestRef` cancellation
+  pattern (per [`frontend-hooks.mdc`](frontend-hooks.mdc)), and the error
+  fallback UI. It also re-initializes mermaid immediately before each
+  render pass because React runs child effects before parent effects, so
+  the parent's `useMermaid` effect may not have run yet on the first
+  mount.

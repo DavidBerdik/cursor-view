@@ -13,7 +13,8 @@ pipelines consume them; never introduce a third without updating this rule:
   (unchanged). `MessageMarkdown` uses `html-react-parser` to walk that
   string and replace every `<pre><code class="language-mermaid">` subtree
   with a `<MermaidBlock>` React component. `MermaidBlock` owns the async
-  `mermaid.render` call, the diagram/source toggle, and the error fallback.
+  `mermaid.parse` + `mermaid.render` sequence (see "Parse before render"
+  below), the diagram/source toggle, and the error fallback.
   `useMermaid` (called once in `MessageMarkdown`) bootstraps the mermaid
   singleton with `startOnLoad: false` and keeps the theme in sync with
   `ThemeModeContext`.
@@ -43,11 +44,44 @@ and [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc).
 - The mermaid theme must never be hard-coded; it must always be derived from
   the same `theme_mode` / `darkMode` source that drives the surrounding UI.
 
+# Parse before render
+
+Both rendering pipelines that call `mermaid.render` must call
+`mermaid.parse` on the same source first and skip `mermaid.render`
+entirely when parse rejects. `mermaid.render` injects a "bomb" SVG
+element directly into `document.body` as a side effect when its internal
+parse fails, and that DOM mutation cannot be undone from the `.catch`
+handler. Without the guard, every dark/light toggle on a chat that
+contains an invalid diagram re-runs the failing render and leaves one
+more orphaned bomb at the end of the page (the original symptom that
+motivated the invariant — see the entry in
+[`known-bugs.mdc`](known-bugs.mdc)). `mermaid.parse` is DOM-free; it
+throws on invalid syntax without touching `document.body`, which is what
+makes parse-first safe to run on every theme flip.
+
+The two parse-first sites:
+
+- `frontend/src/components/MermaidBlock.js` — the per-block render
+  effect awaits `mermaid.parse(source)` first, surfaces the parse error
+  through the same source-fallback UI as a render-time error, and only
+  allocates a render id and calls `mermaid.render` when parse succeeded.
+  Theme flips re-run the effect, so the guard fires on every toggle,
+  not just first mount.
+- `frontend/src/utils/prerenderMermaidDiagrams.js` — the pre-paint pass
+  awaits `mermaid.parse(source)` before `mermaid.render` for the same
+  reason; this keeps the bomb out of `document.body` while the chat is
+  still loading, before any `MermaidBlock` mounts.
+
+A future third pipeline (per "Two rendering pipelines, one source
+format") must adopt the same parse-first sequence.
+
 # Graceful source fallback on parse error
 
-When `mermaid.render` rejects, `MermaidBlock` surfaces the error message
-via a `<Typography color="error">` caption and forces `mode = 'source'` so
-the raw fence text is always visible. This is deliberate graceful
+When `mermaid.parse` rejects (the dominant case, gated by the
+parse-before-render section above) or `mermaid.render` rejects (the
+post-parse backstop), `MermaidBlock` surfaces the error message via a
+`<Typography color="error">` caption and forces `mode = 'source'` so the
+raw fence text is always visible. This is deliberate graceful
 degradation — not a [`known-bugs.mdc`](known-bugs.mdc) `TODO(bug):`.
 Do not silently swallow parse errors or render a blank box.
 

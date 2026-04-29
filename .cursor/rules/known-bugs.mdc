@@ -17,7 +17,7 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` marker is in the tree at the moment. Three
+No live `# TODO(bug):` marker is in the tree at the moment. Four
 retired examples now live in git history:
 
 - the swallow-and-stub exception handler in
@@ -32,7 +32,22 @@ retired examples now live in git history:
   metadata until something else dirtied them; closed by folding
   `set(dirty.modified_cids) - set(primary_formatted)` into
   `walk_starts`, regression-pinned by
-  `tests/test_chat_index_propagation_gating.py::test_soft_deleted_parent_propagates_to_subagent`).
+  `tests/test_chat_index_propagation_gating.py::test_soft_deleted_parent_propagates_to_subagent`),
+- the bomb-graphic accumulation on theme flip in
+  `frontend/src/components/MermaidBlock.js`'s render effect (an
+  invalid mermaid diagram left one orphaned bomb SVG at the end of
+  the page on every dark/light toggle because the effect re-ran
+  `mermaid.render(source)` on each toggle and `mermaid.render`
+  injects its bomb element into `document.body` as a side effect of
+  a failed internal parse, a DOM mutation the `.catch` handler
+  cannot undo; closed by awaiting `mermaid.parse(source)` first in
+  the effect and skipping `mermaid.render` entirely on parse
+  rejection, mirroring the parse-first sequence already in
+  `frontend/src/utils/prerenderMermaidDiagrams.js` and pinned in
+  [`mermaid-rendering.mdc`](mermaid-rendering.mdc) under "Parse
+  before render"; not regression-pinned because the frontend has no
+  JS test harness, so the invariant is enforced by the
+  cross-referenced rule and by manual verification only).
 
 When the next deferred bug surfaces, add the marker rather than
 silently rewriting the code path, then cite that file from this
