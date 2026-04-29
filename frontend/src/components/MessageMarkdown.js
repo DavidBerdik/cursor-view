@@ -62,6 +62,7 @@ export default function MessageMarkdown({ html, colors, role, mermaidSvgs }) {
         source={source}
         initialSvg={prerender?.svg ?? undefined}
         initialError={prerender?.error ?? undefined}
+        initialDarkMode={prerender?.darkMode}
       />
     );
   }

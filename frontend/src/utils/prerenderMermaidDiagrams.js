@@ -2,10 +2,28 @@ import mermaid from 'mermaid';
 
 // Pre-renders all mermaid code blocks found in a pre-rendered HTML string.
 //
-// Returns a Map of source-text → { svg: string|null, error: string|null }.
-// Both valid and invalid diagrams get entries so MermaidBlock can start in
-// the correct state (rendered diagram or error+source) on first paint,
-// without needing to call mermaid.render itself.
+// Returns a Map of source-text → { svg, error, darkMode }, where each
+// entry has the shape:
+//
+//   - svg: string | null      — rendered SVG markup when parse + render
+//                                both succeeded; null otherwise.
+//   - error: string | null    — parser/renderer error message when either
+//                                step failed; null otherwise.
+//   - darkMode: boolean       — the darkMode value this entry was
+//                                rendered against, mirrored from the
+//                                argument so consumers can detect a
+//                                theme shift between prerender and mount.
+//
+// MermaidBlock uses the `darkMode` field to decide whether the cached
+// SVG is still authoritative for the current theme — if the user toggled
+// dark/light mode during ChatDetail's loading window, the entry's
+// darkMode no longer matches React's current darkMode and MermaidBlock's
+// first-mount render must run so the diagram is re-themed; see
+// mermaid-rendering.mdc.
+//
+// Both valid and invalid diagrams get entries so MermaidBlock can start
+// in the correct state (rendered diagram or error+source) on first
+// paint, without needing to call mermaid.render itself.
 //
 // Critically, mermaid.render is never called for a diagram that fails
 // mermaid.parse. mermaid.render injects a bomb-graphic element into
@@ -54,6 +72,7 @@ export async function prerenderMermaidDiagrams(html, darkMode) {
         resultMap.set(source, {
           svg: null,
           error: parseErr?.message ?? String(parseErr),
+          darkMode,
         });
         return;
       }
@@ -63,11 +82,12 @@ export async function prerenderMermaidDiagrams(html, darkMode) {
       const renderId = `mermaid-prerender-${Date.now()}-${counter}`;
       try {
         const { svg } = await mermaid.render(renderId, source);
-        resultMap.set(source, { svg, error: null });
+        resultMap.set(source, { svg, error: null, darkMode });
       } catch (renderErr) {
         resultMap.set(source, {
           svg: null,
           error: renderErr?.message ?? String(renderErr),
+          darkMode,
         });
       }
     }),

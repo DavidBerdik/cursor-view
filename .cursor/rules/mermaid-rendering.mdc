@@ -75,6 +75,45 @@ The two parse-first sites:
 A future third pipeline (per "Two rendering pipelines, one source
 format") must adopt the same parse-first sequence.
 
+# Theme-tagged prerender entries
+
+`prerenderMermaidDiagrams` returns a Map whose values have the shape
+`{ svg, error, darkMode }`. The third field carries the `darkMode`
+value the entry was rendered against and exists so `MermaidBlock` can
+detect a theme shift between prerender and mount. `MessageMarkdown`'s
+`replaceNode` interceptor forwards each entry's `darkMode` to its
+matching `MermaidBlock` as the `initialDarkMode` prop alongside
+`initialSvg` and `initialError`; do not strip this field, and do not
+introduce a third Map shape.
+
+`MermaidBlock`'s `skipFirstRenderRef` may suppress the first-mount
+render only when the prerender result is still authoritative for the
+current theme:
+
+- An `initialError` entry qualifies unconditionally: the parse error
+  message is theme-independent and the source-fallback UI is the same
+  in both themes.
+- An `initialSvg` entry qualifies only when `initialDarkMode === darkMode`
+  in `MermaidBlock`'s render context. A mismatch means the user toggled
+  theme during `ChatDetail`'s loading window, the cached SVG was themed
+  against the prior value, and the per-block effect must run on first
+  mount so the diagram is re-themed.
+- The no-prerender-data case (`initialSvg`, `initialError`, and
+  `initialDarkMode` all `undefined`) cleanly degrades to "do not skip"
+  because the boolean expression `Boolean(initialError) ||
+  (Boolean(initialSvg) && initialDarkMode === darkMode)` is `false`.
+
+This rule exists to close the chat-detail prerender-vs-toggle race
+documented in [`known-bugs.mdc`](known-bugs.mdc): without the theme
+match check, `skipFirstRenderRef` would suppress the very render that
+would correct a theme-mismatched cached SVG, leaving valid diagrams
+stuck in the prerender's theme until something else re-triggered the
+per-block effect. The fix lives in the consumer (`MermaidBlock`)
+rather than in the producer (`ChatDetail`'s fetch effect) because
+adding `darkMode` to the fetch effect deps would refetch the chat over
+the network on every theme toggle, which is a worse UX trade than the
+sub-frame async-render window the consumer-side fix produces.
+
 # Graceful source fallback on parse error
 
 When `mermaid.parse` rejects (the dominant case, gated by the

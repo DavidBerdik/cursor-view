@@ -33,13 +33,21 @@ function nextMermaidId() {
 // invariant on the pre-paint path; both pipelines are documented together
 // in mermaid-rendering.mdc.
 //
-// ``initialSvg`` / ``initialError`` come from prerenderMermaidDiagrams in
-// ChatDetail's fetch effect (before setLoading(false)) so MermaidBlock
-// starts in the correct state on first paint. When either is set,
-// skipFirstRenderRef suppresses the redundant first-mount render; theme
-// flips still go through the effect so valid diagrams re-render with the
-// new theme.
-export default function MermaidBlock({ source, initialSvg, initialError }) {
+// ``initialSvg`` / ``initialError`` / ``initialDarkMode`` come from
+// prerenderMermaidDiagrams in ChatDetail's fetch effect (before
+// setLoading(false)) so MermaidBlock starts in the correct state on
+// first paint. skipFirstRenderRef suppresses the first-mount render
+// only when the prerender result is still authoritative: errors
+// qualify unconditionally (the message string is theme-independent),
+// but a cached SVG qualifies only when the prerender's darkMode
+// matches the current darkMode — a mismatch means the user toggled
+// theme during ChatDetail's loading window, the cached SVG was themed
+// against the prior value, and the per-block effect must run on first
+// mount so the diagram is re-themed. Theme flips after first mount
+// always go through the effect, so valid diagrams re-render with the
+// new theme. See "Theme-tagged prerender entries" in
+// mermaid-rendering.mdc.
+export default function MermaidBlock({ source, initialSvg, initialError, initialDarkMode }) {
   const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
   const [mode, setMode] = useState(initialError ? 'source' : 'diagram');
@@ -48,8 +56,15 @@ export default function MermaidBlock({ source, initialSvg, initialError }) {
   // Tracks the latest render attempt so stale async results are discarded.
   const latestRef = useRef(0);
   // Skip the redundant first-mount render when prerenderMermaidDiagrams
-  // already produced a usable result (svg or error) for this source.
-  const skipFirstRenderRef = useRef(Boolean(initialSvg) || Boolean(initialError));
+  // already produced a usable result for this source. Errors are
+  // theme-independent so they always qualify; cached SVGs only qualify
+  // when their prerender-time theme still matches the current darkMode,
+  // otherwise the user toggled theme during ChatDetail's loading window
+  // and the cached SVG is stale (see "Theme-tagged prerender entries"
+  // in mermaid-rendering.mdc).
+  const skipFirstRenderRef = useRef(
+    Boolean(initialError) || (Boolean(initialSvg) && initialDarkMode === darkMode),
+  );
 
   useEffect(() => {
     if (!source) {

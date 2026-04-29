@@ -17,7 +17,7 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` marker is in the tree at the moment. Four
+No live `# TODO(bug):` marker is in the tree at the moment. Five
 retired examples now live in git history:
 
 - the swallow-and-stub exception handler in
@@ -47,7 +47,29 @@ retired examples now live in git history:
   [`mermaid-rendering.mdc`](mermaid-rendering.mdc) under "Parse
   before render"; not regression-pinned because the frontend has no
   JS test harness, so the invariant is enforced by the
-  cross-referenced rule and by manual verification only).
+  cross-referenced rule and by manual verification only),
+- the prerender theme-staleness on theme-toggle-during-load in
+  `frontend/src/components/MermaidBlock.js`'s `skipFirstRenderRef`
+  initializer (a user toggling dark/light mode while a chat-detail
+  page was still loading saw valid mermaid diagrams render with the
+  *previous* theme on first paint and stay that way until something
+  else re-triggered the per-block effect, because
+  `cursor_view`-style React deps on `ChatDetail`'s fetch effect
+  were `[sessionId]` only and the prerender closed over a stale
+  `darkMode`; closed by tagging each
+  `frontend/src/utils/prerenderMermaidDiagrams.js` Map entry with
+  the `darkMode` it was rendered against, forwarding that value
+  through `frontend/src/components/MessageMarkdown.js`'s
+  `replaceNode` interceptor as the new `initialDarkMode` prop, and
+  gating `skipFirstRenderRef` on
+  `Boolean(initialError) || (Boolean(initialSvg) && initialDarkMode
+  === darkMode)` so a theme mismatch on first mount falls through
+  to the per-block parse-then-render pass instead of suppressing
+  it; pinned in [`mermaid-rendering.mdc`](mermaid-rendering.mdc)
+  under "Theme-tagged prerender entries"; not regression-pinned
+  because the frontend has no JS test harness, so the invariant is
+  enforced by the cross-referenced rule and by manual verification
+  only).
 
 When the next deferred bug surfaces, add the marker rather than
 silently rewriting the code path, then cite that file from this

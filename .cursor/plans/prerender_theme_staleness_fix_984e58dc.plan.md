@@ -4,40 +4,40 @@ overview: Close the chat-detail prerender's stale-`darkMode` race so a theme tog
 todos:
   - id: review-fix-sites
     content: "Re-read the four files in scope end-to-end before editing: `frontend/src/utils/prerenderMermaidDiagrams.js`, `frontend/src/components/MessageMarkdown.js`, `frontend/src/components/MermaidBlock.js`, and `frontend/src/components/chat-detail/ChatDetail.js`. Confirm `MessageBubble` only plumbs the `mermaidSvgs` prop unchanged so the Map shape change is transparent there."
-    status: pending
+    status: completed
   - id: extend-prerender-entries
     content: In `frontend/src/utils/prerenderMermaidDiagrams.js`, extend every Map entry produced by the parse and render branches from `{ svg, error }` to `{ svg, error, darkMode }`, sourcing `darkMode` from the function argument. Update the top-of-file comment to document the new `darkMode` field, explain that it lets consumers detect a theme shift between prerender and mount, and preserve the existing parse-first explanation.
-    status: pending
+    status: completed
   - id: forward-initialdarkmode
     content: In `frontend/src/components/MessageMarkdown.js`, extend the `replaceNode` interceptor (lines 48-67) so the returned `<MermaidBlock>` JSX includes `initialDarkMode={prerender?.darkMode}` alongside the existing `initialSvg` and `initialError` props.
-    status: pending
+    status: completed
   - id: gate-skip-on-theme-match
     content: In `frontend/src/components/MermaidBlock.js`, destructure `initialDarkMode` from props and change the `skipFirstRenderRef` initializer to `useRef(Boolean(initialError) || (Boolean(initialSvg) && initialDarkMode === darkMode))`. Verify the no-prerender case (`initialDarkMode === undefined`) cleanly degrades to 'don't skip' because `undefined === darkMode` is false for both boolean values.
-    status: pending
+    status: completed
   - id: update-mermaidblock-comments
     content: Update the top-of-file comment block in `frontend/src/components/MermaidBlock.js` (the `initialSvg` / `initialError` paragraph) and the inline comment above `skipFirstRenderRef` so they describe the new theme-match condition. Per `.cursor/rules/comments-style.mdc`, the comments must explain *intent* (the invariant being enforced and the chat-detail race that motivates it) rather than narrate the boolean expression. Cross-reference the new section in `mermaid-rendering.mdc`.
-    status: pending
+    status: completed
   - id: lint-touched-files
     content: Run `ReadLints` on the three modified files (`prerenderMermaidDiagrams.js`, `MessageMarkdown.js`, `MermaidBlock.js`) and resolve any new lint errors.
-    status: pending
+    status: completed
   - id: update-mermaid-rule
     content: Update `.cursor/rules/mermaid-rendering.mdc` to document the theme-tagged prerender Map entry shape and the `MermaidBlock` skip condition. Decide whether to extend the existing 'Parse before render' section or add a new sibling section ('Theme-tagged prerender entries'), whichever reads more cleanly. The text must (a) specify the new `{ svg, error, darkMode }` entry shape, (b) state the skip rule (errors always skip, SVGs only skip on theme match, no-prerender degrades to 'don't skip'), and (c) cite the chat-detail prerender-vs-toggle race as the motivating invariant with a forward-link to the matching `known-bugs.mdc` entry.
-    status: pending
+    status: completed
   - id: update-known-bugs-rule
     content: "Add a fifth retired-example bullet to `.cursor/rules/known-bugs.mdc` citing this fix in the same shape as the four existing entries: lead phrase + `frontend/src/components/MermaidBlock.js` (and forward-references to `prerenderMermaidDiagrams.js` + `MessageMarkdown.js`) + parenthetical with symptom, mechanism, fix, and the explicit no-regression-test caveat. Bump the count line from 'Four retired examples' to 'Five retired examples'. Do NOT add a `TODO(bug):` marker — the bug is being fixed in this change, not deferred."
-    status: pending
+    status: completed
   - id: review-other-rules
     content: Walk every file under `.cursor/rules/` and confirm none of the others (`comments-style.mdc`, `frontend-hooks.mdc`, `react-components.mdc`, `project-layout.mdc`, plus the backend-focused ones) need updating. The expectation is that no other rule edits are required because the canonical-example claim that `MermaidBlock` owns the per-block parse-then-render sequence and the `latestRef` cancellation pattern stays accurate; if the walk finds a contradiction, fix it in the same change. Document the conclusion inline in the chat reply when handing the change back.
-    status: pending
+    status: completed
   - id: verify-docs
     content: Re-read the mermaid-related lines in `README.md` (single bullet near line 102) and the `MermaidBlock` paragraph in `.github/CONTRIBUTING.md` (lines 376-378). Confirm both stay accurate. Per `.cursor/rules/project-layout.mdc`, this fix does not change layout or user-facing setup/binary/features, so no edits should be required — record that finding explicitly.
-    status: pending
+    status: completed
   - id: manual-verify
     content: "Manual verification on a running dev server: (1) open a chat with a valid mermaid diagram and toggle theme before the loading spinner disappears, confirm the first paint shows the diagram in the new theme allowing for a sub-frame async-render window; (2) repeat with the bombs-on-toggle reproducer chat (`/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378`) to confirm no regression on the previous fix and that the error caption + source fallback still display correctly with no bomb-SVG accumulation; (3) open a chat without toggling during load and confirm no flash on first paint (common-case smoke test)."
-    status: pending
+    status: completed
   - id: final-bug-review
     content: "Final review pass: re-read the three modified files plus `frontend/src/components/chat-detail/ChatDetail.js`, `frontend/src/components/chat-detail/MessageBubble.js`, and `frontend/src/hooks/useMermaid.js` looking for adjacent bugs — missing `latestRef` gates, race conditions between the prerender Map and prop identity, theme/source dep mismatches that the new `initialDarkMode` plumbing might have introduced, leaked DOM nodes from the brief sub-frame async-render window when themes mismatch, etc. Report any findings (and whether they warrant a `TODO(bug):` marker per `.cursor/rules/known-bugs.mdc`) before declaring the fix complete."
-    status: pending
+    status: completed
 isProject: false
 ---
 
