@@ -1,10 +1,10 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
-import { alpha, Box, IconButton, Tooltip, Typography } from '@mui/material';
-import AccountTreeIcon from '@mui/icons-material/AccountTree';
-import CodeIcon from '@mui/icons-material/Code';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { alpha, Box, Typography } from '@mui/material';
 import mermaid from 'mermaid';
 import { ColorContext } from '../contexts/ColorContext';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
+import MermaidLightboxModal from './MermaidLightboxModal';
+import MermaidToolbar from './MermaidToolbar';
 
 // Counter used to generate unique IDs for mermaid.render. Mermaid
 // requires each call to use a distinct ID; an incrementing module-level
@@ -121,6 +121,36 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
 
   const showDiagram = mode === 'diagram' && svg !== null && renderError === null;
 
+  // The lightbox modal opens on click of the diagram body or the
+  // dedicated expand icon. State lives on the inline block so each
+  // diagram has its own modal instance and the SVG flows through props
+  // without an extra fetch or re-render. Stable callbacks per
+  // `frontend-hooks.mdc` "Stable callback references" -- the modal
+  // does not register them in effects today, but a future regression
+  // that adds one (e.g. a keydown listener) must not silently re-bind
+  // per parent render.
+  const [modalOpen, setModalOpen] = useState(false);
+  const handleOpenModal = useCallback(() => setModalOpen(true), []);
+  const handleCloseModal = useCallback(() => setModalOpen(false), []);
+
+  // Auto-close the modal if a render pass flips this block into the
+  // error state while the modal is still open. The toolbar's expand
+  // affordance disappears the instant `renderError` becomes non-null
+  // (it gates on `showDiagram`), so without this effect a stale
+  // `modalOpen=true` from before the failure would surface the
+  // modal's defensive parse-error fallback branch instead of just
+  // closing -- jarring UX on a theme flip that happens to expose a
+  // late-detected parse error in a previously-rendering diagram. The
+  // dependency is the boolean transition, not `renderError` itself,
+  // so changing the message text of an already-failed parse does not
+  // re-fire close().
+  const isErrored = renderError !== null;
+  useEffect(() => {
+    if (isErrored) {
+      setModalOpen(false);
+    }
+  }, [isErrored]);
+
   return (
     <Box
       sx={{
@@ -133,28 +163,12 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
       }}
     >
       {renderError === null && (
-        <Tooltip title={mode === 'diagram' ? 'View source' : 'View diagram'}>
-          <IconButton
-            aria-label={mode === 'diagram' ? 'View diagram source' : 'View rendered diagram'}
-            aria-pressed={mode === 'source'}
-            size="small"
-            onClick={toggleMode}
-            sx={{
-              position: 'absolute',
-              top: 4,
-              right: 4,
-              zIndex: 1,
-              color: colors.text.secondary,
-              '&:hover': { color: colors.highlightColor },
-            }}
-          >
-            {mode === 'diagram' ? (
-              <CodeIcon fontSize="small" />
-            ) : (
-              <AccountTreeIcon fontSize="small" />
-            )}
-          </IconButton>
-        </Tooltip>
+        <MermaidToolbar
+          mode={mode}
+          showExpand={showDiagram}
+          onToggleMode={toggleMode}
+          onOpenModal={handleOpenModal}
+        />
       )}
 
       {renderError !== null && (
@@ -168,16 +182,39 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
       )}
 
       {showDiagram ? (
+        // Diagram body is itself the click surface for the modal
+        // (paired with the expand icon in the toolbar above for
+        // discoverability/accessibility). Rendered as `<button>` for
+        // semantics + keyboard activation; default chrome is reset
+        // (`border: 'none'`, transparent backgroundColor below the
+        // theme tint, font/color inherited) so the visual is identical
+        // to the prior `<Box>`. Mermaid's `securityLevel: 'strict'`
+        // disables in-SVG click handlers, so wrapping the diagram in a
+        // button cannot suppress library interactivity. `width: 100%`
+        // and `textAlign: 'inherit'` undo the default `<button>`
+        // shrink-to-fit + center-align that would otherwise reflow the
+        // diagram. `userSelect: 'text'` overrides the user-agent
+        // default that Safari (and historically other browsers) apply
+        // to form elements, so labels inside the rendered SVG remain
+        // copy-selectable; drag-to-select does not trigger the click
+        // handler because click only fires on a movement-free mouseup.
         <Box
-          role="img"
-          aria-label="Mermaid diagram"
+          component="button"
+          type="button"
+          onClick={handleOpenModal}
+          aria-label="Open mermaid diagram in modal"
           dangerouslySetInnerHTML={{ __html: svg }}
           sx={{
             display: 'flex',
             justifyContent: 'center',
             p: 2,
-            // Mermaid inlines its own colors; set a neutral background
-            // so the SVG is legible in both light and dark themes.
+            width: '100%',
+            border: 'none',
+            cursor: 'pointer',
+            font: 'inherit',
+            color: 'inherit',
+            textAlign: 'inherit',
+            userSelect: 'text',
             backgroundColor: darkMode
               ? alpha(colors.highlightColor, 0.04)
               : alpha(colors.highlightColor, 0.02),
@@ -200,6 +237,14 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
           <code>{source}</code>
         </Box>
       )}
+
+      <MermaidLightboxModal
+        open={modalOpen}
+        onClose={handleCloseModal}
+        source={source}
+        svg={svg}
+        renderError={renderError}
+      />
     </Box>
   );
 }

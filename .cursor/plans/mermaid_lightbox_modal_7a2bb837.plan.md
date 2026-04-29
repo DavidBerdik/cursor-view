@@ -4,34 +4,34 @@ overview: Add a full-size modal pop-up for embedded mermaid diagrams in the chat
 todos:
   - id: create_modal
     content: "Create frontend/src/components/MermaidLightboxModal.js mirroring ImageLightboxModal: MUI Dialog with 95vw/95vh PaperProps, close-only toolbar, dangerouslySetInnerHTML body, theme-token styling, parse-error fallback (Typography color=error + <pre><code>{source}</code></pre>) when svg null or renderError set, ARIA labels, no keydown effect (single diagram)."
-    status: pending
+    status: completed
   - id: wire_block
     content: "Modify frontend/src/components/MermaidBlock.js: add modalOpen state, useCallback open/close handlers, an expand IconButton (OpenInFullIcon) next to the existing diagram/source toggle gated on mode==='diagram' && svg && !renderError, make the diagram <Box> a clickable <button> reset to look identical, render <MermaidLightboxModal> at the bottom passing source/svg/renderError. Preserve the existing latestRef pattern and the skipFirstRenderRef logic untouched."
-    status: pending
+    status: completed
   - id: verify_theme_flip
     content: Manually flip the theme while the modal is open and confirm the inline + modal SVG both update from the parent's useEffect([source,darkMode]). If they do not, document the gap in a comment near MermaidBlock's effect rather than adding a second initialize/render path inside the modal.
-    status: pending
+    status: completed
   - id: update_mermaid_rule
     content: "Update .cursor/rules/mermaid-rendering.mdc: extend Chat view bullet with the 'two presentation surfaces, one mermaid.render per block' clause; extend Graceful source fallback to mention the modal mirrors the fallback; add MermaidLightboxModal.js to the canonical examples list."
-    status: pending
+    status: completed
   - id: update_react_rule
     content: Update .cursor/rules/react-components.mdc 'Third-party imperative-DOM libraries' section to note that MermaidLightboxModal is allowed to display the SVG but must not call mermaid.render / parse / initialize itself.
-    status: pending
+    status: completed
   - id: review_other_rules
     content: Re-read project-layout.mdc, comments-style.mdc, frontend-hooks.mdc, image-attachments.mdc, known-bugs.mdc, python-standards.mdc, sqlite-cursor-db.mdc, chat-index-refresh.mdc against the diff. Confirm each rule is satisfied (file placement, comment style, callback stability, no Python touches, no cache/FTS touches) and that no further rule drift remains. If any rule needs a clarification this change exposes, edit it now per comments-style.mdc 'Rule drift'.
-    status: pending
+    status: completed
   - id: update_readme
     content: Update README.md Features section line 102 to mention the chat-view modal alongside the existing inline rendering.
-    status: pending
+    status: completed
   - id: update_contributing
     content: Update .github/CONTRIBUTING.md components/ section to list MermaidLightboxModal.js next to MermaidBlock.js with a one-sentence description matching the ImageLightboxModal entry style.
-    status: pending
+    status: completed
   - id: build_and_test
     content: Run `npm run build` inside frontend/ to confirm the bundle still builds; run `python -m unittest discover -s tests` to confirm the existing Python suite stays green (no Python files were touched, but the rule says it must stay green).
-    status: pending
+    status: completed
   - id: bug_pass
     content: "Final bug-hunt pass over the touched code: (1) confirm the new <button> wrapper around the diagram does not trap text selection inside the SVG (use cursor:pointer but allow user-select), (2) confirm clicking inside an interactive mermaid SVG element does not double-fire onOpenModal (stopPropagation if needed), (3) confirm renderError state transitions (parse error -> mode='source') hide the expand button and never leave a stale modalOpen=true on the next theme flip (close modal in the same effect that flips to error state if so), (4) confirm a parent re-render does not drop modalOpen unexpectedly, (5) confirm the modal Box's dangerouslySetInnerHTML cannot be fed an unsanitized source (it only ever receives SVG produced by mermaid.render with securityLevel:'strict', which is the same XSS boundary the inline already trusts), (6) walk surrounding code for unrelated suspicious paths and add a # TODO(bug): marker per known-bugs.mdc rather than silently rewriting anything that looks broken but isn't in scope."
-    status: pending
+    status: completed
 isProject: false
 ---
 

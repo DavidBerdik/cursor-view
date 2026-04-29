@@ -379,9 +379,20 @@ raises `ProgrammingError`).
   pre-renders chat messages to HTML.
 - `components/`
   - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js`,
-    `MermaidBlock.js` &mdash; global UI. `MermaidBlock` renders a
-    mermaid fenced code block as a live diagram (default) or raw source,
-    with a per-block toggle and a parse-error fallback.
+    `MermaidBlock.js`, `MermaidToolbar.js`, `MermaidLightboxModal.js`
+    &mdash; global UI. `MermaidBlock` renders a mermaid fenced code
+    block as a live diagram (default) or raw source, with a per-block
+    toggle and a parse-error fallback. Its sibling `MermaidToolbar`
+    holds the absolute-positioned diagram/source toggle and
+    expand-into-modal icon (extracted to keep `MermaidBlock` under the
+    250-line decomposition cap from
+    [`react-components.mdc`](../.cursor/rules/react-components.mdc)).
+    `MermaidLightboxModal` is the full-size modal opened on click of
+    the diagram body or the expand icon: it consumes the SVG already
+    in `MermaidBlock`'s state via props (no second `mermaid.render`
+    call, per [`mermaid-rendering.mdc`](../.cursor/rules/mermaid-rendering.mdc)),
+    fits the diagram to a viewport-sized close-only Paper, and
+    mirrors the inline parse-error fallback for the defensive case.
   - `chat-list/` &mdash; the list page split into `ChatList`,
     `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
   - `chat-detail/` &mdash; the detail page split into `ChatDetail`,
@@ -390,7 +401,10 @@ raises `ProgrammingError`).
     `GET /api/chat/:id/image/:uuid`), and its sibling
     `ImageLightboxModal` (the full-size modal the gallery opens on
     thumbnail click, with prev/next chevrons, counter, thumbnail
-    strip, and keyboard navigation).
+    strip, and keyboard navigation). The mermaid `MermaidLightboxModal`
+    above follows the same lightbox pattern (viewport-fixed Paper,
+    close-only toolbar, theme-token styling) for diagram embeds inside
+    these bubbles.
   - `export/` &mdash; shared `ExportFormatDialog` and
     `ExportWarningDialog` used by both pages.
 

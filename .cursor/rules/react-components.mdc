@@ -133,3 +133,18 @@ function directly inside a React render function — only inside effects.
   render pass because React runs child effects before parent effects, so
   the parent's `useMermaid` effect may not have run yet on the first
   mount.
+
+A sibling component is allowed to **display** the SVG produced by the
+owning component, but it must not call the library's imperative API
+itself. The canonical example is
+`frontend/src/components/MermaidLightboxModal.js`: it consumes the
+`svg` already in `MermaidBlock`'s state via props and renders it
+through `dangerouslySetInnerHTML`, but it never calls
+`mermaid.render`, `mermaid.parse`, or `mermaid.initialize`. This keeps
+the "library calls only inside effects of the owning component" rule
+intact even when the same SVG is consumed by multiple presentation
+surfaces, and it keeps the bomb-graphic risk closed by the parse-first
+guard in [`mermaid-rendering.mdc`](mermaid-rendering.mdc) from being
+re-opened by a duplicate render call. The same pattern applies to any
+future modal / popover / off-screen surface for prism, monaco, or
+similar imperative-DOM libraries.

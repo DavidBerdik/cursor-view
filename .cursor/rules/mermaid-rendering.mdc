@@ -19,6 +19,19 @@ pipelines consume them; never introduce a third without updating this rule:
   singleton with `startOnLoad: false` and keeps the theme in sync with
   `ThemeModeContext`.
 
+  The chat view has two **presentation surfaces** fed by a single
+  `mermaid.render` per block: the inline `<MermaidBlock>` and an
+  optional `<MermaidLightboxModal>` opened on click of the diagram body
+  or the expand icon. The modal consumes the SVG already in
+  `MermaidBlock`'s state via props and **never** calls `mermaid.render`,
+  `mermaid.parse`, or `mermaid.initialize` itself. Theme flips
+  propagate to the modal automatically: `MermaidBlock`'s
+  `useEffect([source, darkMode])` regenerates the SVG, the new value
+  flows to the modal as a prop, and React reconciles
+  `dangerouslySetInnerHTML`. Adding a second `mermaid.render` call for
+  the modal would be a third pipeline (forbidden) and would re-open the
+  bomb-graphic risk that "Parse before render" closes.
+
 - **HTML export** — `cursor_view/export/mermaid.py::transform_mermaid_fences_to_html`
   rewrites mermaid fences to `<div class="mermaid">` blocks before
   Python-Markdown sees them. `load_vendored_mermaid_js` + `build_mermaid_init_script`
@@ -123,6 +136,14 @@ post-parse backstop), `MermaidBlock` surfaces the error message via a
 raw fence text is always visible. This is deliberate graceful
 degradation — not a [`known-bugs.mdc`](known-bugs.mdc) `TODO(bug):`.
 Do not silently swallow parse errors or render a blank box.
+
+`MermaidLightboxModal` mirrors the same fallback shape (Typography
+error caption above a `<pre><code>` of the raw source) so the invariant
+holds across both chat-view presentation surfaces. In normal use
+`MermaidBlock` hides the expand affordance whenever `renderError` is
+set, so the modal's fallback branch is defensive — it covers a future
+caller that opens the modal without first checking the success-only
+gate, and prevents the modal from ever painting a blank Paper.
 
 # Escape before inlining (HTML export)
 
