@@ -1,6 +1,6 @@
 """Behavioral tests for the apply-time gated subagent dirty-set propagation.
 
-Pins the four invariants the propagation gate in
+Pins the five invariants the propagation gate in
 ``cursor_view/cache/delta/propagation.py`` was introduced to enforce:
 
 1. **Bubble append on a parent without project shift does NOT
@@ -32,6 +32,21 @@ Pins the four invariants the propagation gate in
    trigger that distinguishes the new gating from the
    pre-implementation walk's "every descendant of every dirty
    parent" semantic.
+
+5. **Soft-deleted parent propagates.** A directly-modified parent
+   whose primary extraction yields no chat (every bubble pruned by
+   the ``composerData.fullConversationHeadersOnly`` orphan invariant)
+   has its ``chat_summary`` and ``composer_state`` cleared by
+   ``_apply_chat_writes`` but never re-inserted, so descendants face
+   the same vanished-anchor situation a hard deletion produces. The
+   only difference is bookkeeping (``modified_cids`` rather than
+   ``deleted_cids``); the propagation walk must treat the two
+   identically. Witness: ``dirty.subagent_propagated_cids`` includes
+   the descendant and the descendant's ``chat_message`` rowids
+   change (the secondary scoped extraction ran a fresh
+   delete-then-insert), even when the post-extraction inherited
+   project happens to land on the same workspace because some other
+   source row (e.g. the parent's pane-view key) still resolves it.
 
 Synthetic-Cursor-DB harness mirrors the shape used by
 ``tests/test_chat_index_incremental.py`` per
@@ -128,14 +143,30 @@ def _bubble(text: str, role_type: int = 1, tool_call_id: str | None = None) -> d
     return v
 
 
-def _composer(name: str) -> dict:
-    """Build a composerData value; leaves ``subagentInfo`` null to mirror ``task_v2`` spawns."""
-    return {
+def _composer(
+    name: str, headers: list[tuple[str, int]] | None = None
+) -> dict:
+    """Build a composerData value; leaves ``subagentInfo`` null to mirror ``task_v2`` spawns.
+
+    ``headers`` populates ``fullConversationHeadersOnly`` as the list
+    of ``{"bubbleId": <bid>, "type": <role_type>}`` entries Cursor
+    treats as the canonical transcript. Tests that exercise the
+    orphan-filter / soft-deletion path supply this explicitly so they
+    can pin the parent's bubbles in or out of the allowlist; tests
+    that don't care leave it unset and the legacy-fallback encounter-
+    order path applies.
+    """
+    v: dict = {
         "name": name,
         "createdAt": 1_700_000_000_000,
         "lastUpdatedAt": 1_700_000_001_000,
         "subagentInfo": None,
     }
+    if headers is not None:
+        v["fullConversationHeadersOnly"] = [
+            {"bubbleId": bid, "type": role_type} for bid, role_type in headers
+        ]
+    return v
 
 
 class PropagationGatingTest(unittest.TestCase):
@@ -491,6 +522,138 @@ class PropagationGatingTest(unittest.TestCase):
             self._summary(child_b)[2],
             self.ws_id,
             "child_b should now inherit the parent's workspace via the new edge",
+        )
+
+    # ---------------------------------------------------------------
+    # Case 5: soft-deleted parent propagates (orphan-filtered to no chat)
+    # ---------------------------------------------------------------
+    def test_soft_deleted_parent_propagates_to_subagent(self) -> None:
+        """A parent whose primary extraction yields no chat must still propagate.
+
+        Cursor's "summarization checkpoint" / "reset to this point"
+        UX rewrites ``composerData.fullConversationHeadersOnly`` to
+        an allowlist that no longer covers the existing
+        ``bubbleId:*`` rows. The orphan-filter invariant (see
+        ``.cursor/rules/sqlite-cursor-db.mdc`` "Canonical bubble
+        order") then drops every bubble during scoped re-extraction
+        and ``_finalize_sessions`` collapses the empty session, so
+        ``new_chats[parent_cid]`` is ``None`` and the cid never
+        lands in ``primary_formatted``. Because the parent's
+        ``composerData`` row hash changed (and its workspace pane-
+        view key still ties at least one source row to the cid),
+        the parent stays in ``dirty.modified_cids`` rather than
+        falling into ``dirty.deleted_cids`` -- the trigger arm a
+        plain hard deletion would exercise.
+
+        The fix folds ``modified_cids - primary_formatted`` into
+        ``walk_starts``; this test pins that the descendant
+        ``task-<tcid>`` actually rides the secondary scoped
+        extraction and re-resolves its inheritance, rather than
+        keeping the parent's now-stale workspace until some
+        unrelated future refresh dirties the descendant directly.
+        """
+        parent_cid = "55555555-5555-5555-5555-555555555555"
+        tcid = "toolu_case5"
+        child_cid = f"task-{tcid}"
+
+        # Seed the parent with a headers allowlist that covers both
+        # of its real bubbles, and promote it into the workspace via
+        # a pane-view key. After the rebuild the subagent inherits
+        # the parent's workspace through the tool_call_parent edge.
+        _put_kv(
+            self.global_db,
+            f"composerData:{parent_cid}",
+            _composer("Parent", headers=[("b1", 1), ("b2", 2)]),
+        )
+        _put_kv(self.global_db, f"bubbleId:{parent_cid}:b1", _bubble("parent ask"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{parent_cid}:b2",
+            _bubble("calling tool", role_type=2, tool_call_id=tcid),
+        )
+        _put_item(
+            self.ws_db,
+            f"workbench.panel.aichat.view.{parent_cid}",
+            {"paneId": "p1"},
+        )
+        _put_kv(self.global_db, f"composerData:{child_cid}", _composer("Child"))
+        _put_kv(self.global_db, f"bubbleId:{child_cid}:b1", _bubble("child work"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{child_cid}:b2",
+            _bubble("child done", role_type=2),
+        )
+
+        ci = self._build_index()
+        self.assertEqual(
+            self._summary(parent_cid)[2],
+            self.ws_id,
+            "Parent should resolve to the workspace via the pane-view key on first build",
+        )
+        self.assertEqual(
+            self._summary(child_cid)[2],
+            self.ws_id,
+            "Subagent should have inherited the parent's workspace before soft-deletion",
+        )
+        child_before = self._messages_with_rowid(child_cid)
+        self.assertEqual(
+            len(child_before), 2,
+            "Subagent should have its two seeded messages before soft-deletion",
+        )
+
+        # Rewrite the headers array to point at a bubble id that does
+        # not exist; both real bubbles ``b1`` / ``b2`` become orphans
+        # under the canonical-bubble-order invariant. The composerData
+        # row hash flips so the parent lands in ``modified_cids``, but
+        # because the workspace pane-view key still associates one
+        # source row with the cid, ``_process_deletions`` keeps it out
+        # of ``deleted_cids`` -- exactly the soft-deletion shape.
+        _put_kv(
+            self.global_db,
+            f"composerData:{parent_cid}",
+            _composer("Parent", headers=[("b_nonexistent", 1)]),
+        )
+
+        dirty = self._refresh(ci)
+        self.assertIn(parent_cid, dirty.modified_cids)
+        self.assertNotIn(
+            parent_cid,
+            dirty.deleted_cids,
+            "Soft deletion lives in modified_cids, not deleted_cids -- "
+            "this distinction is what the gap closure has to cover",
+        )
+        self.assertIsNone(
+            self._summary(parent_cid),
+            "Parent's chat_summary row must be gone: _apply_chat_writes "
+            "deleted it and skipped the re-insert because the orphan "
+            "filter left no messages",
+        )
+        self.assertIn(
+            child_cid,
+            dirty.subagent_propagated_cids,
+            "Soft-deleted parent must propagate to the task-* subagent so "
+            "its inherited project is re-resolved instead of staying stale",
+        )
+
+        # Witness that the secondary scoped extraction actually ran on
+        # the descendant: the apply path's delete-then-insert cycle
+        # gives every chat_message row a fresh rowid. This is the same
+        # rowid-equality witness Case 1 uses inverted -- there
+        # equality proves the gate skipped the descendant; here
+        # inequality proves it didn't. Without the fix to fold
+        # ``modified_cids - primary_formatted`` into ``walk_starts``
+        # the propagation walk never reaches the child and these
+        # rowids stay equal.
+        child_after = self._messages_with_rowid(child_cid)
+        before_rowids = [row[0] for row in child_before]
+        after_rowids = [row[0] for row in child_after]
+        self.assertNotEqual(
+            before_rowids,
+            after_rowids,
+            "Subagent chat_message rowids must change: re-extraction under "
+            "the secondary pass is what the soft-deletion trigger arm is "
+            "for, and a stable rowid would mean the walk skipped the "
+            "descendant entirely",
         )
 
 

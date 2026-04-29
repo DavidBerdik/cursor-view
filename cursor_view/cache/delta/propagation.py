@@ -94,6 +94,7 @@ def _snapshot_cached_project(
 
 def _compute_propagation_triggers(
     project_shifted: set[str],
+    soft_deleted: set[str],
     dirty: DirtySet,
     raw_cached_tcp: dict[str, str],
 ) -> tuple[set[str], set[str]]:
@@ -104,13 +105,13 @@ def _compute_propagation_triggers(
     :func:`cursor_view.cache.diff.propagation._propagate_subagent_dirtiness`.
     The split keeps the two trigger semantics distinct: ``walk_starts``
     cids are NOT themselves added to the secondary set (project-shifted
-    parents are already extracted by the primary pass; deleted parents
-    have no row to write), while ``direct_cids`` ARE (an edge-churn
-    ``task-<tcid>`` child must re-extract because its inheritance
-    chain shifted, even though no row of the child itself was hashed
-    as dirty).
+    parents are already extracted by the primary pass; deleted and
+    soft-deleted parents have no row to write), while ``direct_cids``
+    ARE (an edge-churn ``task-<tcid>`` child must re-extract because
+    its inheritance chain shifted, even though no row of the child
+    itself was hashed as dirty).
 
-    Three trigger classes, each chosen because Pass 6's inheritance
+    Four trigger classes, each chosen because Pass 6's inheritance
     walk will produce a different answer for any descendant after
     this refresh:
 
@@ -121,6 +122,16 @@ def _compute_propagation_triggers(
     - **deleted parents** (``walk_starts``) -- a vanished cid means
       descendants lose their inheritance anchor and must walk further
       up the chain (or fall back to ``(global)``).
+    - **soft-deleted parents** (``walk_starts``) -- a cid in
+      ``dirty.modified_cids`` whose primary extraction yielded no
+      chat (every bubble pruned by the
+      ``composerData.fullConversationHeadersOnly`` orphan invariant,
+      a now-empty ``conversation`` array, etc.). ``_apply_chat_writes``
+      already cleared its ``chat_summary`` / ``composer_state`` rows,
+      so descendants face the same vanished-anchor situation a hard
+      deletion produces; the only difference is bookkeeping
+      (``modified_cids`` vs ``deleted_cids``), and the propagation
+      walk must treat them identically.
     - **edge-churn children** (``direct_cids``) -- ``task-<tcid>``
       whose cached ``tool_call_parent`` entry differs from the staged
       update (new edge, rewired parent, or removed edge). The parent
@@ -128,7 +139,9 @@ def _compute_propagation_triggers(
       over-broad "every parent's task-* descendants" walk this gate
       exists to avoid (the unchanged sibling subagent stays out).
     """
-    walk_starts: set[str] = set(project_shifted) | set(dirty.deleted_cids)
+    walk_starts: set[str] = (
+        set(project_shifted) | set(soft_deleted) | set(dirty.deleted_cids)
+    )
     direct_cids: set[str] = set()
     for tcid, parent in dirty.tool_call_parent_updates.items():
         cached_parent = raw_cached_tcp.get(tcid)
@@ -241,8 +254,8 @@ def _apply_secondary_pass(
     Comparison of ``cached_proj`` (snapshot taken before the primary
     writes) against the post-write ``primary_formatted`` produces the
     project-shifted set, which feeds
-    :func:`_compute_propagation_triggers` alongside
-    ``dirty.deleted_cids`` and the staged
+    :func:`_compute_propagation_triggers` alongside the soft-deleted
+    set, ``dirty.deleted_cids``, and the staged
     ``tool_call_parent_updates``. The walk in
     :func:`cursor_view.cache.diff.propagation._propagate_subagent_dirtiness`
     expands triggers up to ``_MAX_PARENT_DEPTH`` hops, augments the
@@ -256,39 +269,31 @@ def _apply_secondary_pass(
     before extraction so the common case (no project shifts, no edge
     churn, no deletions) pays nothing for the gate.
     """
-    # TODO(bug): A cid in ``dirty.modified_cids`` whose primary
-    # extraction returns no chat (``new_chats.get(cid) is None`` --
-    # e.g. every bubble in ``cursorDiskKV`` was filtered out by the
-    # ``composerData.fullConversationHeadersOnly`` orphan invariant
-    # in ``cursor_view/cache/diff/global_db.py`` and the composer
-    # has no ``conversation`` array, so ``_finalize_sessions`` drops
-    # the session for empty messages) gets its ``chat_summary`` row
-    # deleted by ``_apply_chat_writes`` but never lands in
-    # ``primary_formatted``. ``project_shifted`` only iterates
-    # ``primary_formatted.items()``, so the cid never enters
-    # ``walk_starts`` -- and because the cid is in ``modified_cids``
-    # rather than ``deleted_cids`` (its source-row snapshot still
-    # holds at least one row, e.g. an unchanged pane-view key in a
-    # workspace ``ItemTable``), the deleted-parent trigger arm
-    # misses it too. ``task-<toolCallId>`` subagent descendants of
-    # this "soft-deleted" parent therefore keep the parent's
-    # now-stale project in ``chat_summary`` (and in
-    # ``composer_state``) until something else dirties them.
-    # Suspected cause: the trigger set assembled below treats
-    # "extraction yielded a chat with a different project" and
-    # "extraction yielded no chat at all" as different cases, but
-    # both functionally remove the parent's row from the inheritable
-    # set. Folding ``set(dirty.modified_cids) - set(primary_formatted)``
-    # into ``walk_starts`` would close the gap. The pre-gating code
-    # covered this case incidentally because every directly-dirty
-    # parent's descendants propagated regardless.
+    # A directly-modified parent whose primary extraction yielded
+    # no chat (every bubble pruned as a header-allowlist orphan, a
+    # now-empty ``conversation`` array, etc.) has had its
+    # ``chat_summary`` and ``composer_state`` rows cleared by
+    # ``_apply_chat_writes``. From a descendant's perspective that
+    # is indistinguishable from a hard deletion: the inheritance
+    # anchor is gone either way. The cid is bookkept under
+    # ``modified_cids`` rather than ``deleted_cids`` (its source-row
+    # snapshot still holds at least one row, e.g. a pane-view key
+    # in a workspace ``ItemTable``), so the deleted-parent arm does
+    # not see it; folding the soft-deleted set into ``walk_starts``
+    # is what keeps the descendant ``task-<toolCallId>`` subagents
+    # from carrying the parent's now-stale project until some
+    # unrelated future refresh dirties them.
+    soft_deleted = set(dirty.modified_cids) - set(primary_formatted)
     project_shifted = {
         cid
         for cid, formatted in primary_formatted.items()
         if cached_proj.get(cid) != _project_tuple_from_formatted(formatted)
     }
     walk_starts, direct_cids = _compute_propagation_triggers(
-        project_shifted, dirty, cached_state.raw_cached_tool_call_parent,
+        project_shifted,
+        soft_deleted,
+        dirty,
+        cached_state.raw_cached_tool_call_parent,
     )
     secondary_cids = _propagate_subagent_dirtiness(
         dirty, cached_state.tool_call_parent, walk_starts, direct_cids,

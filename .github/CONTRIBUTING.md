@@ -195,13 +195,23 @@ The cache SQLite layout has two kinds of tables, owned by
     post-extraction `chat_summary` triple
     (`workspace_id`, `project_name`, `project_root_path`) actually
     shifts versus the cached row, when the parent lands in
-    `dirty.deleted_cids`, or when a `tool_call_parent_updates`
-    entry differs from the cached map (new edge / rewired parent /
-    removed edge). A parent whose bubble JSON changed without
-    shifting its project no longer drags every descendant subagent
-    into the apply loop &mdash; that was the dominant source of the
-    "23242 modified (inserted 505, 22737 subagent-propagated)"-style
-    refresh logs the gate exists to fix.
+    `dirty.deleted_cids`, when the parent soft-deletes (it stays in
+    `dirty.modified_cids` but its primary extraction returns no
+    chat &mdash; every bubble pruned by the
+    `composerData.fullConversationHeadersOnly` orphan invariant, a
+    now-empty `conversation` array, etc. &mdash; so its
+    `chat_summary` and `composer_state` rows are cleared without
+    re-insert), or when a `tool_call_parent_updates` entry differs
+    from the cached map (new edge / rewired parent / removed
+    edge). A parent whose bubble JSON changed without shifting its
+    project no longer drags every descendant subagent into the
+    apply loop &mdash; that was the dominant source of the "23242
+    modified (inserted 505, 22737 subagent-propagated)"-style
+    refresh logs the gate exists to fix. Soft-deletion is bookkept
+    under `modified_cids` rather than `deleted_cids` (the cid still
+    has at least one source row, e.g. a workspace pane-view key)
+    but is functionally identical from a descendant's perspective
+    because the inheritance anchor is gone either way.
 
 ## Running the tests
 
@@ -284,7 +294,7 @@ fallback so a legacy composer that lacks `createdAt` still
 resolves a sensible position instead of sinking to
 `sort_key_ms = 0`.
 
-`tests/test_chat_index_propagation_gating.py` pins the four
+`tests/test_chat_index_propagation_gating.py` pins the five
 invariants the apply-time subagent-propagation gate in
 `cursor_view/cache/delta/propagation.py` was introduced to
 enforce: (1) a parent bubble append without project shift does
@@ -299,7 +309,13 @@ cids; (4) a new `tool_call_parent` edge propagates only the
 targeted `task-<tcid>` child and leaves the unchanged sibling
 subagent untouched, which is the surgical-trigger guarantee that
 distinguishes the new gating from the pre-implementation "every
-parent's `task-*` descendants" walk.
+parent's `task-*` descendants" walk; and (5) a soft-deleted
+parent (in `dirty.modified_cids` but its primary extraction
+returns no chat because every bubble was orphan-filtered out of
+`composerData.fullConversationHeadersOnly`) propagates exactly
+like a hard deletion &mdash; the descendant rides the secondary
+scoped extraction (witnessed by changed `chat_message` rowids)
+even though the cid never lands in `dirty.deleted_cids`.
 
 `tests/test_export_html_mermaid.py` covers the mermaid HTML export
 path: fence-to-div rewrite, vendored JS inlining, HTML escaping of
