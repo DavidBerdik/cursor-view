@@ -1,10 +1,10 @@
-import React, { useContext } from 'react';
-import { alpha, Avatar, Box, Paper, Typography } from '@mui/material';
+import React from 'react';
+import { Avatar, Box, Paper, Typography } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import MessageMarkdown from '../MessageMarkdown';
 import MessageImageGallery from './MessageImageGallery';
-import { ColorContext } from '../../contexts/ColorContext';
+import { PALETTE_TRANSITION } from '../../theme/transitions';
 
 // One user/assistant bubble: avatar + role label in the header row,
 // then a Paper with the pre-rendered markdown HTML (done upstream in
@@ -18,9 +18,14 @@ import { ColorContext } from '../../contexts/ColorContext';
 // gallery horizontally, which is why the gallery no longer sets its
 // own role-based asymmetric margins.
 export default function MessageBubble({ sessionId, message }) {
-  const colors = useContext(ColorContext);
   const isUser = message.role === 'user';
-  const accent = isUser ? colors.highlightColor : colors.secondary.main;
+  // Accent color picks the highlight token for user bubbles and the
+  // secondary palette for assistant bubbles. Both are CSS-var
+  // references so the avatar background, border-left, and inline-link
+  // color all swap with the active scheme without re-rendering.
+  const accent = isUser
+    ? 'var(--mui-palette-highlight-main)'
+    : 'var(--mui-palette-secondary-main)';
   const images = Array.isArray(message.images) ? message.images : [];
 
   return (
@@ -48,7 +53,7 @@ export default function MessageBubble({ sessionId, message }) {
           p: 2.5,
           ml: isUser ? 0 : 5,
           mr: isUser ? 5 : 0,
-          backgroundColor: alpha(colors.highlightColor, 0.04),
+          backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.04)',
           borderLeft: '4px solid',
           borderColor: accent,
           borderRadius: 2,
@@ -56,6 +61,7 @@ export default function MessageBubble({ sessionId, message }) {
       >
         <Box
           sx={{
+            transition: PALETTE_TRANSITION,
             '& img': { maxWidth: '100%' },
             '& ul, & ol': { pl: 3 },
             '& a': {
@@ -76,19 +82,29 @@ export default function MessageBubble({ sessionId, message }) {
               py: 1,
               textAlign: 'left',
             },
+            // CSS `transition` does not cascade through descendant
+            // selectors, so the parent transition above does not reach
+            // `<th>` / `<tr>`. The two rules below own
+            // `backgroundColor: rgba(var(--mui-palette-highlight-mainChannel) / N)` tints
+            // that flip between dark and light via CSS variables (no
+            // React re-render needed), but they still need their own
+            // `transition` so the alpha-tinted background fades rather
+            // than flashes when the scheme attribute flips and the
+            // browser recomputes styles.
             '& th': {
               fontWeight: 600,
-              backgroundColor: alpha(colors.highlightColor, 0.08),
+              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.08)',
+              transition: PALETTE_TRANSITION,
             },
             '& tr:nth-of-type(even)': {
-              backgroundColor: alpha(colors.highlightColor, 0.03),
+              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.03)',
+              transition: PALETTE_TRANSITION,
             },
           }}
         >
           {typeof message.renderedContent === 'string' ? (
             <MessageMarkdown
               html={message.renderedContent}
-              colors={colors}
               role={message.role}
               mermaidSvgs={message.mermaidSvgs}
             />

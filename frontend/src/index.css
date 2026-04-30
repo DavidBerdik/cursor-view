@@ -15,7 +15,7 @@ body {
   --scrollbar-thumb-hover: #5f5f5f;
 }
 
-:root[data-theme="light"] {
+:root[data-mui-color-scheme="light"] {
   color-scheme: light;
   --scrollbar-track: #f1f1f1;
   --scrollbar-thumb: #c1c1c1;
@@ -25,7 +25,14 @@ body {
 html {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
-  transition: scrollbar-color 200ms ease;
+  /* Curve and duration match `PALETTE_TRANSITION` in
+     `frontend/src/theme/transitions.js` so the scrollbar fade tracks the
+     rest of the UI on dark/light toggle. CSS cannot import the JS
+     constant, so the literal is duplicated here intentionally. Property
+     scope stays narrow (`scrollbar-color` only) because `transition:
+     all` on `<html>` would animate every layout-affecting property
+     including scroll-induced reflow effects. */
+  transition: scrollbar-color 0.2s cubic-bezier(.17,.67,.83,.67);
 }
 
 ::-webkit-scrollbar {
@@ -35,15 +42,51 @@ html {
 
 ::-webkit-scrollbar-track {
   background: var(--scrollbar-track);
-  transition: background-color 200ms ease;
+  transition: background-color 0.2s cubic-bezier(.17,.67,.83,.67);
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
   border-radius: 5px;
-  transition: background-color 200ms ease;
+  transition: background-color 0.2s cubic-bezier(.17,.67,.83,.67);
 }
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--scrollbar-thumb-hover);
+}
+
+/* Reduced motion opt-out. Users who set
+   `prefers-reduced-motion: reduce` at the OS level (Settings ->
+   Accessibility -> Display, or equivalent) get every CSS transition
+   and animation disabled on every element in one rule. The
+   `!important` is load-bearing: MUI's emotion engine generates
+   per-instance class styles with high specificity for the inline
+   `sx={{ transition: PALETTE_TRANSITION }}` sites and the global
+   `MuiX.styleOverrides.root` entries in `buildTheme.js`, and an
+   override without `!important` would lose the cascade against them.
+
+   `scroll-behavior: auto` neutralizes any `scroll-behavior: smooth`
+   that future code might add (we do not set it today, but smooth
+   scrolling is motion that the same accessibility preference asks
+   us to disable, and forgetting it is a documented common bug).
+
+   This rule disables the *animation* of mermaid's cross-fade
+   keyframe, but a CSS-only opt-out cannot prevent the outgoing layer
+   from mounting in the first place: the layer would mount at
+   `opacity: 1` and stay there forever (no animation -> no
+   `onAnimationEnd` -> no cleanup). The JS-side gate in
+   `MermaidDiagramSurface` (via `useReducedMotion`) handles that case
+   by skipping the outgoing-layer mount entirely. The two opt-outs
+   are complementary: this CSS rule covers every other animated
+   surface (every MUI `transition`, every hover bg flip, every
+   scrollbar fade), and the JS gate covers the one place where DOM
+   mounting itself is the cost. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
 }

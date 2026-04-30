@@ -1,6 +1,5 @@
-import React, { memo, useCallback, useContext } from 'react';
+import React, { memo, useCallback } from 'react';
 import {
-  alpha,
   Box,
   Chip,
   Collapse,
@@ -12,7 +11,7 @@ import {
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import FolderIcon from '@mui/icons-material/Folder';
-import { ColorContext } from '../../contexts/ColorContext';
+import { PALETTE_TRANSITION } from '../../theme/transitions';
 import ChatCard from './ChatCard';
 
 // One collapsible card per distinct project: the header (folder icon,
@@ -31,7 +30,6 @@ function ProjectGroup({
   onExport,
   dontShowExportWarning,
 }) {
-  const colors = useContext(ColorContext);
   const chatCountLabel = `${project.chats.length} ${project.chats.length === 1 ? 'chat' : 'chats'}`;
 
   const handleToggle = useCallback(() => {
@@ -51,29 +49,40 @@ function ProjectGroup({
           mb: 2,
           overflow: 'hidden',
           boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-          transition: 'all 0.3s ease-in-out',
           '&:hover': {
             boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
           },
         }}
       >
+        {/*
+          The Paper above is what `MuiPaper`'s `styleOverrides` actually
+          fades on theme toggle, but with `overflow: 'hidden'` clipping
+          the Paper's own background, this inner Box's
+          `background: var(--mui-palette-background-paper)` is what
+          users actually perceive as the chat-category color block.
+          Without `PALETTE_TRANSITION` on this raw `<Box>` (no MUI
+          styleOverride slot reaches a plain Box) the inner panel
+          would flash to its new color even though the Paper around
+          it fades.
+        */}
         <Box
           sx={{
-            background: colors.background.paper,
+            background: 'var(--mui-palette-background-paper)',
             borderBottom: '1px solid',
-            borderColor: alpha(colors.text.secondary, 0.1),
-            color: colors.text.primary,
+            borderColor: 'rgba(var(--mui-palette-text-secondaryChannel) / 0.1)',
+            color: 'var(--mui-palette-text-primary)',
             p: 2,
             cursor: 'pointer',
+            transition: PALETTE_TRANSITION,
             '&:hover': {
-              backgroundColor: alpha(colors.highlightColor, 0.02),
+              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.02)',
             },
           }}
           onClick={handleToggle}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <FolderIcon sx={{ mr: 1.5, fontSize: 28, color: colors.text.secondary }} />
+              <FolderIcon sx={{ mr: 1.5, fontSize: 28, color: 'var(--mui-palette-text-secondary)' }} />
               <Typography variant="h6" sx={{ fontWeight: 600 }}>
                 {project.name}
               </Typography>
@@ -83,7 +92,7 @@ function ProjectGroup({
                 sx={{
                   ml: 2,
                   fontWeight: 500,
-                  backgroundColor: colors.highlightColor,
+                  backgroundColor: 'var(--mui-palette-highlight-main)',
                   color: 'white',
                   '& .MuiChip-label': {
                     px: 1.5,
@@ -96,9 +105,9 @@ function ProjectGroup({
               aria-label="show more"
               sx={{
                 color: 'white',
-                bgcolor: colors.highlightColor,
+                bgcolor: 'var(--mui-palette-highlight-main)',
                 '&:hover': {
-                  bgcolor: alpha(colors.highlightColor, 0.8),
+                  bgcolor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.8)',
                 },
               }}
               onClick={handleIconClick}
@@ -106,7 +115,7 @@ function ProjectGroup({
               {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
             </IconButton>
           </Box>
-          <Typography variant="body2" sx={{ color: colors.text.secondary, mt: 0.5 }}>
+          <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-secondary)', mt: 0.5 }}>
             {project.path}
           </Typography>
         </Box>

@@ -1,6 +1,5 @@
 import React, { useContext } from 'react';
-import { alpha, Box, Typography } from '@mui/material';
-import { ColorContext } from '../contexts/ColorContext';
+import { Box, Typography } from '@mui/material';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
 
 // Defensive fallback panel for MermaidLightboxModal: a caller-supplied
@@ -17,7 +16,6 @@ import { ThemeModeContext } from '../contexts/ThemeModeContext';
 // in `react-components.mdc` and to keep "diagram surface" and "source
 // fallback" rendering as separate concerns.
 export default function MermaidLightboxFallback({ source, renderError }) {
-  const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
   return (
     <Box sx={{ width: '100%', height: '100%', p: 2, boxSizing: 'border-box' }}>
@@ -40,8 +38,12 @@ export default function MermaidLightboxFallback({ source, renderError }) {
           fontSize: '0.85em',
           fontFamily:
             'source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace',
-          backgroundColor: alpha(colors.highlightColor, darkMode ? 0.08 : 0.04),
-          color: colors.text.primary,
+          // Alpha differs per scheme (8% dark, 4% light); the alpha
+          // *value* is per-scheme, so `darkMode` still picks it.
+          backgroundColor: darkMode
+            ? 'rgba(var(--mui-palette-highlight-mainChannel) / 0.08)'
+            : 'rgba(var(--mui-palette-highlight-mainChannel) / 0.04)',
+          color: 'var(--mui-palette-text-primary)',
           borderRadius: 1,
         }}
       >

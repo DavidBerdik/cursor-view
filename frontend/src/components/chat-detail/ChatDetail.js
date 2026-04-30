@@ -2,7 +2,6 @@ import React, { startTransition, useContext, useEffect, useLayoutEffect, useMemo
 import { useParams, Link } from 'react-router-dom';
 import axios from 'axios';
 import {
-  alpha,
   Box,
   Button,
   CircularProgress,
@@ -13,7 +12,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { prepareMarkdownHtml } from '../../markdown/prepareMarkdownHtml';
 import { prerenderMermaidDiagrams } from '../../utils/prerenderMermaidDiagrams';
-import { ColorContext } from '../../contexts/ColorContext';
 import { ThemeModeContext } from '../../contexts/ThemeModeContext';
 import { useExportFlow } from '../../hooks/useExportFlow';
 import ExportFormatDialog from '../export/ExportFormatDialog';
@@ -22,7 +20,6 @@ import ChatMetaPanel from './ChatMetaPanel';
 import MessageList from './MessageList';
 
 const ChatDetail = () => {
-  const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
   const { sessionId } = useParams();
   const [chat, setChat] = useState(null);
@@ -65,6 +62,45 @@ const ChatDetail = () => {
             // visible so MermaidBlock receives a ready SVG on first paint and
             // there is no flash of raw source text.
             const mermaidSvgs = await prerenderMermaidDiagrams(renderedContent, darkMode);
+            // Cache-warm the opposite theme so the user's first dark/light
+            // toggle on this chat hits `mermaidRenderCache` for every
+            // diagram instead of falling through to the per-block render
+            // queue (which would re-run `mermaid.parse` + `mermaid.render`
+            // for every diagram serially while the user watches the page
+            // re-flow). The in-message sequential `await` (not
+            // `Promise.all`) is load-bearing for THIS message's dual-theme
+            // pair: `mermaid.initialize` is a singleton, and a parallel
+            // pair would race on `theme: dark | default`. Return value is
+            // unused -- the side effect we want is the cache fill, not the
+            // SVG map. Doubles prerender wall-time on chats with many
+            // diagrams; acceptable in the typical case, and could be
+            // bounded by a count threshold (e.g. only warm both themes
+            // when `< N` diagrams) if it becomes a noticeable load delay.
+            //
+            // TODO(bug): On a chat with multiple messages and many
+            // diagrams, some diagrams may render with the wrong theme on
+            // first paint or after the first toggle, because the
+            // `Promise.all(rawMessages.map(...))` outer iteration runs N
+            // message-level prerenders concurrently while each message's
+            // dual-theme pair fires `mermaid.initialize({ theme: ... })`
+            // with alternating values. Suspected cause: the in-message
+            // sequential `await` only serializes the two prerenders for
+            // ONE message; across messages the dual-theme pairs interleave,
+            // and once a message's B-pass calls
+            // `mermaid.initialize({ theme: !darkMode })` it overwrites the
+            // singleton baseline (mermaid's `processAndSetConfigs` calls
+            // `reset()` to that baseline at the start of every
+            // `mermaid.render`), so any other message's A-pass render that
+            // hasn't yet captured its config will pick up the flipped
+            // theme and produce a wrong-themed SVG cached under
+            // `(source, darkMode)`. Suspected fix: split into two
+            // sequential outer passes (one theme per pass), each using
+            // `Promise.all` over messages internally so all concurrent
+            // prerenders within a pass share one theme. Not regression-
+            // pinned because the frontend has no JS test harness, so the
+            // invariant would be enforced by manual verification on a
+            // diagram-heavy multi-message chat.
+            await prerenderMermaidDiagrams(renderedContent, !darkMode);
             return { ...message, renderedContent, mermaidSvgs, images };
           }),
         );
@@ -136,7 +172,7 @@ const ChatDetail = () => {
   if (loading) {
     return (
       <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
-        <CircularProgress sx={{ color: colors.highlightColor }} />
+        <CircularProgress sx={{ color: 'var(--mui-palette-highlight-main)' }} />
       </Container>
     );
   }
@@ -188,7 +224,7 @@ const ChatDetail = () => {
             borderRadius: 2,
             color: 'white',
             '&:hover': {
-              backgroundColor: alpha(colors.highlightColor, 0.8),
+              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.8)',
             },
           }}
         >
@@ -204,7 +240,7 @@ const ChatDetail = () => {
             borderRadius: 2,
             color: 'white',
             '&:hover': {
-              backgroundColor: alpha(colors.highlightColor, 0.8),
+              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.8)',
             },
           }}
         >

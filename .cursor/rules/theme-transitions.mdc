@@ -1,0 +1,574 @@
+---
+description: Dark/light theme fade transition conventions for palette-driven UI
+globs: frontend/src/**/*.{js,jsx}
+alwaysApply: false
+---
+
+# Three layers of theme fade
+
+After the CSS-variables migration, dark/light fading is owned by three
+layers, each with a distinct job. They compose; do not conflate them:
+
+1. **View Transitions API** for the page-wide toggle. One GPU
+   cross-fade between a pre-flip and post-flip snapshot of the entire
+   page, in place of N concurrent per-element CSS `transition`s.
+2. **`PALETTE_TRANSITION` per-element CSS `transition`** for the
+   fallback path (browsers without View Transitions support) and for
+   non-toggle palette changes (focus / hover state, route navigation
+   that mounts new palette-driven elements).
+3. **SVG cross-fade** for imperative-DOM libraries (mermaid) whose
+   rendered output is not CSS-animatable across re-renders.
+
+A theme toggle on a supporting browser uses (1). The same toggle on
+an unsupported browser uses (2). Both code paths use (3) for the
+mermaid surfaces. The three sections below cover each in turn.
+
+# Canonical transition token
+
+The single source of truth for the per-element fade is the
+`PALETTE_TRANSITION` constant exported from
+`frontend/src/theme/transitions.js`. The duration, curve, and the
+exact set of properties that get animated are each exported as
+separate constants so a CSS keyframe `animation: ...` shorthand (used
+where the `transition` shorthand is wrong because the property change
+happens on first paint, not later — see "SVG content cross-fade"
+below) can compose them without re-typing the literal, and so a
+future palette-driven property can be added by appending one entry
+to the property list:
+
+```js
+export const PALETTE_TRANSITION_DURATION = '0.2s';
+export const PALETTE_TRANSITION_CURVE = 'cubic-bezier(.17,.67,.83,.67)';
+
+export const PALETTE_TRANSITION_PROPERTIES = Object.freeze([
+  'background-color', 'color', 'border-color',
+  'fill', 'stroke', 'box-shadow',
+]);
+
+export const PALETTE_TRANSITION = PALETTE_TRANSITION_PROPERTIES
+  .map((prop) => `${prop} ${PALETTE_TRANSITION_DURATION} ${PALETTE_TRANSITION_CURVE}`)
+  .join(', ');
+```
+
+The composed `PALETTE_TRANSITION` is a property-list shorthand, not
+the `'all 0.2s ...'` form that originally landed with this token. The
+narrowing exists for two reasons:
+
+1. **Performance.** `'all'` keeps a transition entry per element per
+   CSS property, and on a long chat-detail page the `transition`
+   override is applied to hundreds of MUI elements. The property
+   list keeps entries only for the properties we actually animate,
+   which measurably reduces compositor cost during the 200ms fade
+   window.
+2. **Defensive scope.** `'all'` would silently animate a future
+   `width` / `height` change introduced by an unrelated refactor,
+   which is almost never the author's intent on a theme-fade
+   element. Listing properties keeps the blast radius explicit and
+   grep-able.
+
+Each property in the list earns its slot from at least one canonical
+site: `background-color` for every `Paper` / `Card` / `body`; `color`
+for every text-bearing element whose default flips between dark and
+light; `border-color` for `Divider` and `'divider'`-token consumers
+(`MessageImageGallery` thumbnails); `fill` and `stroke` for the
+standalone `MuiSvgIcon` instances tinted by
+`var(--mui-palette-highlight-main)`; `box-shadow` for `MuiCard` /
+`MuiPaper` hover shadows. Add a new property to the array when
+introducing a new animated palette-driven property — never inline a
+one-off `transition` literal on the consuming element.
+
+`transform` is intentionally NOT in the list. The only site that
+animates a `transform` for a theme-fade-adjacent reason is
+`ChatCard`'s `translateY(-8px)` hover-lift, which is a per-card
+hover affordance rather than a palette change. Including it would
+instantiate a `transform` transition entry on every `MuiCard` /
+`MuiPaper` / `MuiAvatar` / `MuiTypography` / `MuiIconButton` /
+`MuiChip` purely to support one card's hover. The hover-lift is
+instead a local `transition` on `ChatCard`'s `Card` `sx`, composed
+from `PALETTE_TRANSITION` plus an extra `transform` entry:
+
+```js
+import {
+  PALETTE_TRANSITION,
+  PALETTE_TRANSITION_CURVE,
+  PALETTE_TRANSITION_DURATION,
+} from '../../theme/transitions';
+
+transition: `${PALETTE_TRANSITION}, transform ${PALETTE_TRANSITION_DURATION} ${PALETTE_TRANSITION_CURVE}`,
+```
+
+Per-element non-palette transitions (additional properties beyond
+the centralized list) belong in the consuming component's `sx`
+composed with `PALETTE_TRANSITION`, never inlined as their own
+standalone `transition` shorthand that loses the centralized
+properties.
+
+Do not hardcode any of these literals anywhere else in the JS/JSX
+tree. Curve and duration drift across sites is exactly the
+inconsistency the tokens exist to prevent: `ProjectGroup` shipped
+`'all 0.3s ease-in-out'` while `ChatCard` shipped
+`'all 0.3s cubic-bezier(...)'` before this rule landed, and they
+were unified on the cubic-bezier curve in the same refactor that
+introduced the constant.
+
+# View Transitions API for the page-wide toggle
+
+The toggle in `App.js::ThemeModeBridge::toggleDarkMode` wraps
+`useColorScheme().setMode(...)` in `document.startViewTransition`
+plus `flushSync` from `react-dom`:
+
+```js
+const toggleDarkMode = () => {
+  const next = !darkMode;
+  const nextMode = next ? 'dark' : 'light';
+  writeThemeCookie(next);
+  if (typeof document.startViewTransition === 'function') {
+    document.startViewTransition(() => {
+      flushSync(() => setMode(nextMode));
+    });
+    return;
+  }
+  setMode(nextMode);
+};
+```
+
+Two pieces are load-bearing and must both be present:
+
+1. **`document.startViewTransition`** captures a pre-state snapshot
+   of the page, runs the callback, captures a post-state snapshot,
+   and the browser cross-fades the two snapshots as a single GPU
+   composite. This replaces N concurrent per-element CSS
+   `transition`s on every palette-driven element on screen with one
+   GPU layer fade. Browser support: Chromium 111+, Safari 18+,
+   Firefox 137+; older browsers fall through to the unwrapped
+   `setMode(nextMode)` call below the `if`, where the per-element
+   `PALETTE_TRANSITION` overrides on every palette-driven MUI
+   styleOverride still produce the fade.
+
+2. **`flushSync`** forces React to commit the `setMode` update
+   synchronously inside the View Transitions callback. Without it,
+   React batches the update past the post-snapshot capture and the
+   View Transition cross-fades two identical snapshots (the post-
+   snapshot reflects the *old* DOM because React has not committed
+   yet). This is the single most important detail of the wrapping;
+   removing it does not throw, it just silently produces a fade
+   between identical frames — i.e. no visible animation.
+
+Cookie persistence (`writeThemeCookie`) is OUTSIDE the View
+Transition callback because it is a synchronous side effect that
+should fire regardless of which path runs. localStorage persistence
+is INSIDE the callback (implicit through `setMode`) so MUI's
+internal mode-storage state stays in lockstep with React's commit.
+
+When adding a new global UI toggle that should cross-fade page-wide
+(e.g. a future "compact density" setting), reach for the same
+pattern: `document.startViewTransition(() => flushSync(() =>
+setX(...)))` with a feature-detection fallback. Do not invent a
+new cross-fade primitive.
+
+# CSS variables palette
+
+`frontend/src/theme/buildTheme.js` builds a single static theme via
+
+```js
+createTheme({
+  cssVariables: { colorSchemeSelector: 'data-mui-color-scheme' },
+  colorSchemes: { light: { palette: ... }, dark: { palette: ... } },
+});
+```
+
+which MUI 7's CSS-variables-aware `<ThemeProvider>` uses to emit
+`--mui-palette-*` CSS variables for both schemes and to flip the
+active scheme by writing `data-mui-color-scheme` on `<html>`. The
+dark/light toggle becomes a CSS-only flip: every element that
+references `var(--mui-palette-*)` recomputes styles with no React
+re-render. The `useColorScheme()` hook from `@mui/material/styles`
+exposes `mode` / `setMode` for the toggle layer.
+
+The `colorSchemeSelector: 'data-mui-color-scheme'` config is
+load-bearing and easy to forget. When BOTH `colorSchemes.light`
+and `colorSchemes.dark` are defined (as we do), MUI 7 defaults
+`colorSchemeSelector` to `'media'`, which gates the per-scheme CSS
+variables behind `@media (prefers-color-scheme: ...)` instead of
+the data attribute. Under that default our `setMode(...)` call still
+writes `data-mui-color-scheme="dark"` on `<html>` and
+`useColorScheme().mode` still flips, so the boolean
+`darkMode`-driven code paths (mermaid's `theme: darkMode ? 'dark' :
+'default'` selection, the per-scheme alpha picks, etc.) continue
+to work. The CSS-variable-driven UI, however, stays glued to the OS
+theme — producing the failure mode "mermaid charts switch theme but
+everything else does not", which is harder to diagnose than a
+total breakage because half the app appears to work. Always set
+`colorSchemeSelector` explicitly to the data-attribute form, and
+treat any reappearance of the half-broken symptom as a signal the
+config drifted back to `'media'`.
+
+`'true'` is also accepted as a `cssVariables` value (and we used it
+briefly during the migration), but the object form with the
+explicit selector is the only safe shape now that both schemes are
+defined. `'true'` is the same as `{}` and inherits the `'media'`
+default.
+
+(MUI 7 deprecated the older `extendTheme` + `CssVarsProvider` pair
+in favor of this `createTheme({ cssVariables, colorSchemes })`
+pattern; do not regress to the deprecated APIs. The configuration
+docs at
+https://mui.com/material-ui/customization/css-theme-variables/configuration/
+are authoritative.)
+
+Consumers reference palette tokens directly as CSS variable strings
+in `sx`:
+
+```js
+sx={{
+  color: 'var(--mui-palette-text-primary)',
+  backgroundColor: 'var(--mui-palette-background-paper)',
+}}
+```
+
+For alpha composition on a palette token, MUI auto-generates a
+`*Channel` variant from the token's `main` value (e.g.
+`--mui-palette-highlight-mainChannel` is `12 188 255` for the dark
+scheme, `0 151 204` for light). Compose with the standard CSS
+`rgba(... / N)` syntax:
+
+```js
+sx={{
+  borderColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.2)',
+}}
+```
+
+The `*Channel` form intentionally drops any baked-in alpha from the
+underlying hex (the dark scheme's `highlightColor` is `#0cbcff8f`,
+with ~56% baked alpha), matching the behavior of MUI's `alpha()` JS
+utility. For tints whose alpha *value* differs per scheme — not just
+the underlying color — the `darkMode` boolean from
+`ThemeModeContext` still picks the alpha at JS time:
+
+```js
+backgroundColor: darkMode
+  ? 'rgba(var(--mui-palette-highlight-mainChannel) / 0.08)'
+  : 'rgba(var(--mui-palette-highlight-mainChannel) / 0.04)',
+```
+
+Custom palette tokens (e.g. `highlight`) follow the standard MUI
+shape `{ main, light?, dark?, contrastText? }` to get
+`*Channel` variants auto-generated; lift any string-typed legacy
+field (the original `highlightColor` was a top-level string) into
+this shape via a small helper like `paletteFromColors(c)` in
+`buildTheme.js` rather than inlining a one-off generator.
+
+Do not introduce a new `useContext(ColorContext)` consumer — the
+context was deleted by the migration. Read CSS variables from `sx`
+directly. The boolean `darkMode` from `ThemeModeContext` is reserved
+for the two cases where CSS variables are not enough on their own:
+
+- The alpha value differs per scheme (the example above).
+- A non-CSS code path needs the boolean (e.g. mermaid's
+  `mermaid.initialize({ theme: darkMode ? 'dark' : 'default' })`
+  selection — the mermaid library does not read CSS variables, it
+  picks a theme name internally).
+
+# Centralize via MUI theme `styleOverrides`
+
+Every palette-driven MUI component carries `transition:
+PALETTE_TRANSITION` through `components.<MuiX>.styleOverrides.root`
+in `frontend/src/theme/buildTheme.js`. The body fade lives in
+`MuiCssBaseline.styleOverrides.body` and is the highest-leverage
+entry because `<body>` is the largest visible surface — its
+`background-color` comes from `theme.palette.background.default` via
+MUI's reset.
+
+When a new MUI component is added to the codebase whose default look
+is palette-derived (e.g. `MuiAccordion`, `MuiTabs`, `MuiSwitch`),
+wire it into the `components` map in the same change. The
+transition-only-overrides cluster at the bottom of `buildTheme.js`
+(currently `MuiAvatar`, `MuiDivider`, `MuiIconButton`,
+`MuiOutlinedInput`, `MuiSvgIcon`, `MuiTypography`) is the canonical
+home; alphabetical order within that cluster keeps diffs reviewable.
+
+# Inline `sx` for raw elements
+
+Raw `<Box>` / `<pre>` / `<button>` rendered without a MUI wrapper
+that carries `backgroundColor` / `color` / `borderColor` derived
+from the palette does **not** pick up the global override and must
+opt in via inline `sx`:
+
+```jsx
+import { PALETTE_TRANSITION } from '../../theme/transitions';
+
+<Box
+  sx={{
+    backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.1)',
+    transition: PALETTE_TRANSITION,
+  }}
+/>
+```
+
+Canonical sites (consult these before adding new ones):
+
+- `ProjectGroup` inner header `<Box>` — the outer `Paper`'s
+  `overflow: 'hidden'` clips its own background, so the inner
+  `<Box>`'s `background: var(--mui-palette-background-paper)` is
+  what users actually perceive as "the chat-categories color block".
+- `ChatCard` highlight preview panel `<Box>`.
+- `MessageBubble` markdown wrapper `<Box>` and its `'& th'` /
+  `'& tr:nth-of-type(even)'` child selectors (see "CSS `transition`
+  does not cascade" below).
+- `MermaidBlock` outer wrapper, diagram-body
+  `<Box component="button">`, and source-mode `<Box component="pre">`.
+- `MessageMarkdown` `'& pre'` and `'& :not(pre) > code'` child
+  selectors.
+- `MessageImageGallery` thumbnail `<Box component="button">`.
+
+# CSS `transition` does not cascade
+
+A parent's `transition` rule does **not** apply to descendant
+selectors. When a parent `<Box>` styles children through the MUI
+`'& selector'` syntax and those children carry palette-driven
+properties, each child selector must carry its own `transition:
+PALETTE_TRANSITION`. The motivating site is `MessageBubble.js`'s
+`'& th'` and `'& tr:nth-of-type(even)'` rules, both of which set
+`backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) /
+N)'` and would flash if only the parent had a transition.
+
+# SVG content cross-fade (mermaid diagrams)
+
+A CSS `transition` cannot bridge two states when the DOM tree itself
+is replaced wholesale on theme toggle. The motivating case is mermaid:
+`MermaidBlock` calls `mermaid.render(source)` on every theme flip and
+emits a brand-new tree of inline-styled SVG nodes that share no
+element identity with the previous render, so every `stroke` /
+`fill` / label color flips in a single frame. There is no element
+left to transition.
+
+The fix is split between a hook (`useSvgCrossFade` in
+`frontend/src/hooks/useSvgCrossFade.js`, which owns the state
+machine, the keyframe constant, the gate triple, and the
+`onAnimationEnd` cleanup) and its consumer (`MermaidDiagramSurface`
+in `frontend/src/components/MermaidDiagramSurface.js`, which owns
+the layered JSX and the click-surface plumbing). The hook tracks
+the previous SVG string in `useState` and decides via three gates
+(visibility, reduced-motion, concurrent-fade cap — see below)
+whether to mount an outgoing layer; the consumer renders that
+layer as an absolutely-positioned `aria-hidden` `<Box>` on top of
+the incoming SVG and runs a CSS keyframe animation that fades it
+to opacity 0 over `PALETTE_TRANSITION_DURATION` /
+`PALETTE_TRANSITION_CURVE`. The hook's `onAnimationEnd` callback
+(returned to the consumer, wired into the outgoing layer's
+`onAnimationEnd` JSX prop) clears the outgoing slot so the layer
+unmounts after the fade completes. Rapid toggles restart the
+animation cleanly because the outgoing `<Box>` carries
+`key={outgoingSvg}`.
+
+Two implementation choices are load-bearing and must be preserved
+in any future similar surface (the hook enforces both):
+
+1. **Detect the prop change during render, not in a `useEffect`.** A
+   `useEffect([svg])`-based detection fires after the browser paints,
+   which means the user sees one frame of the new SVG with no
+   outgoing overlay before the overlay mounts on the next render — a
+   visible flash that defeats the entire point of the cross-fade.
+   React's documented "Storing information from previous renders"
+   pattern from the `useState` reference is the right shape: detect
+   the change with an inline `if (svg !== committedSvg) { ... }`
+   block, call `setState` synchronously to commit the derivation,
+   and let React throw away the in-progress render and re-run. Both
+   renders happen before the next paint, so the user only ever sees
+   the final state with both layers already mounted.
+2. **Define the keyframe at module scope via emotion's `keyframes`
+   helper, not as an inline `'@keyframes name': { ... }` entry
+   inside `sx`.** The inline-in-sx form depends on undocumented
+   emotion serialization behavior to install the keyframes rule
+   globally and silently fails in some MUI 7 / emotion 11 build
+   configurations, leaving the animation property pointing at a name
+   no `@keyframes` declaration ever defined. The result is an
+   outgoing layer that mounts at `opacity: 1`, never animates, never
+   fires `onAnimationEnd`, and stays stuck on top of the incoming
+   SVG forever. Importing `keyframes` from `@emotion/react` (the
+   approach `useSvgCrossFade` uses) inserts a uniquely-named
+   global rule once at module load and returns a token the
+   `animation` shorthand interpolates safely. The hook returns the
+   pre-composed shorthand string as `fadeAnimation` so the
+   consumer drops it into `sx` without re-typing the keyframe
+   identifier.
+
+Why a CSS `animation` rather than a `transition` here: a
+`transition` only fires when a property changes *after* the element
+is in the DOM. The outgoing layer needs to start fading the moment
+it mounts (which is the same render in which the incoming SVG
+appears). A keyframe animation fires on first paint and runs to
+completion regardless, which is the semantic this case needs. Reach
+for `PALETTE_TRANSITION_DURATION` + `PALETTE_TRANSITION_CURVE` for
+the animation shorthand, never the literal numbers.
+
+Four load-bearing pieces of the cross-fade surface exist purely
+for performance, not correctness — but if any one is removed the
+cross-fade goes from "smooth" to "frame-dropping on long
+mermaid-heavy chats". The first three live in `useSvgCrossFade`;
+the last is on the consumer's outgoing-layer `sx`:
+
+- **`useInView` gate** (in the hook). The outgoing layer mounts
+  only when the consumer's `surfaceRef` element is on-screen. A
+  long chat with 30 mermaid blocks where 5 are visible would
+  otherwise mount 30 doubled-DOM trees on every theme toggle; the
+  gate restricts the cost to the 5 the user can actually see.
+- **`useReducedMotion` gate** (in the hook). Stronger than the
+  global CSS opt-out in `index.css` (see "Reduced motion" below):
+  the CSS rule disables the keyframe animation, but the layer
+  would still mount and stick at `opacity: 1` forever (no
+  animation → no `onAnimationEnd` → no cleanup). The JS gate
+  avoids the mount entirely.
+- **`MAX_CONCURRENT_CROSS_FADES` cap** (in the hook). A module-
+  scope counter tracks active cross-fades across all
+  `useSvgCrossFade` instances; surfaces that would push the count
+  past the cap (5 today, heuristic) fall back to instant swap.
+  The compositor cost of N concurrent SVG fades scales linearly,
+  and beyond ~5 the diminishing return on visual polish stops
+  outweighing the frame-time cost. The counter is incremented /
+  decremented by a `useEffect([outgoingSvg])` so unmount-mid-fade
+  and rapid theme toggles do not leak the counter; React strict-
+  mode double-invocation in dev double-invokes the cleanup too,
+  so the net delta stays zero.
+- **`willChange: 'opacity'` on the outgoing layer** (in the
+  consumer's outgoing-layer `sx`, since `sx` for the JSX
+  belongs to the consumer). Promotes the layer to its own GPU
+  compositor layer for the duration of the fade so alpha
+  interpolation runs on the GPU rather than rasterizing the SVG
+  every frame. The standard "do not keep `will-change`
+  permanently" caveat does not apply because the outgoing layer
+  unmounts at animation-end; the lifetime is bounded.
+
+The three gates (visibility, reduced-motion, concurrent-fade cap)
+all suppress the *outgoing layer*, never the underlying render —
+the incoming SVG always updates, only the cross-fade overlay is
+conditional. They compose with the View Transitions API at the
+page level: View Transitions captures a snapshot of whatever is
+in the DOM at flip time, including any in-flight outgoing layers,
+so the user sees the page-wide cross-fade and the per-surface
+cross-fade as one composite animation.
+
+Two CSS containment hints reduce the layout/paint cost of the
+broader page during the fade window. They are the canonical sites
+for this pattern; future imperative-DOM components (prism, monaco,
+similar) should follow:
+
+- **`contentVisibility: 'auto'` + `containIntrinsicSize: '0 400px'`
+  on `MermaidBlock`'s outer `<Box>`.** Tells the browser to skip
+  layout and paint of off-screen blocks until they scroll into
+  view; the intrinsic-size hint reserves a placeholder height
+  (400px is a heuristic for typical mermaid block height) so the
+  scrollbar does not jump as off-screen blocks materialize. On
+  long chats with many diagrams, this is what keeps the theme
+  toggle from re-painting every off-screen SVG subtree.
+- **`contain: 'layout paint style'` on `MermaidDiagramSurface`'s
+  outer `<Box component="button">`.** Tells the browser the
+  surface's layout, paint, and style cannot affect siblings or
+  ancestors so it can short-circuit work it would otherwise do
+  during the fade (recompute intrinsic dimensions, repaint the SVG
+  region, propagate style invalidation up the tree). Safe because
+  the lightbox modal is portal-rendered (escapes containment by
+  construction) and the cross-fade outgoing layer is `position:
+  absolute; inset: 0` already scoped to the button's `position:
+  relative`.
+
+This pattern generalizes to any future imperative-DOM library
+(prism, monaco, etc.) whose rendered output is not CSS-animatable
+across re-renders. Keep the previous output mounted for the fade
+duration; do not call the imperative API a second time to "produce
+a fade-out copy" — that would constitute a third mermaid pipeline
+(per [`mermaid-rendering.mdc`](mermaid-rendering.mdc) "Two rendering
+pipelines, one source format") and re-open the bomb-graphic risk
+closed by the parse-first guard.
+
+# Reduced motion
+
+Users who set `prefers-reduced-motion: reduce` at the OS level get
+every theme transition and animation disabled. The opt-out is
+two-pronged because no single mechanism covers both surfaces:
+
+- A global `@media (prefers-reduced-motion: reduce)` rule in
+  `frontend/src/index.css` overrides `transition: none !important;
+  animation: none !important; scroll-behavior: auto !important;` on
+  `*, *::before, *::after`. The `!important` is load-bearing: MUI's
+  emotion engine generates per-instance class styles with high
+  specificity for the inline `sx={{ transition: PALETTE_TRANSITION }}`
+  sites and the `MuiX.styleOverrides.root` entries in
+  `buildTheme.js`, and an override without `!important` would lose
+  the cascade against them. `scroll-behavior: auto` neutralizes any
+  future `scroll-behavior: smooth` that might be added (we do not
+  set it today, but smooth scrolling is motion the same preference
+  asks us to disable, and forgetting it is a documented common bug).
+- The `useReducedMotion` hook (`frontend/src/hooks/useReducedMotion.js`)
+  gives JS the same signal the CSS rule reads. The canonical
+  consumer is `useSvgCrossFade` (called by
+  `MermaidDiagramSurface`), where the CSS rule is not enough on
+  its own: the keyframe `animation` would be disabled but the
+  outgoing layer would still mount and stick at `opacity: 1`
+  forever (`onAnimationEnd` never fires when there is no
+  animation). The hook's boolean gates the layer mount itself.
+
+The CSS rule covers every other animated surface in the codebase
+(every MUI `transition`, every hover bg flip, every scrollbar fade);
+the JS hook covers the one place where DOM mounting itself is the
+cost. The two are complementary, not redundant.
+
+The View Transitions API path runs independently of
+`prefers-reduced-motion`. Browsers honor the preference for the
+view-transition cross-fade itself (Chromium auto-disables the
+fade when the user requests reduced motion); we do not need a
+JS-level gate on `document.startViewTransition`.
+
+Future surfaces that mount DOM specifically for a transition (e.g.
+a future cross-fade for prism / monaco / similar imperative-DOM
+libraries) should follow the same pattern: gate the mount with
+`useReducedMotion` so reduced-motion users do not pay for DOM that
+will never animate.
+
+# Modals, dialogs, and context menu are out of scope
+
+Inline `sx` `transition` additions are deliberately omitted from
+`ExportFormatDialog`, `ExportWarningDialog`, `ImageLightboxModal`,
+`MermaidLightboxModal`, `MermaidLightboxFallback`,
+`MermaidZoomControls`, and `AppContextMenu`. These surfaces are
+typically closed when the user toggles the theme, so the marginal
+polish does not justify the maintenance surface. They still inherit
+the centralized transition through the global MUI overrides (Paper,
+Button, IconButton, Avatar, Typography, etc.) as a benign side
+effect — a `Dialog` whose buttons fade is fine, it just isn't
+separately decorated.
+
+For `MermaidLightboxModal` specifically there is a substantive
+reason to stay out: the modal hosts `useSvgPanZoom`, which writes
+`transform: translate(...) scale(...)` to the transform layer on
+every pointermove. Adding inline `transition: 'all'` to that layer
+or any of its parents would visibly lag the drag. See
+[`mermaid-rendering.mdc`](mermaid-rendering.mdc) "Modal pan/zoom/
+reset is presentation-only" for the full invariant.
+
+# Scrollbar is the only intentional literal duplicate
+
+`frontend/src/index.css` repeats the literal
+`0.2s cubic-bezier(.17,.67,.83,.67)` because CSS cannot import JS
+constants. When `PALETTE_TRANSITION` changes, update the three
+`transition` rules in `index.css` in the same change. Property
+scope on the CSS rules stays narrow (`scrollbar-color` /
+`background-color`) rather than `all`: `transition: all` on `<html>`
+would animate scroll-induced reflow effects.
+
+The scrollbar's light-mode override selector is
+`:root[data-mui-color-scheme="light"]` (matches the attribute
+MUI's `<ThemeProvider>` writes), not the legacy
+`:root[data-theme="light"]` from before the CSS-variables
+migration.
+
+# Cross-reference
+
+This rule is the time-domain extension of
+[`react-components.mdc`](react-components.mdc) "Theme ownership":
+that rule says MUI theme tokens own *what* color is applied; this
+rule says they also own *how* a palette swap unfolds visually. The
+two are intentionally separate so a future contributor can violate
+one without violating the other (hardcoding a hex breaks Theme
+ownership but not this rule; hardcoding a transition curve breaks
+this rule but not Theme ownership).

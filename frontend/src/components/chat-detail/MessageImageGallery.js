@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { Box } from '@mui/material';
+import { PALETTE_TRANSITION } from '../../theme/transitions';
 import ImageLightboxModal from './ImageLightboxModal';
 
 // Renders a row of clickable image-attachment thumbnails for one
@@ -85,6 +86,7 @@ export default function MessageImageGallery({ sessionId, images, role }) {
                 overflow: 'hidden',
                 maxWidth: 280,
                 backgroundColor: 'transparent',
+                transition: PALETTE_TRANSITION,
               }}
             >
               <Box

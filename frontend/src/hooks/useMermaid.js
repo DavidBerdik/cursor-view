@@ -12,10 +12,12 @@ import { ThemeModeContext } from '../contexts/ThemeModeContext';
 //   2. The singleton's theme is always current so a darkMode toggle is
 //      reflected in the next MermaidBlock render cycle.
 //
-// MermaidBlock also calls mermaid.initialize immediately before mermaid.render
-// because React runs child effects before parent effects; that per-block init
-// is the definitive theme source at render time. This hook is the global
-// bootstrap and the authoritative owner of startOnLoad + securityLevel.
+// useMermaidRender (the per-block render hook consumed by MermaidBlock) also
+// calls mermaid.initialize immediately before each mermaid.render because
+// React runs child effects before parent effects and queue tasks may run
+// after arbitrary delay; that per-block init is the definitive theme source
+// at render time. This hook is the global bootstrap and the authoritative
+// owner of startOnLoad + securityLevel.
 //
 // Returns nothing — this is a side-effect-only hook.
 export function useMermaid() {

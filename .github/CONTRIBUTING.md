@@ -355,10 +355,44 @@ raises `ProgrammingError`).
 
 - `App.js`, `index.js`, `index.css`, `starry-night-theme.css` &mdash;
   root composition and global CSS.
-- `theme/` &mdash; `colors.js` (palettes), `buildTheme.js` (MUI theme
-  factory), `themeCookie.js` (dark/light cookie).
-- `contexts/` &mdash; `ColorContext.js` and `ThemeModeContext.js`, one
-  React context per file.
+- `theme/` &mdash; `colors.js` (palette source of truth, consumed
+  only by `buildTheme.js`'s `paletteFromColors` helper to produce
+  `colorSchemes.light.palette` and `colorSchemes.dark.palette`),
+  `buildTheme.js` (single static MUI theme via
+  `createTheme({ cssVariables: { colorSchemeSelector:
+  'data-mui-color-scheme' }, colorSchemes: { light, dark } })`;
+  MUI's CSS-variables-aware `<ThemeProvider>` emits `--mui-palette-*`
+  CSS variables for both schemes and flips `data-mui-color-scheme`
+  on toggle, so consumers reference `var(--mui-palette-X)` in `sx`
+  and the dark/light flip becomes a CSS-only operation with no
+  React re-render of palette consumers), `themeCookie.js` (dark/light
+  cookie, paired with MUI's automatic localStorage `mui-mode` key
+  for cross-tab sync), `transitions.js` (the `PALETTE_TRANSITION`
+  token plus its constituent `PALETTE_TRANSITION_DURATION` /
+  `PALETTE_TRANSITION_CURVE` / `PALETTE_TRANSITION_PROPERTIES`
+  exports, wired through `buildTheme.js`'s `styleOverrides` and
+  inline `sx` on raw `<Box>` elements as the per-element fallback
+  for browsers without View Transitions support and for non-toggle
+  palette changes; the property list narrows the transition's blast
+  radius from `'all'` for compositor-cost reasons documented in
+  [`theme-transitions.mdc`](../.cursor/rules/theme-transitions.mdc)).
+- `contexts/` &mdash; `ThemeModeContext.js` only (was paired with
+  `ColorContext.js` until the CSS-variables migration deleted the
+  latter). The provider lives in `App.js::ThemeModeBridge` and
+  derives `darkMode` from MUI's `useColorScheme().mode === 'dark'`
+  and `toggleDarkMode` from `setMode(...)` wrapped in
+  `document.startViewTransition` + `flushSync` plus the
+  `themeCookie.js` write, exposing a stable
+  `{ darkMode: boolean, toggleDarkMode: () => void }` interface to
+  the small set of consumers that genuinely need a JS boolean rather
+  than a CSS value: mermaid's
+  `mermaid.initialize({ theme: darkMode ? 'dark' : 'default' })`
+  selection, per-scheme alpha picks where the alpha *value* differs
+  by scheme, `useExportFlow`'s mode argument. Palette consumers no
+  longer read from React context at all; they reference
+  `var(--mui-palette-*)` directly &mdash; see "CSS variables
+  palette" in
+  [`theme-transitions.mdc`](../.cursor/rules/theme-transitions.mdc).
 - `hooks/` &mdash; shared custom hooks: `useChatSummaries`
   (fetch + `latestRef` + `AbortController` so a stale prefix is
   cancelled on the wire, not just ignored on the client),
@@ -366,34 +400,86 @@ raises `ProgrammingError`).
   reaches a fetching hook's dep array; `ChatList` pairs it with
   `useChatSummaries` so typing into the search bar fires one
   `/api/chats` request per pause instead of one per keystroke),
-  `useExportFlow`, `useExportWarningPreference`, `useSavedSelection`
+  `useExportFlow`, `useExportWarningPreference`, `useInView`
+  (IntersectionObserver visibility for a `ref`'d element, with
+  default-`true` fallback when the API is unavailable; consumed by
+  `MermaidDiagramSurface` to skip the cross-fade overlay for
+  off-screen diagrams), `useReducedMotion`
+  (`prefers-reduced-motion: reduce` matchMedia with a live `change`
+  listener so an OS-setting flip during the session updates the
+  return without a reload; consumed at the JS-side gate in
+  `MermaidDiagramSurface` where the global CSS opt-out in
+  `index.css` is not enough on its own &mdash; the CSS rule disables
+  the keyframe animation but the doubled-DOM cross-fade layer would
+  still mount and stick at `opacity: 1`), `useSavedSelection`
   (captures + restores the user's text selection across the
   context-menu open cycle), `useMermaid` (bootstraps the mermaid
   singleton and keeps its theme in sync with `ThemeModeContext`),
-  and `useSvgPanZoom` (modal-local transform state, pointer drag,
+  `useMermaidRender` (per-block parse + render machine for mermaid
+  sources &mdash; owns `svg` / `renderError` state, the `latestRef`
+  cancellation pattern, the theme-tagged `skipFirstRenderRef`
+  prerender suppression, and the cache + queue routing; consumed
+  by `MermaidBlock` so the component itself stays focused on the
+  diagram/source toggle, the lightbox modal state, and the auto-
+  close-on-error effect), `useSvgCrossFade` (cross-fade state
+  machine for a string-typed imperative-DOM payload &mdash; owns
+  the outgoing-layer state, the keyframe constant, the visibility
+  / reduced-motion / concurrent-fade-cap gate triple, and the
+  `onAnimationEnd` cleanup; consumed by `MermaidDiagramSurface`
+  to keep the surface focused on the layered JSX, the per-scheme
+  alpha tint, and the `contain` containment hint), and
+  `useSvgPanZoom` (modal-local transform state, pointer drag,
   wheel/button zoom, and identity-reset for prop-fed SVG surfaces;
   the anchor-preserving zoom math lives in pure helpers in
-  `utils/svgPanZoomModel.js`, and the consumer's CSS centers the SVG
-  at identity transform so the hook does not measure a per-diagram
-  fit baseline itself).
+  `utils/svgPanZoomModel.js`, and the consumer's CSS centers the
+  SVG at identity transform so the hook does not measure a
+  per-diagram fit baseline itself).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
   consumed by `AppContextMenu`), `mode` (`isDesktopMode()` &mdash;
   shared pywebview-runtime detection consumed by both `exportChat.js`
-  and `AppContextMenu.js`).
+  and `AppContextMenu.js`), `mermaidRenderCache` (session-scoped
+  `Map<key, svg>` keyed by `(source, darkMode)` so repeat dark/light
+  toggles short-circuit at the cache layer instead of re-running
+  `mermaid.parse + mermaid.render`; the bomb-graphic invariant from
+  [`mermaid-rendering.mdc`](../.cursor/rules/mermaid-rendering.mdc)
+  "Parse before render" stays satisfied by construction because
+  cache writes only happen on the render success path),
+  `mermaidRenderQueue` (FIFO promise-chain queue with concurrency 1
+  so a theme toggle on a chat with N uncached diagrams runs the
+  renders one at a time instead of racing all of them on the JS
+  thread; consulted only on cache miss, see
+  [`mermaid-rendering.mdc`](../.cursor/rules/mermaid-rendering.mdc)
+  "Render cache and queue" for the wire-up invariants).
 - `markdown/` &mdash; the unified/remark/rehype pipeline that
   pre-renders chat messages to HTML.
 - `components/`
   - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js`,
-    `MermaidBlock.js`, `MermaidToolbar.js`, `MermaidLightboxModal.js`,
-    `MermaidZoomControls.js`, `MermaidLightboxFallback.js` &mdash;
-    global UI. `MermaidBlock` renders a mermaid fenced code block as
-    a live diagram (default) or raw source, with a per-block toggle
-    and a parse-error fallback. Its sibling `MermaidToolbar` holds
-    the absolute-positioned diagram/source toggle and
-    expand-into-modal icon (extracted to keep `MermaidBlock` under
-    the 250-line decomposition cap from
+    `MermaidBlock.js`, `MermaidDiagramSurface.js`, `MermaidToolbar.js`,
+    `MermaidLightboxModal.js`, `MermaidZoomControls.js`,
+    `MermaidLightboxFallback.js` &mdash; global UI. `MermaidBlock`
+    renders a mermaid fenced code block as a live diagram (default)
+    or raw source, with a per-block toggle and a parse-error
+    fallback. Its sibling `MermaidToolbar` holds the
+    absolute-positioned diagram/source toggle and expand-into-modal
+    icon (extracted to keep `MermaidBlock` under the 250-line
+    decomposition cap from
     [`react-components.mdc`](../.cursor/rules/react-components.mdc)).
+    `MermaidDiagramSurface` owns the diagram-mode click surface and
+    the cross-fade between the previous and current SVG strings on
+    dark/light toggle: mermaid emits a fresh tree of inline-styled
+    DOM nodes per render that share no element identity with the
+    previous SVG, so a CSS `transition` on the surrounding chrome
+    cannot bridge the two states &mdash; the fix layers an
+    absolutely-positioned `aria-hidden` outgoing copy on top of the
+    incoming SVG and runs a CSS keyframe animation to fade the
+    outgoing layer. The cross-fade is gated on `useInView` and
+    `useReducedMotion` so off-screen diagrams skip the doubled-DOM
+    cost entirely and reduced-motion users see instant swaps; the
+    outgoing layer carries `willChange: 'opacity'` for GPU
+    compositor promotion during the bounded fade window. See
+    [`theme-transitions.mdc`](../.cursor/rules/theme-transitions.mdc)
+    "SVG content cross-fade".
     `MermaidLightboxModal` is the full-size modal opened on click of
     the diagram body or the expand icon: it consumes the SVG already
     in `MermaidBlock`'s state via props (no second `mermaid.render`

@@ -5,7 +5,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  alpha,
   Box,
   Button,
   CircularProgress,
@@ -13,7 +12,6 @@ import {
   Typography,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import { ColorContext } from '../../contexts/ColorContext';
 import { ThemeModeContext } from '../../contexts/ThemeModeContext';
 import { useChatSummaries } from '../../hooks/useChatSummaries';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -27,7 +25,6 @@ import SearchBar from './SearchBar';
 const SEARCH_DEBOUNCE_MS = 200;
 
 const ChatList = () => {
-  const colors = useContext(ColorContext);
   const { darkMode } = useContext(ThemeModeContext);
   const [expandedProjects, setExpandedProjects] = useState({});
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,7 +100,7 @@ const ChatList = () => {
   if (loading && chatData.items.length === 0) {
     return (
       <Container sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
-        <CircularProgress sx={{ color: colors.highlightColor }} />
+        <CircularProgress sx={{ color: 'var(--mui-palette-highlight-main)' }} />
       </Container>
     );
   }
@@ -122,7 +119,7 @@ const ChatList = () => {
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2, mb: 3 }}>
         <Box>
-          <Typography variant="h4" component="h1" sx={{ color: colors.text.primary }}>
+          <Typography variant="h4" component="h1" sx={{ color: 'var(--mui-palette-text-primary)' }}>
             Cursor Chat History
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
@@ -141,7 +138,7 @@ const ChatList = () => {
             borderRadius: 2,
             color: 'white',
             '&:hover': {
-              backgroundColor: alpha(colors.highlightColor, 0.8),
+              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.8)',
             },
           }}
         >

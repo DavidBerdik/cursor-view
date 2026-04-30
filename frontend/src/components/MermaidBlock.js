@@ -1,120 +1,45 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { alpha, Box, Typography } from '@mui/material';
-import mermaid from 'mermaid';
-import { ColorContext } from '../contexts/ColorContext';
+import React, { memo, useCallback, useContext, useEffect, useState } from 'react';
+import { Box, Typography } from '@mui/material';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
+import { useMermaidRender } from '../hooks/useMermaidRender';
+import { PALETTE_TRANSITION } from '../theme/transitions';
+import MermaidDiagramSurface from './MermaidDiagramSurface';
 import MermaidLightboxModal from './MermaidLightboxModal';
 import MermaidToolbar from './MermaidToolbar';
 
-// Counter used to generate unique IDs for mermaid.render. Mermaid
-// requires each call to use a distinct ID; an incrementing module-level
-// counter is simpler than uuid and safe for our single-threaded render path.
-let _idCounter = 0;
-
-function nextMermaidId() {
-  _idCounter += 1;
-  return `mermaid-block-${_idCounter}`;
-}
-
 // Renders a single mermaid fenced code block as either a live diagram
-// (default) or the raw source text. The diagram mode uses mermaid.render,
-// which is async; the latestRef pattern from frontend-hooks.mdc ensures
-// that a stale render (e.g. a theme flip that triggers a new render while
-// the old one is still in flight) cannot overwrite the fresher result.
+// (default) or the raw source text. The async parse + render machinery
+// (cache check, queue, latestRef cancellation, parse-before-render,
+// theme-tagged prerender suppression) lives in `useMermaidRender`; this
+// component owns the diagram/source mode toggle, the lightbox modal
+// state, and the auto-close-on-error effect.
 //
-// The render effect always validates with mermaid.parse before calling
-// mermaid.render and treats a parse rejection as terminal for that pass.
-// This is the invariant that keeps theme flips idempotent: mermaid.render
-// injects a "bomb" SVG into document.body as a side effect when its
-// internal parse fails, and that DOM mutation cannot be undone from the
-// .catch handler — without the parse-first guard, every dark/light toggle
-// on a chat containing an invalid diagram would leave one more orphaned
-// bomb at the end of the page. prerenderMermaidDiagrams enforces the same
-// invariant on the pre-paint path; both pipelines are documented together
-// in mermaid-rendering.mdc.
-//
-// ``initialSvg`` / ``initialError`` / ``initialDarkMode`` come from
-// prerenderMermaidDiagrams in ChatDetail's fetch effect (before
-// setLoading(false)) so MermaidBlock starts in the correct state on
-// first paint. skipFirstRenderRef suppresses the first-mount render
-// only when the prerender result is still authoritative: errors
-// qualify unconditionally (the message string is theme-independent),
-// but a cached SVG qualifies only when the prerender's darkMode
-// matches the current darkMode — a mismatch means the user toggled
-// theme during ChatDetail's loading window, the cached SVG was themed
-// against the prior value, and the per-block effect must run on first
-// mount so the diagram is re-themed. Theme flips after first mount
-// always go through the effect, so valid diagrams re-render with the
-// new theme. See "Theme-tagged prerender entries" in
-// mermaid-rendering.mdc.
-export default function MermaidBlock({ source, initialSvg, initialError, initialDarkMode }) {
-  const colors = useContext(ColorContext);
+// `initialSvg` / `initialError` / `initialDarkMode` come from
+// `prerenderMermaidDiagrams` in `ChatDetail`'s fetch effect (before
+// `setLoading(false)`) so `MermaidBlock` starts in the correct state
+// on first paint; the hook honors the same theme-tagged-prerender
+// invariants documented in `mermaid-rendering.mdc`.
+function MermaidBlock({ source, initialSvg, initialError, initialDarkMode }) {
   const { darkMode } = useContext(ThemeModeContext);
   const [mode, setMode] = useState(initialError ? 'source' : 'diagram');
-  const [svg, setSvg] = useState(initialSvg ?? null);
-  const [renderError, setRenderError] = useState(initialError ?? null);
-  // Tracks the latest render attempt so stale async results are discarded.
-  const latestRef = useRef(0);
-  // Skip the redundant first-mount render when prerenderMermaidDiagrams
-  // already produced a usable result for this source. Errors are
-  // theme-independent so they always qualify; cached SVGs only qualify
-  // when their prerender-time theme still matches the current darkMode,
-  // otherwise the user toggled theme during ChatDetail's loading window
-  // and the cached SVG is stale (see "Theme-tagged prerender entries"
-  // in mermaid-rendering.mdc).
-  const skipFirstRenderRef = useRef(
-    Boolean(initialError) || (Boolean(initialSvg) && initialDarkMode === darkMode),
-  );
 
-  useEffect(() => {
-    if (!source) {
-      return;
-    }
-
-    if (skipFirstRenderRef.current) {
-      skipFirstRenderRef.current = false;
-      return;
-    }
-
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: 'strict',
-      theme: darkMode ? 'dark' : 'default',
-    });
-
-    const id = ++latestRef.current;
-
-    (async () => {
-      try {
-        await mermaid.parse(source);
-      } catch (parseErr) {
-        if (id !== latestRef.current) {
-          return;
-        }
-        // Surface the parser message and fall back to source view so the
-        // user can see what went wrong without losing the raw text.
-        setRenderError(parseErr?.message ?? String(parseErr));
-        setMode('source');
-        return;
-      }
-
-      const renderId = nextMermaidId();
-      try {
-        const { svg: renderedSvg } = await mermaid.render(renderId, source);
-        if (id !== latestRef.current) {
-          return;
-        }
-        setSvg(renderedSvg);
-        setRenderError(null);
-      } catch (err) {
-        if (id !== latestRef.current) {
-          return;
-        }
-        setRenderError(err?.message ?? String(err));
-        setMode('source');
-      }
-    })();
-  }, [source, darkMode]);
+  // The hook fires this synchronously alongside its own
+  // `setRenderError` so both state updates land in the same React
+  // batch -- avoids a one-frame inconsistency where the toolbar would
+  // otherwise show the wrong mode-toggle button label between the
+  // hook's commit and a parent-side `useEffect([renderError])`
+  // auto-switch. `useCallback` keeps the prop identity stable so the
+  // hook's effect deps stay `[source, darkMode]` and a parent
+  // re-render does not bump `latestRef` mid-flight.
+  const handleRenderError = useCallback(() => setMode('source'), []);
+  const { svg, renderError } = useMermaidRender({
+    source,
+    darkMode,
+    initialSvg,
+    initialError,
+    initialDarkMode,
+    onRenderError: handleRenderError,
+  });
 
   const toggleMode = () =>
     setMode((prev) => (prev === 'diagram' ? 'source' : 'diagram'));
@@ -157,9 +82,27 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
         position: 'relative',
         my: 1.5,
         border: '1px solid',
-        borderColor: alpha(colors.highlightColor, 0.2),
+        borderColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.2)',
         borderRadius: 1,
         overflow: 'hidden',
+        transition: PALETTE_TRANSITION,
+        // Skip layout/paint for off-screen mermaid blocks. Long chats
+        // routinely contain 5+ diagrams; on a theme toggle the browser
+        // would otherwise re-layout and re-paint every one of them
+        // (each containing a non-trivial inline-styled SVG subtree)
+        // even for blocks scrolled far above or below the viewport.
+        // `containIntrinsicSize: '0 400px'` reserves a placeholder
+        // height so the scrollbar doesn't jump as off-screen blocks
+        // materialize (`0` = use parent's width). 400px is a
+        // heuristic for a typical mermaid diagram height in this UI;
+        // a future enhancement could measure rendered heights per
+        // source and feed them back through the prerender cache, but
+        // any heuristic that's roughly right is dramatically better
+        // than the unbounded reflow from `auto` with no intrinsic
+        // size hint. Browsers without `content-visibility` support
+        // (older Firefox) silently ignore both properties.
+        contentVisibility: 'auto',
+        containIntrinsicSize: '0 400px',
       }}
     >
       {renderError === null && (
@@ -182,44 +125,20 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
       )}
 
       {showDiagram ? (
-        // Diagram body is itself the click surface for the modal
-        // (paired with the expand icon in the toolbar above for
-        // discoverability/accessibility). Rendered as `<button>` for
-        // semantics + keyboard activation; default chrome is reset
-        // (`border: 'none'`, transparent backgroundColor below the
-        // theme tint, font/color inherited) so the visual is identical
-        // to the prior `<Box>`. Mermaid's `securityLevel: 'strict'`
-        // disables in-SVG click handlers, so wrapping the diagram in a
-        // button cannot suppress library interactivity. `width: 100%`
-        // and `textAlign: 'inherit'` undo the default `<button>`
-        // shrink-to-fit + center-align that would otherwise reflow the
-        // diagram. `userSelect: 'text'` overrides the user-agent
-        // default that Safari (and historically other browsers) apply
-        // to form elements, so labels inside the rendered SVG remain
-        // copy-selectable; drag-to-select does not trigger the click
-        // handler because click only fires on a movement-free mouseup.
-        <Box
-          component="button"
-          type="button"
-          onClick={handleOpenModal}
-          aria-label="Open mermaid diagram in modal"
-          dangerouslySetInnerHTML={{ __html: svg }}
-          sx={{
-            display: 'flex',
-            justifyContent: 'center',
-            p: 2,
-            width: '100%',
-            border: 'none',
-            cursor: 'pointer',
-            font: 'inherit',
-            color: 'inherit',
-            textAlign: 'inherit',
-            userSelect: 'text',
-            backgroundColor: darkMode
-              ? alpha(colors.highlightColor, 0.04)
-              : alpha(colors.highlightColor, 0.02),
-            '& svg': { maxWidth: '100%', height: 'auto' },
-          }}
+        // The cross-fade between the outgoing and incoming SVG on theme
+        // toggle lives inside `MermaidDiagramSurface`, not here. mermaid
+        // emits a fresh tree of inline-styled DOM nodes per render that
+        // share no element identity with the previous SVG, so a CSS
+        // `transition` on the surrounding chrome (which we have via
+        // `MuiPaper` + the outer wrapper's `PALETTE_TRANSITION` below)
+        // cannot bridge the two SVG states. Layering two SVGs through
+        // an absolutely-positioned `aria-hidden` outgoing copy is the
+        // only fix that does not require a third mermaid pipeline (see
+        // `mermaid-rendering.mdc`).
+        <MermaidDiagramSurface
+          svg={svg}
+          darkMode={darkMode}
+          onOpenModal={handleOpenModal}
         />
       ) : (
         <Box
@@ -230,8 +149,17 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
             overflowX: 'auto',
             fontSize: '0.85em',
             fontFamily: 'source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace',
-            backgroundColor: alpha(colors.highlightColor, darkMode ? 0.08 : 0.04),
-            color: colors.text.primary,
+            // Alpha differs by scheme (8% in dark, 4% in light) so the
+            // tint stays subtle against each scheme's `background.paper`.
+            // `darkMode` is still a React boolean here because the alpha
+            // *value* changes per scheme, not just the underlying color;
+            // a single CSS variable cannot encode "different alpha per
+            // active scheme" without a full per-scheme override.
+            backgroundColor: darkMode
+              ? 'rgba(var(--mui-palette-highlight-mainChannel) / 0.08)'
+              : 'rgba(var(--mui-palette-highlight-mainChannel) / 0.04)',
+            color: 'var(--mui-palette-text-primary)',
+            transition: PALETTE_TRANSITION,
           }}
         >
           <code>{source}</code>
@@ -248,3 +176,8 @@ export default function MermaidBlock({ source, initialSvg, initialError, initial
     </Box>
   );
 }
+
+// Memo so parent re-renders that don't change source / prerender
+// props skip this subtree. Theme context still propagates via
+// `useContext`, so the cache-hit fast path fires on dark/light flip.
+export default memo(MermaidBlock);

@@ -12,18 +12,19 @@ import MermaidZoomControls from './MermaidZoomControls';
 //
 // SVG-as-prop, not a second render: the singleton config, the
 // `latestRef` cancellation, and the bomb-graphic-avoidance discipline
-// (parse-before-render) all live in MermaidBlock. Calling
-// `mermaid.render` again here would duplicate that work and re-open
-// the bomb-graphic risk a failed render injects into document.body
-// (see MermaidBlock's top-of-file comment). It would also constitute
-// a third mermaid pipeline, which `mermaid-rendering.mdc` forbids.
+// (parse-before-render) all live in `useMermaidRender` (consumed by
+// MermaidBlock). Calling `mermaid.render` again here would duplicate
+// that work and re-open the bomb-graphic risk a failed render injects
+// into document.body (see `useMermaidRender`'s top-of-file comment).
+// It would also constitute a third mermaid pipeline, which
+// `mermaid-rendering.mdc` forbids.
 //
 // Theme parity with the inline view is automatic: when ThemeModeContext
-// flips, MermaidBlock's `useEffect([source, darkMode])` regenerates
-// `svg`, the new value flows down via props, and React reconciles the
-// modal body. Do not add a duplicate `useEffect(darkMode)` here -- it
-// would race the parent's render and potentially install a stale
-// theme'd SVG over a fresh one.
+// flips, `useMermaidRender`'s `useEffect([source, darkMode])`
+// regenerates `svg`, the new value flows down via props through
+// MermaidBlock, and React reconciles the modal body. Do not add a
+// duplicate `useEffect(darkMode)` here -- it would race the parent's
+// render and potentially install a stale theme'd SVG over a fresh one.
 //
 // UX invariants: ESC/backdrop dismiss via `Dialog onClose`; all
 // controls live in the toolbar row (never overlaid on diagram content);

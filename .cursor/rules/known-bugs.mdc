@@ -17,8 +17,57 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` marker is in the tree at the moment. Five
-retired examples now live in git history:
+Two live `# TODO(bug):` markers are in the tree:
+
+- the cross-fade cancellation gap in
+  `frontend/src/hooks/useSvgCrossFade.js`'s `onAnimationEnd`
+  callback (consumed by `MermaidDiagramSurface`'s outgoing-layer
+  `onAnimationEnd` JSX prop). A user who flips OS-level
+  reduced-motion during the ~200ms mermaid SVG cross-fade window
+  sees the outgoing SVG layer stick on top of the incoming SVG
+  until the next svg change for this block (typically the next
+  theme toggle), because the global
+  `@media (prefers-reduced-motion: reduce)` rule in
+  `frontend/src/index.css` overrides the keyframe `animation` to
+  `none`, which fires `animationcancel` (not `animationend`) on
+  the outgoing layer; React's `onAnimationEnd` JSX prop does not
+  catch `animationcancel`, so `setOutgoingSvg(null)` is never
+  called for the cancelled fade. Suspected fix is to attach an
+  `animationcancel` listener via `addEventListener` in a
+  `useEffect` (React JSX has no `onAnimationCancel` shorthand)
+  with the same `setOutgoingSvg(null)` payload. Not regression-
+  pinned because the frontend has no JS test harness, so the
+  invariant would be enforced by the cross-referenced rule and
+  by manual verification only.
+
+- the cross-message mermaid singleton race in
+  `frontend/src/components/chat-detail/ChatDetail.js`'s fetch
+  effect, around the dual-theme `prerenderMermaidDiagrams` call
+  pair. On a chat with multiple messages and many diagrams, some
+  diagrams may render with the wrong theme on first paint (or
+  after the first dark/light toggle from the cache), because the
+  outer `Promise.all(rawMessages.map(...))` runs N message-level
+  prerenders concurrently while each message's dual-theme pair
+  fires `mermaid.initialize({ theme: ... })` with alternating
+  values. Suspected cause: the in-message sequential `await` only
+  serializes the two prerenders for ONE message; across messages
+  the dual-theme pairs interleave, and once any message's B-pass
+  calls `mermaid.initialize({ theme: !darkMode })` it overwrites
+  the singleton baseline (mermaid's `processAndSetConfigs` calls
+  `reset()` to that baseline at the start of every
+  `mermaid.render`), so any other message's A-pass render that
+  hasn't yet captured its config picks up the flipped theme and
+  produces a wrong-themed SVG cached under `(source, darkMode)`.
+  Suspected fix is to split into two sequential outer passes
+  (one theme per pass), each using `Promise.all` over messages
+  internally so all concurrent prerenders within a pass share
+  one theme. Not regression-pinned because the frontend has no
+  JS test harness; the invariant would be enforced by manual
+  verification on a diagram-heavy multi-message chat (toggle
+  through both themes and inspect each diagram's `stroke` /
+  `fill` colors against the expected scheme).
+
+Five retired examples now live in git history:
 
 - the swallow-and-stub exception handler in
   `cursor_view/chat_format.py::format_chat_for_frontend`,

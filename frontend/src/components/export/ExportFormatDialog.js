@@ -1,4 +1,4 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import {
   Button,
   Dialog,
@@ -13,8 +13,6 @@ import {
 } from '@mui/material';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 
-import { ColorContext } from '../../contexts/ColorContext';
-
 // First dialog in the export flow: pick HTML / JSON / Markdown. Driven
 // entirely by props so `useExportFlow` can own the state.
 export default function ExportFormatDialog({
@@ -23,8 +21,6 @@ export default function ExportFormatDialog({
   onFormatChange,
   onClose,
 }) {
-  const colors = useContext(ColorContext);
-
   return (
     <Dialog
       open={open}
@@ -32,7 +28,7 @@ export default function ExportFormatDialog({
       aria-labelledby="format-selection-dialog-title"
     >
       <DialogTitle id="format-selection-dialog-title" sx={{ display: 'flex', alignItems: 'center' }}>
-        <FileDownloadIcon sx={{ color: colors.highlightColor, mr: 1 }} />
+        <FileDownloadIcon sx={{ color: 'var(--mui-palette-highlight-main)', mr: 1 }} />
         Export Format
       </DialogTitle>
       <DialogContent>

@@ -174,8 +174,42 @@ function useSelection() {
   reaches a fetching hook's dep array.
 - `useExportFlow` — multi-step dialog state machine.
 - `useExportWarningPreference` — cookie-backed preference.
+- `useInView` — IntersectionObserver visibility for a `ref`'d
+  element, with a default-`true` fallback when the API is
+  unavailable so visibility-gated consumers (e.g. mermaid
+  cross-fade) still work as a presentation-level baseline.
+- `useMermaidRender` — chat-view per-block parse + render machine
+  for mermaid sources. Owns the `svg` / `renderError` state, the
+  `latestRef` cancellation pattern, the `skipFirstRenderRef`
+  prerender-suppression gate (theme-tagged per
+  [`mermaid-rendering.mdc`](mermaid-rendering.mdc) "Theme-tagged
+  prerender entries"), the cache + queue routing, and the parse-
+  before-render guard. Counterpart of the singleton-bootstrap hook
+  `useMermaid` (which is global, runs once at the `MessageMarkdown`
+  level): `useMermaidRender` is per-block, runs once per
+  `MermaidBlock` mount + theme flip. Accepts an `onRenderError`
+  callback that fires synchronously alongside the hook's own
+  `setRenderError` so the consumer can flip its mode state in the
+  same React batch (avoids a one-frame inconsistency in the toolbar
+  during failure transitions).
+- `useReducedMotion` — `prefers-reduced-motion: reduce` matchMedia
+  with a `change` listener so live OS-setting flips update the
+  return value without a reload. Used at the JS-side gate where
+  the global CSS `@media (prefers-reduced-motion: reduce)` rule
+  in `index.css` is not enough on its own (e.g. when the cost is
+  mounting DOM, not just running an animation).
 - `useSavedSelection` — DOM-state capture / restore with an
   `rAF`-driven replay hook.
+- `useSvgCrossFade` — cross-fade state machine for a string-typed
+  imperative-DOM payload (mermaid SVG today). Owns the outgoing-
+  layer state, the visibility / reduced-motion / concurrent-fade-
+  cap gate triple, the keyframe constant, and the
+  `onAnimationEnd` cleanup. Returns
+  `{ surfaceRef, outgoingSvg, fadeAnimation, onAnimationEnd }` —
+  consumer renders the layered JSX and wires those four to the
+  outgoing `<Box>`. Generalizes to future imperative-DOM cross-
+  fades (prism / monaco / similar) where the rendered output is
+  not CSS-animatable across re-renders.
 - `useSvgPanZoom` — transform state + pointer drag + wheel/button
   zoom + identity-reset for display-only modal interactions over
   existing SVG DOM (consumer's CSS supplies the fit-and-center

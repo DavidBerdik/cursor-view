@@ -58,15 +58,52 @@ import { formatDate } from '../../utils/formatDate';
 
 # Theme ownership
 
-- MUI theme tokens (`palette`, `sx`) own the visual language. CSS
-  files in `src/` must **not** hard-code colors the theme already
-  controls. Keep global CSS limited to font stacks, CSS-variable-
-  driven scrollbars, and purely structural concerns. Motivating
-  example: `frontend/src/index.css` previously hard-coded `#2D2D2D`
-  for `pre` and `code` even in light mode.
-- Contexts (`ColorContext`, `ThemeModeContext`) are defined in
-  `src/contexts/`, one per file. Do not re-export contexts from
-  `App.js`; import them from their defining file.
+- MUI theme tokens own the visual language. CSS files in `src/` must
+  **not** hard-code colors the theme already controls. Keep global
+  CSS limited to font stacks, CSS-variable-driven scrollbars, and
+  purely structural concerns. Motivating example:
+  `frontend/src/index.css` previously hard-coded `#2D2D2D` for
+  `pre` and `code` even in light mode. The time-domain extension
+  of this rule — how a palette swap should unfold visually rather
+  than which colors apply — lives in
+  [`theme-transitions.mdc`](theme-transitions.mdc).
+- The *mechanism* by which palette tokens reach a JSX site is CSS
+  variables, not React context. `frontend/src/theme/buildTheme.js`
+  configures `createTheme({ cssVariables: { colorSchemeSelector:
+  'data-mui-color-scheme' }, colorSchemes: { light, dark } })`, MUI's
+  CSS-variables-aware `<ThemeProvider>` emits `--mui-palette-*` on
+  the document, and consumers reference them in `sx` directly:
+
+  ```jsx
+  sx={{
+    color: 'var(--mui-palette-text-primary)',
+    backgroundColor: 'var(--mui-palette-background-paper)',
+    borderColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.2)',
+  }}
+  ```
+
+  Toggle is a CSS-only `data-mui-color-scheme` flip; no React
+  re-render of palette consumers. Do **not** read palette tokens from
+  React context (`ColorContext` no longer exists; it was deleted in
+  the CSS-variables migration), and do **not** pass a palette object
+  through props (`MessageMarkdown`'s `colors` prop was deleted in
+  the same migration). The full pattern — CSS-variable consumer
+  syntax, `*Channel` variants for alpha, the `colorSchemeSelector`
+  config gotcha, and the boolean-`darkMode` exceptions for non-CSS
+  code paths — is documented under "CSS variables palette" in
+  [`theme-transitions.mdc`](theme-transitions.mdc).
+- The remaining context is `ThemeModeContext` (`src/contexts/`),
+  exposing `{ darkMode: boolean, toggleDarkMode: () => void }` for
+  the small set of consumers that genuinely need a JS boolean rather
+  than a CSS value: mermaid's
+  `mermaid.initialize({ theme: darkMode ? 'dark' : 'default' })`
+  selection, per-scheme alpha picks where the alpha *value* differs
+  by scheme, `useExportFlow`'s mode argument. The provider in
+  `App.js::ThemeModeBridge` derives both fields from MUI's
+  `useColorScheme()` (`mode === 'dark'`, `setMode(...)` plus the
+  cookie write and View Transitions / `flushSync` wrapper). Do not
+  re-export the context from `App.js`; import it from its defining
+  file.
 
 # Effects and export flow
 

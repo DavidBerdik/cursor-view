@@ -4,52 +4,52 @@ overview: Centralize the canonical dark/light theme fade transition (`'all 0.3s 
 todos:
   - id: add_transitions_module
     content: Create `frontend/src/theme/transitions.js` exporting `PALETTE_TRANSITION = 'all 0.3s cubic-bezier(.17,.67,.83,.67)'`.
-    status: pending
+    status: completed
   - id: fade_app_background
     content: "In `frontend/src/theme/buildTheme.js`, add a `MuiCssBaseline.styleOverrides.body` override that sets `transition: PALETTE_TRANSITION` so the app's full-page background (driven by `theme.palette.background.default` via MUI's `CssBaseline` reset) fades on dark/light toggle instead of flashing instantly. This is the single largest visible surface in the UI."
-    status: pending
+    status: completed
   - id: extend_build_theme
     content: "In `frontend/src/theme/buildTheme.js`: import `PALETTE_TRANSITION`, add it to existing `MuiCard` / `MuiPaper` / `MuiAppBar` / `MuiButton` / `MuiChip` overrides, and add new `MuiIconButton` / `MuiAvatar` / `MuiSvgIcon` / `MuiTypography` / `MuiDivider` / `MuiOutlinedInput` overrides (the body fade is its own todo above)."
-    status: pending
+    status: completed
   - id: update_index_css_scrollbar
     content: Update the three scrollbar `transition` rules in `frontend/src/index.css` from `200ms ease` to `0.3s cubic-bezier(.17,.67,.83,.67)` so the scrollbar fade matches the canonical curve.
-    status: pending
+    status: completed
   - id: fix_project_group_box
     content: "In `frontend/src/components/chat-list/ProjectGroup.js`, drop the now-redundant `transition: 'all 0.3s ease-in-out'` on the outer `Paper` and add `transition: PALETTE_TRANSITION` to the inner header `<Box>` (the visible chat-category color block)."
-    status: pending
+    status: completed
   - id: clean_chat_card
     content: "In `frontend/src/components/chat-list/ChatCard.js`, remove the inline `transition` on the `Card` (now centralized) and add `transition: PALETTE_TRANSITION` to the inner highlight-colored `<Box>` panel that holds the preview text."
-    status: pending
+    status: completed
   - id: fade_message_bubble_table
     content: "In `frontend/src/components/chat-detail/MessageBubble.js`, add `transition: PALETTE_TRANSITION` to the inner content `<Box>` and to its `'& th'` / `'& tr:nth-of-type(even)'` selectors so the table-row tints fade with the rest of the bubble."
-    status: pending
+    status: completed
   - id: fade_mermaid_block_chrome
     content: "In `frontend/src/components/MermaidBlock.js`, add `transition: PALETTE_TRANSITION` to the outer wrapper `<Box>`, the diagram-body `<Box component=\"button\">`, and the source-mode `<Box component=\"pre\">`. Do not touch the mermaid render path or `useSvgPanZoom`."
-    status: pending
+    status: completed
   - id: fade_message_markdown_code
     content: "In `frontend/src/components/MessageMarkdown.js`, add `transition: PALETTE_TRANSITION` inside the `'& pre'` rule of the outer `<Box>` and the `'& :not(pre) > code'` rule of the inner `<Box>`."
-    status: pending
+    status: completed
   - id: fade_image_gallery_thumbs
     content: "In `frontend/src/components/chat-detail/MessageImageGallery.js`, add `transition: PALETTE_TRANSITION` to the thumbnail `<Box component=\"button\">` so its `borderColor: 'divider'` fades."
-    status: pending
+    status: completed
   - id: add_theme_transitions_rule
     content: "Add `.cursor/rules/theme-transitions.mdc` capturing: the canonical string lives in `theme/transitions.js`; palette-driven MUI components get it via `buildTheme.js` `styleOverrides`; raw `<Box>` elements get it via inline `sx` importing the same constant; dialogs/modals/context menu inherit only via the global MUI override and are not separately decorated."
-    status: pending
+    status: completed
   - id: cross_reference_react_components
     content: Update `.cursor/rules/react-components.mdc` "Theme ownership" section with one sentence cross-referencing the new `theme-transitions.mdc`.
-    status: pending
+    status: completed
   - id: update_readme_features
     content: Add a Features bullet to `README.md` mentioning the smooth dark/light fade across the UI.
-    status: pending
+    status: completed
   - id: update_contributing_theme
     content: Update the `theme/` bullet in `.github/CONTRIBUTING.md`'s Frontend section to list `transitions.js` alongside `colors.js`, `buildTheme.js`, and `themeCookie.js`.
-    status: pending
+    status: completed
   - id: review_rules_followed
     content: Review every modified file against `react-components.mdc` (theme ownership / size cap), `mermaid-rendering.mdc` (no new pipeline; render path untouched), `frontend-hooks.mdc` (no hook changes), and `comments-style.mdc` (intent-only comments). Confirm no `# TODO(bug):` markers were introduced.
-    status: pending
+    status: completed
   - id: final_bug_check
     content: "Final pass: ripgrep `transition:` over `frontend/src/` to confirm no stale literal duplicates the constant; verify pan/zoom inside `MermaidLightboxModal` still feels responsive (the global `MuiPaper` `'all'` transition could in theory cascade — narrow it to color/border/box-shadow if it lags); verify `ProjectGroup`'s old `ease-in-out` is gone and `ChatCard`'s old inline transition is gone (or unchanged-and-redundant). Note any new bug suspicions with the `# TODO(bug):` marker per `known-bugs.mdc` rather than silently editing."
-    status: pending
+    status: completed
 isProject: false
 ---
 

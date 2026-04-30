@@ -1,16 +1,26 @@
 import React, { useContext } from 'react';
-import { Box, alpha } from '@mui/material';
+import { Box } from '@mui/material';
 import parse from 'html-react-parser';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
+import { PALETTE_TRANSITION } from '../theme/transitions';
 import MermaidBlock from './MermaidBlock';
 import { useMermaid } from '../hooks/useMermaid';
 
-function getCodeBlockBackground(colors, role, darkMode) {
+// Code-block background tint as a CSS-variable rgba string. The
+// active scheme value of the underlying palette token comes from
+// MUI's CSS-variables generator (see `buildTheme.js`); the alpha
+// component is per-role and per-scheme (heavier in dark mode for
+// legibility on the dark `background.paper`), so the `darkMode`
+// boolean still picks the alpha value here.
+function getCodeBlockBackground(role, darkMode) {
   if (role === 'user') {
-    return alpha(colors.primary.main, darkMode ? 0.16 : 0.07);
+    return darkMode
+      ? 'rgba(var(--mui-palette-primary-mainChannel) / 0.16)'
+      : 'rgba(var(--mui-palette-primary-mainChannel) / 0.07)';
   }
-
-  return alpha(colors.highlightColor, darkMode ? 0.2 : 0.1);
+  return darkMode
+    ? 'rgba(var(--mui-palette-highlight-mainChannel) / 0.2)'
+    : 'rgba(var(--mui-palette-highlight-mainChannel) / 0.1)';
 }
 
 // Returns true when an html-dom-parser element node is a mermaid code block,
@@ -31,14 +41,15 @@ function textContent(node) {
     .join('');
 }
 
-export default function MessageMarkdown({ html, colors, role, mermaidSvgs }) {
+export default function MessageMarkdown({ html, role, mermaidSvgs }) {
   const { darkMode } = useContext(ThemeModeContext);
   // Bootstraps the mermaid singleton and keeps its theme in sync with
-  // dark/light mode. MermaidBlock also calls mermaid.initialize before
-  // each render; this hook is the global owner of startOnLoad:false.
+  // dark/light mode. useMermaidRender (consumed per-block by
+  // MermaidBlock) also calls mermaid.initialize before each render;
+  // this hook is the global owner of startOnLoad:false.
   useMermaid();
 
-  const codeBlockBackground = getCodeBlockBackground(colors, role, darkMode);
+  const codeBlockBackground = getCodeBlockBackground(role, darkMode);
 
   // Replace <pre><code class="language-mermaid">…</code></pre> nodes
   // produced by rehype-stringify with a MermaidBlock React component.
@@ -77,10 +88,11 @@ export default function MessageMarkdown({ html, colors, role, mermaidSvgs }) {
           maxWidth: '100%',
           overflowX: 'auto',
           backgroundColor: codeBlockBackground,
-          color: colors.text.primary,
+          color: 'var(--mui-palette-text-primary)',
           borderRadius: 1,
           p: 2,
           m: 0,
+          transition: PALETTE_TRANSITION,
         },
         '& pre code': {
           display: 'block',
@@ -100,12 +112,13 @@ export default function MessageMarkdown({ html, colors, role, mermaidSvgs }) {
           '& :not(pre) > code': {
             display: 'inline',
             fontSize: '0.85em',
-            backgroundColor: getCodeBlockBackground(colors, role, darkMode),
-            color: colors.text.primary,
+            backgroundColor: getCodeBlockBackground(role, darkMode),
+            color: 'var(--mui-palette-text-primary)',
             borderRadius: 0.5,
             px: 0.8,
             py: 0.2,
             verticalAlign: 'baseline',
+            transition: PALETTE_TRANSITION,
           },
         }}
       >

@@ -1,8 +1,7 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import { Box, IconButton, SvgIcon, Tooltip } from '@mui/material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CodeIcon from '@mui/icons-material/Code';
-import { ColorContext } from '../contexts/ColorContext';
 
 // Lucide-style "open in full screen" glyph used by Cursor: two
 // stroke-only L-shape arrowheads at the top-left and bottom-right
@@ -40,12 +39,13 @@ function FullScreenIcon(props) {
 // Two reasons this lives in its own file:
 //
 // 1. `react-components.mdc` decomposes any component over ~250 lines
-//    into siblings. `MermaidBlock` owns the heavyweight async
-//    `mermaid.parse` + `mermaid.render` effect, the `latestRef`
-//    cancellation pattern, the `skipFirstRenderRef` first-mount
-//    suppression, and the diagram/source/error tri-state. The toolbar
-//    is none of that -- it's a stateless overlay -- so extracting it
-//    keeps both files focused on a single concern.
+//    into siblings. `MermaidBlock` consumes the heavyweight async
+//    `mermaid.parse` + `mermaid.render` machine via `useMermaidRender`
+//    (which owns the `latestRef` cancellation pattern and the
+//    `skipFirstRenderRef` first-mount suppression) and adds the
+//    diagram/source/error tri-state and the lightbox modal state.
+//    The toolbar is none of that -- it's a stateless overlay -- so
+//    extracting it keeps both files focused on a single concern.
 // 2. The `<Box onClick={(e) => e.stopPropagation()}>` wrapper exists
 //    because the diagram body underneath is itself a clickable
 //    `<button>` (the second affordance for opening the modal). Without
@@ -59,8 +59,6 @@ function FullScreenIcon(props) {
 // as `showExpand`). Re-deriving it here would require passing `mode`,
 // `svg`, and `renderError`, defeating the extraction.
 export default function MermaidToolbar({ mode, showExpand, onToggleMode, onOpenModal }) {
-  const colors = useContext(ColorContext);
-
   return (
     <Box
       onClick={(e) => e.stopPropagation()}
@@ -80,8 +78,8 @@ export default function MermaidToolbar({ mode, showExpand, onToggleMode, onOpenM
             size="small"
             onClick={onOpenModal}
             sx={{
-              color: colors.text.secondary,
-              '&:hover': { color: colors.highlightColor },
+              color: 'var(--mui-palette-text-secondary)',
+              '&:hover': { color: 'var(--mui-palette-highlight-main)' },
             }}
           >
             <FullScreenIcon fontSize="small" />
@@ -95,8 +93,8 @@ export default function MermaidToolbar({ mode, showExpand, onToggleMode, onOpenM
           size="small"
           onClick={onToggleMode}
           sx={{
-            color: colors.text.secondary,
-            '&:hover': { color: colors.highlightColor },
+            color: 'var(--mui-palette-text-secondary)',
+            '&:hover': { color: 'var(--mui-palette-highlight-main)' },
           }}
         >
           {mode === 'diagram' ? <CodeIcon fontSize="small" /> : <AccountTreeIcon fontSize="small" />}

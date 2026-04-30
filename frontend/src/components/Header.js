@@ -5,11 +5,9 @@ import ChatIcon from '@mui/icons-material/Chat';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
-import { ColorContext } from '../contexts/ColorContext';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
 
 const Header = () => {
-  const colors = useContext(ColorContext);
   const { darkMode, toggleDarkMode } = useContext(ThemeModeContext);
 
   return (
@@ -55,8 +53,8 @@ const Header = () => {
               borderColor: 'rgba(255,255,255,0.5)', 
               '&:hover': { 
                 borderColor: 'rgba(255,255,255,0.8)',
-                backgroundColor: colors.highlightColor
-              }
+                backgroundColor: 'var(--mui-palette-highlight-main)',
+              },
             }}
           >
             GitHub

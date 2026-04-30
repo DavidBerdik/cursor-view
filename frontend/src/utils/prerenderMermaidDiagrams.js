@@ -1,4 +1,5 @@
 import mermaid from 'mermaid';
+import { setCachedMermaidSvg } from './mermaidRenderCache';
 
 // Pre-renders all mermaid code blocks found in a pre-rendered HTML string.
 //
@@ -35,6 +36,17 @@ import mermaid from 'mermaid';
 //
 // Uses DOMParser to locate <pre><code class="language-mermaid"> nodes,
 // mirroring what MessageMarkdown's replaceNode interceptor does.
+//
+// As a side effect, every successful render is written into the
+// session-scoped `mermaidRenderCache` (`setCachedMermaidSvg`) so the
+// cold-page prerender doubles as the cache-warmer for `MermaidBlock`'s
+// theme-toggle path. The cache is keyed by `(source, darkMode)`, so a
+// user who first lands on a chat in dark mode and then toggles to
+// light mode pays the parse + render cost only for the new theme; a
+// subsequent toggle back to dark hits the prerender-warmed entry. The
+// write only happens on the success path here -- errors deliberately
+// stay out of the cache, mirroring the contract documented in
+// `mermaidRenderCache.js`.
 export async function prerenderMermaidDiagrams(html, darkMode) {
   if (!html || typeof html !== 'string') {
     return new Map();
@@ -82,6 +94,7 @@ export async function prerenderMermaidDiagrams(html, darkMode) {
       const renderId = `mermaid-prerender-${Date.now()}-${counter}`;
       try {
         const { svg } = await mermaid.render(renderId, source);
+        setCachedMermaidSvg(source, darkMode, svg);
         resultMap.set(source, { svg, error: null, darkMode });
       } catch (renderErr) {
         resultMap.set(source, {

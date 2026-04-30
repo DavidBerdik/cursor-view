@@ -1,7 +1,6 @@
-import React, { memo, useContext } from 'react';
+import React, { memo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  alpha,
   Box,
   Card,
   CardActions,
@@ -14,7 +13,11 @@ import {
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import MessageIcon from '@mui/icons-material/Message';
-import { ColorContext } from '../../contexts/ColorContext';
+import {
+  PALETTE_TRANSITION,
+  PALETTE_TRANSITION_CURVE,
+  PALETTE_TRANSITION_DURATION,
+} from '../../theme/transitions';
 import { dbPathLabel } from '../../utils/dbPath';
 import { formatDate } from '../../utils/formatDate';
 
@@ -29,7 +32,6 @@ import { formatDate } from '../../utils/formatDate';
 // ``dontShowExportWarning`` as ``useCallback``-stable / primitive
 // values so reference equality holds across renders.
 function ChatCard({ chat, dontShowExportWarning, onExport }) {
-  const colors = useContext(ColorContext);
   const dateDisplay = formatDate(chat.date);
 
   return (
@@ -40,10 +42,18 @@ function ChatCard({ chat, dontShowExportWarning, onExport }) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        transition: 'all 0.3s cubic-bezier(.17,.67,.83,.67)',
         textDecoration: 'none',
         borderTop: '1px solid',
-        borderColor: alpha(colors.text.secondary, 0.1),
+        borderColor: 'rgba(var(--mui-palette-text-secondaryChannel) / 0.1)',
+        // The centralized `MuiCard` styleOverride sets `transition:
+        // PALETTE_TRANSITION`, which intentionally omits `transform`
+        // so hundreds of unrelated `MuiCard` consumers don't carry
+        // a per-element `transform`-transition entry just to support
+        // this one card's hover-lift. We compose the centralized
+        // string with an extra `transform` entry locally here, which
+        // is the only site in the codebase that needs `transform`
+        // animation. See `theme/transitions.js` for the rationale.
+        transition: `${PALETTE_TRANSITION}, transform ${PALETTE_TRANSITION_DURATION} ${PALETTE_TRANSITION_CURVE}`,
         '&:hover': {
           transform: 'translateY(-8px)',
           boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)',
@@ -80,7 +90,7 @@ function ChatCard({ chat, dontShowExportWarning, onExport }) {
         <Divider sx={{ my: 1.5 }} />
 
         <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
-          <MessageIcon fontSize="small" sx={{ mr: 1, color: colors.text.secondary }} />
+          <MessageIcon fontSize="small" sx={{ mr: 1, color: 'var(--mui-palette-text-secondary)' }} />
           <Typography variant="body2" fontWeight="500">
             {chat.message_count || 0} messages
           </Typography>
@@ -106,10 +116,11 @@ function ChatCard({ chat, dontShowExportWarning, onExport }) {
           sx={{
             mt: 2,
             p: 1.5,
-            backgroundColor: alpha(colors.highlightColor, 0.1),
+            backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.1)',
             borderRadius: 2,
             border: '1px solid',
-            borderColor: alpha(colors.text.secondary, 0.05),
+            borderColor: 'rgba(var(--mui-palette-text-secondaryChannel) / 0.05)',
+            transition: PALETTE_TRANSITION,
           }}
         >
           <Typography

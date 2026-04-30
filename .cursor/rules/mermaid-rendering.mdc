@@ -12,9 +12,12 @@ pipelines consume them; never introduce a third without updating this rule:
 - **Chat view** — `prepareMarkdownHtml` produces a pre-rendered HTML string
   (unchanged). `MessageMarkdown` uses `html-react-parser` to walk that
   string and replace every `<pre><code class="language-mermaid">` subtree
-  with a `<MermaidBlock>` React component. `MermaidBlock` owns the async
+  with a `<MermaidBlock>` React component. The async
   `mermaid.parse` + `mermaid.render` sequence (see "Parse before render"
-  below), the diagram/source toggle, and the error fallback.
+  below) lives in the `useMermaidRender` hook
+  (`frontend/src/hooks/useMermaidRender.js`), which `MermaidBlock`
+  consumes; the component itself owns only the diagram/source toggle,
+  the lightbox modal state, and the error fallback wiring.
   `useMermaid` (called once in `MessageMarkdown`) bootstraps the mermaid
   singleton with `startOnLoad: false` and keeps the theme in sync with
   `ThemeModeContext`.
@@ -25,12 +28,21 @@ pipelines consume them; never introduce a third without updating this rule:
   or the expand icon. The modal consumes the SVG already in
   `MermaidBlock`'s state via props and **never** calls `mermaid.render`,
   `mermaid.parse`, or `mermaid.initialize` itself. Theme flips
-  propagate to the modal automatically: `MermaidBlock`'s
+  propagate to the modal automatically: `useMermaidRender`'s
   `useEffect([source, darkMode])` regenerates the SVG, the new value
   flows to the modal as a prop, and React reconciles
   `dangerouslySetInnerHTML`. Adding a second `mermaid.render` call for
   the modal would be a third pipeline (forbidden) and would re-open the
   bomb-graphic risk that "Parse before render" closes.
+
+  `mermaidRenderCache` and `mermaidRenderQueue` (both under
+  `frontend/src/utils/`) wrap the chat-view pipeline with memoization
+  and scheduling, **not** a third pipeline. Neither helper calls
+  `mermaid.parse`, `mermaid.render`, or `mermaid.initialize` itself;
+  the chat-view pipeline's owners (`useMermaidRender` and
+  `prerenderMermaidDiagrams`) remain the only sites that do. See
+  "Render cache and queue" below for both contracts and the wire-up
+  invariants the consuming render hook must preserve.
 
 - **HTML export** — `cursor_view/export/mermaid.py::transform_mermaid_fences_to_html`
   rewrites mermaid fences to `<div class="mermaid">` blocks before
@@ -56,10 +68,11 @@ based:
   inside an `overflow: hidden` viewport, and renders the toolbar.
 - The modal, the hook, and the model must not call
   `mermaid.initialize`, `mermaid.parse`, or `mermaid.render` for
-  pan/zoom/reset; those APIs remain owned by `MermaidBlock` (and the
-  one-time singleton config in `useMermaid`). Re-rendering the SVG to
-  zoom would re-open the bomb-graphic risk closed by "Parse before
-  render" and would constitute a third pipeline (forbidden).
+  pan/zoom/reset; those APIs remain owned by `useMermaidRender`
+  (consumed by `MermaidBlock`) and the one-time singleton config
+  in `useMermaid`. Re-rendering the SVG to zoom would re-open the
+  bomb-graphic risk closed by "Parse before render" and would
+  constitute a third pipeline (forbidden).
 - Wheel zoom and button zoom share one canonical anchor-preserving
   zoom helper in `svgPanZoomModel`; the math assumes
   `transformOrigin: '0 0'` on the transform layer, so do not change
@@ -106,8 +119,9 @@ and [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc).
 
 # Theme sync
 
-- `MermaidBlock` reads `darkMode` from `ThemeModeContext` and re-renders
-  when it flips. `mermaid.initialize` is called with
+- `MermaidBlock` reads `darkMode` from `ThemeModeContext` and forwards
+  it to `useMermaidRender`, whose effect re-runs when `darkMode`
+  flips. The hook calls `mermaid.initialize` with
   `theme: darkMode ? 'dark' : 'default'` immediately before each
   `mermaid.render` call.
 - `build_mermaid_init_script(theme_mode)` maps `"dark"` → `"dark"`,
@@ -133,12 +147,12 @@ makes parse-first safe to run on every theme flip.
 
 The two parse-first sites:
 
-- `frontend/src/components/MermaidBlock.js` — the per-block render
-  effect awaits `mermaid.parse(source)` first, surfaces the parse error
-  through the same source-fallback UI as a render-time error, and only
-  allocates a render id and calls `mermaid.render` when parse succeeded.
-  Theme flips re-run the effect, so the guard fires on every toggle,
-  not just first mount.
+- `frontend/src/hooks/useMermaidRender.js` — the per-block render
+  effect (consumed by `MermaidBlock`) awaits `mermaid.parse(source)`
+  first, surfaces the parse error through the same source-fallback UI
+  as a render-time error, and only allocates a render id and calls
+  `mermaid.render` when parse succeeded. Theme flips re-run the
+  effect, so the guard fires on every toggle, not just first mount.
 - `frontend/src/utils/prerenderMermaidDiagrams.js` — the pre-paint pass
   awaits `mermaid.parse(source)` before `mermaid.render` for the same
   reason; this keeps the bomb out of `document.body` while the chat is
@@ -158,15 +172,16 @@ matching `MermaidBlock` as the `initialDarkMode` prop alongside
 `initialSvg` and `initialError`; do not strip this field, and do not
 introduce a third Map shape.
 
-`MermaidBlock`'s `skipFirstRenderRef` may suppress the first-mount
-render only when the prerender result is still authoritative for the
-current theme:
+`useMermaidRender`'s `skipFirstRenderRef` (`MermaidBlock` forwards
+the `initialSvg` / `initialError` / `initialDarkMode` props through
+to the hook) may suppress the first-mount render only when the
+prerender result is still authoritative for the current theme:
 
 - An `initialError` entry qualifies unconditionally: the parse error
   message is theme-independent and the source-fallback UI is the same
   in both themes.
 - An `initialSvg` entry qualifies only when `initialDarkMode === darkMode`
-  in `MermaidBlock`'s render context. A mismatch means the user toggled
+  in the hook's render context. A mismatch means the user toggled
   theme during `ChatDetail`'s loading window, the cached SVG was themed
   against the prior value, and the per-block effect must run on first
   mount so the diagram is re-themed.
@@ -180,11 +195,122 @@ documented in [`known-bugs.mdc`](known-bugs.mdc): without the theme
 match check, `skipFirstRenderRef` would suppress the very render that
 would correct a theme-mismatched cached SVG, leaving valid diagrams
 stuck in the prerender's theme until something else re-triggered the
-per-block effect. The fix lives in the consumer (`MermaidBlock`)
+per-block effect. The fix lives in the consumer (`useMermaidRender`)
 rather than in the producer (`ChatDetail`'s fetch effect) because
 adding `darkMode` to the fetch effect deps would refetch the chat over
 the network on every theme toggle, which is a worse UX trade than the
 sub-frame async-render window the consumer-side fix produces.
+
+# Render cache and queue
+
+`useMermaidRender`'s render effect (consumed by `MermaidBlock`)
+routes its `mermaid.parse + mermaid.render` work through two
+module-scope helpers in `frontend/src/utils/`. Both are pure
+memoization / scheduling around the existing chat-view pipeline
+(per "Two rendering pipelines, one source format" above): neither
+helper calls `mermaid.parse`, `mermaid.render`, or
+`mermaid.initialize` itself. Those APIs remain owned by
+`useMermaidRender` and `prerenderMermaidDiagrams`.
+
+## `mermaidRenderCache`
+
+A module-scope `Map<key, svg>` keyed by
+`${darkMode ? 'd' : 'l'}\0${source}`, session-lifetime, no
+eviction. Two writers exist:
+
+- `prerenderMermaidDiagrams` writes after every successful
+  `mermaid.render` call — the cold-page prerender doubles as the
+  cache-warmer. `ChatDetail`'s fetch effect calls it twice
+  sequentially, once for the active `darkMode` and once for
+  `!darkMode`, so the session cache holds both themes' SVGs by the
+  time the loading spinner clears. The user's first toggle on the
+  chat is therefore a cache hit for every diagram regardless of
+  toggle direction; nothing falls through to the per-block render
+  queue. The two calls are sequential because `mermaid.initialize`
+  is a singleton and parallel calls would race on
+  `theme: dark | default`. The trade-off is doubled prerender
+  wall-time on diagram-heavy chats; the count threshold escape
+  hatch (only warm both themes when `< N` diagrams) is flagged
+  inline at the call site for if it ever becomes a noticeable load
+  delay.
+- `useMermaidRender`'s effect (consumed by `MermaidBlock`) writes
+  after every successful `mermaid.render` call inside its queued
+  task body. With the dual-theme prerender above, this writer
+  fires only on cache misses introduced after chat load (e.g. a
+  future "load more messages" path that streams in new diagrams
+  not seen by the initial prerender).
+
+Errors deliberately stay out of the cache. Parser messages can
+evolve across mermaid versions, and a transient render failure
+should be re-evaluated on the next attempt rather than poisoning
+the cache permanently. The cache hit branch in `useMermaidRender`
+calls `setSvg(cachedSvg); setRenderError(null);` and returns; it
+does not call `mermaid.parse` or `mermaid.render` itself.
+
+The cache is safe with respect to "Parse before render"
+**by construction**: cache writes only happen on the success path of
+`mermaid.render`, which itself only runs after a successful
+`mermaid.parse`. Therefore: cache hit ⇒ source previously parsed
+cleanly ⇒ safe to reuse the SVG without re-running either
+`mermaid.parse` or `mermaid.render`. The bomb-graphic risk only
+fires when invalid syntax reaches `mermaid.render`; cached entries
+were produced from valid syntax. A consumer that reads the cache and
+calls `setSvg(cachedSvg)` is **not** required to call
+`mermaid.parse` first — the cache contract makes that redundant.
+
+## `mermaidRenderQueue`
+
+A module-scope FIFO queue with concurrency 1, implemented as a
+promise chain. Each enqueued task awaits the previous chain tail
+before running, and the chain advances by appending a
+`.catch(() => {})` fork so a thrown task does not poison subsequent
+tasks. The caller's own promise still rejects on task error.
+
+Without the queue, a theme toggle on a chat with N visible uncached
+diagrams fires N concurrent `mermaid.render` calls all racing the
+JS thread, freezing the page for the union of their durations. The
+queue serializes them so the JS thread stays interactive between
+tasks.
+
+The queue runs **after** the cache check: a cache hit returns its
+SVG immediately and never enters the queue. With the dual-theme
+prerender at chat load (see the `prerenderMermaidDiagrams` writer
+above), the cache is fully warm for both `(source, true)` and
+`(source, false)` keys before the user can interact, so the queue
+is empty for the first theme toggle and every toggle after.
+Diagrams introduced after the initial prerender (e.g. a future
+streaming-messages path) are the only sites that re-introduce
+queue traffic, and only on their first toggle in each theme.
+
+## Wire-up invariants
+
+`useMermaidRender`'s effect (consumed by `MermaidBlock`) must:
+
+1. Run the cache check before queuing. A cache hit writes
+   `setSvg(cachedSvg); setRenderError(null);` and returns — no
+   queue, no `mermaid.parse`, no `mermaid.render`.
+2. Increment `latestRef` on every effect run, including cache-hit
+   runs, so any in-flight queued task from a prior run sees its
+   captured `id` go stale and bails its post-await state writes.
+   Without this, a queued task for an old `(source, darkMode)`
+   could overwrite a newer cache-hit's correct `setSvg` with a
+   stale render.
+3. Keep `mermaid.initialize` inside the queued task body, not at
+   effect time. The task may run with arbitrary delay after the
+   effect (other queued renders ahead of it); a later effect's
+   `mermaid.initialize` would otherwise overwrite the singleton
+   between this task's queue position and its `mermaid.render`
+   call, producing an SVG themed against the wrong palette.
+4. Write to the cache only on the success path of `mermaid.render`.
+   Errors stay out. `prerenderMermaidDiagrams`'s writer respects
+   the same constraint.
+5. Keep the existing post-await `latestRef` stale checks at every
+   `await` boundary inside the queued task body (after
+   `mermaid.parse`, after `mermaid.render`, in the render-catch).
+   The pre-await stale check at the top of the queued task is a
+   perf optimization (skip wasted work for superseded tasks); the
+   post-await checks are correctness (do not write stale results
+   into React state).
 
 # Graceful source fallback on parse error
 
