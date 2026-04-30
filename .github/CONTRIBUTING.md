@@ -369,7 +369,13 @@ raises `ProgrammingError`).
   `useExportFlow`, `useExportWarningPreference`, `useSavedSelection`
   (captures + restores the user's text selection across the
   context-menu open cycle), `useMermaid` (bootstraps the mermaid
-  singleton and keeps its theme in sync with `ThemeModeContext`).
+  singleton and keeps its theme in sync with `ThemeModeContext`),
+  and `useSvgPanZoom` (modal-local transform state, pointer drag,
+  wheel/button zoom, and identity-reset for prop-fed SVG surfaces;
+  the anchor-preserving zoom math lives in pure helpers in
+  `utils/svgPanZoomModel.js`, and the consumer's CSS centers the SVG
+  at identity transform so the hook does not measure a per-diagram
+  fit baseline itself).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
   consumed by `AppContextMenu`), `mode` (`isDesktopMode()` &mdash;
@@ -379,20 +385,31 @@ raises `ProgrammingError`).
   pre-renders chat messages to HTML.
 - `components/`
   - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js`,
-    `MermaidBlock.js`, `MermaidToolbar.js`, `MermaidLightboxModal.js`
-    &mdash; global UI. `MermaidBlock` renders a mermaid fenced code
-    block as a live diagram (default) or raw source, with a per-block
-    toggle and a parse-error fallback. Its sibling `MermaidToolbar`
-    holds the absolute-positioned diagram/source toggle and
-    expand-into-modal icon (extracted to keep `MermaidBlock` under the
-    250-line decomposition cap from
+    `MermaidBlock.js`, `MermaidToolbar.js`, `MermaidLightboxModal.js`,
+    `MermaidZoomControls.js`, `MermaidLightboxFallback.js` &mdash;
+    global UI. `MermaidBlock` renders a mermaid fenced code block as
+    a live diagram (default) or raw source, with a per-block toggle
+    and a parse-error fallback. Its sibling `MermaidToolbar` holds
+    the absolute-positioned diagram/source toggle and
+    expand-into-modal icon (extracted to keep `MermaidBlock` under
+    the 250-line decomposition cap from
     [`react-components.mdc`](../.cursor/rules/react-components.mdc)).
     `MermaidLightboxModal` is the full-size modal opened on click of
     the diagram body or the expand icon: it consumes the SVG already
     in `MermaidBlock`'s state via props (no second `mermaid.render`
     call, per [`mermaid-rendering.mdc`](../.cursor/rules/mermaid-rendering.mdc)),
-    fits the diagram to a viewport-sized close-only Paper, and
-    mirrors the inline parse-error fallback for the defensive case.
+    applies transform-based pan/zoom interactions over that prop-fed
+    SVG, and exposes a toolbar row with zoom out / reset / zoom in
+    plus close. `MermaidZoomControls` keeps those zoom actions
+    presentational so the modal remains layout-focused, while the
+    interaction state machine lives in `useSvgPanZoom`.
+    `MermaidLightboxFallback` renders the defensive parse-error and
+    source-code panel for the modal's non-`hasDiagram` branch,
+    mirroring the inline fallback shape so the "graceful source
+    fallback" invariant from `mermaid-rendering.mdc` holds across
+    both presentation surfaces; the extraction also keeps
+    `MermaidLightboxModal` itself under the 250-line decomposition
+    cap.
   - `chat-list/` &mdash; the list page split into `ChatList`,
     `SearchBar`, `EmptyState`, `ProjectGroup`, `ChatCard`.
   - `chat-detail/` &mdash; the detail page split into `ChatDetail`,
@@ -403,7 +420,7 @@ raises `ProgrammingError`).
     thumbnail click, with prev/next chevrons, counter, thumbnail
     strip, and keyboard navigation). The mermaid `MermaidLightboxModal`
     above follows the same lightbox pattern (viewport-fixed Paper,
-    close-only toolbar, theme-token styling) for diagram embeds inside
+    toolbar actions, theme-token styling) for diagram embeds inside
     these bubbles.
   - `export/` &mdash; shared `ExportFormatDialog` and
     `ExportWarningDialog` used by both pages.

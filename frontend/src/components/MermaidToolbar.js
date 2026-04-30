@@ -1,9 +1,35 @@
 import React, { useContext } from 'react';
-import { Box, IconButton, Tooltip } from '@mui/material';
+import { Box, IconButton, SvgIcon, Tooltip } from '@mui/material';
 import AccountTreeIcon from '@mui/icons-material/AccountTree';
 import CodeIcon from '@mui/icons-material/Code';
-import OpenInFullIcon from '@mui/icons-material/OpenInFull';
 import { ColorContext } from '../contexts/ColorContext';
+
+// Lucide-style "open in full screen" glyph used by Cursor: two
+// stroke-only L-shape arrowheads at the top-left and bottom-right
+// corners with diagonals pointing inward. Material's `OpenInFullIcon`
+// is filled rather than stroked, so it does not match Cursor's UI;
+// shipping a small inline SvgIcon avoids pulling in another icon set
+// just for this glyph.
+function FullScreenIcon(props) {
+  return (
+    <SvgIcon
+      {...props}
+      viewBox="0 0 24 24"
+      sx={{
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 2,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }}
+    >
+      <polyline points="3 9 3 3 9 3" />
+      <polyline points="21 15 21 21 15 21" />
+      <line x1="3" y1="3" x2="10" y2="10" />
+      <line x1="21" y1="21" x2="14" y2="14" />
+    </SvgIcon>
+  );
+}
 
 // Absolute-positioned overlay rendered inside `MermaidBlock`'s outer
 // border. Houses the diagram/source toggle (always shown when the
@@ -48,7 +74,7 @@ export default function MermaidToolbar({ mode, showExpand, onToggleMode, onOpenM
       }}
     >
       {showExpand && (
-        <Tooltip title="Open in modal">
+        <Tooltip title="Full screen">
           <IconButton
             aria-label="Open mermaid diagram in modal"
             size="small"
@@ -58,7 +84,7 @@ export default function MermaidToolbar({ mode, showExpand, onToggleMode, onOpenM
               '&:hover': { color: colors.highlightColor },
             }}
           >
-            <OpenInFullIcon fontSize="small" />
+            <FullScreenIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       )}

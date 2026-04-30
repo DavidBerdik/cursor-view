@@ -129,6 +129,17 @@ split between `useExportFlow` (dialog state machine) and
 shape. A hook whose return object has more than ~8 keys is usually
 doing too much and should be decomposed.
 
+`useSvgPanZoom` is the canonical UI-interaction state-machine hook:
+it owns the transform state (`scale`, `translateX`, `translateY`),
+the pointer-drag machine (`setPointerCapture`-backed pan), the
+wheel/button zoom actions (sharing one anchor-preserving formula in
+`utils/svgPanZoomModel.js`), and the identity-reset action for a
+prop-fed SVG surface. The hook deliberately does **not** measure the
+SVG to derive a per-diagram fit baseline — the consumer's CSS centers
+the SVG at identity transform, so the hook's reset/reopen/svg-change
+all just re-apply identity. `MermaidLightboxModal` stays responsible
+only for layout/markup and delegates action wiring.
+
 # Expose minimal state
 
 Prefer narrow return shapes (`{ data, loading, error, refresh }`)
@@ -165,3 +176,7 @@ function useSelection() {
 - `useExportWarningPreference` — cookie-backed preference.
 - `useSavedSelection` — DOM-state capture / restore with an
   `rAF`-driven replay hook.
+- `useSvgPanZoom` — transform state + pointer drag + wheel/button
+  zoom + identity-reset for display-only modal interactions over
+  existing SVG DOM (consumer's CSS supplies the fit-and-center
+  baseline at identity transform).

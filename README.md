@@ -99,7 +99,7 @@ Delete that folder to reset preferences.
 - Organize chats by project
 - View timestamps of conversations
 - View Cursor-assigned chat titles inline in the card grid, the chat-detail header, and the Markdown / HTML / JSON exports; untitled chats fall back to the existing project-based heading
-- Render mermaid diagrams inline in the chat view, with a full-size modal on click of the diagram body or the expand icon (close button + ESC / backdrop dismissal, fits the diagram to the viewport); HTML exports also render the diagrams inline
+- Render mermaid diagrams inline in the chat view, with a full-size modal on click of the diagram body or the expand icon (initial fit-to-viewport, drag-to-pan, wheel/button zoom, reset-to-fit, close button + ESC / backdrop dismissal); HTML exports also render the diagrams inline
 - View image attachments inline in the chat, with a full-size modal on click (prev/next chevrons + keyboard navigation when a message has multiple images); HTML exports keep the same images clickable and open them in a new browser tab
 
 ## Troubleshooting

@@ -4,43 +4,43 @@ overview: Add pan/zoom/reset interactions to the mermaid lightbox modal while pr
 todos:
   - id: design-panzoom-model
     content: Design the modal transform model (scale, translateX/Y, min/max, zoomStep) and implement anchor-preserving zoom math plus fit-baseline/reset formulas before wiring UI.
-    status: pending
+    status: completed
   - id: implement-useSvgPanZoom-hook
     content: Create frontend/src/hooks/useSvgPanZoom.js to own fit computation, pointer drag pan, wheel zoom, button zoom actions, clamp logic, and reset-to-baseline behavior keyed by open/svg changes.
-    status: pending
+    status: completed
   - id: wire-modal-viewport-transform
     content: Update frontend/src/components/MermaidLightboxModal.js to use a viewport container + transform layer for the injected SVG and connect handlers from the hook only in the hasDiagram branch.
-    status: pending
+    status: completed
   - id: add-zoom-toolbar-controls
     content: Add Zoom out, Reset, Zoom in controls to MermaidLightboxModal toolbar and enforce disabled states at scale bounds while preserving close button behavior.
-    status: pending
+    status: completed
   - id: decompose-if-needed
     content: If MermaidLightboxModal exceeds the react-components soft size limit, extract MermaidZoomControls (and/or small presentational siblings) so each component has one concern.
-    status: pending
+    status: completed
   - id: preserve-block-invariants
     content: Validate MermaidBlock remains the sole owner of mermaid parse/render/theme logic and modal remains display-only; keep auto-close-on-error behavior intact.
-    status: pending
+    status: completed
   - id: update-mermaid-rule
     content: Update .cursor/rules/mermaid-rendering.mdc with pan/zoom/reset presentation invariants and explicit no-mermaid-api-in-modal guidance for this interaction model.
-    status: pending
+    status: completed
   - id: update-react-hooks-rules
     content: Update .cursor/rules/react-components.mdc and, if a new hook is introduced, frontend-hooks.mdc references to keep decomposition and hook-discipline guidance aligned with the new structure.
-    status: pending
+    status: completed
   - id: update-readme
     content: Update README.md Features bullet for mermaid to mention modal zoom/pan interactions and reset control while preserving existing close/ESC/backdrop behavior text.
-    status: pending
+    status: completed
   - id: update-contributing
     content: Update .github/CONTRIBUTING.md frontend component descriptions to reflect MermaidLightboxModal zoom toolbar and any new hook/component files introduced.
-    status: pending
+    status: completed
   - id: run-build-and-tests
     content: Run npm run build in frontend and python -m unittest discover -s tests at repo root; confirm no regressions.
-    status: pending
+    status: completed
   - id: rules-compliance-review
     content: Perform explicit post-change rule compliance review across project-layout, comments-style, react-components, frontend-hooks, mermaid-rendering, and known-bugs; adjust docs/rules for drift if needed.
-    status: pending
+    status: completed
   - id: final-bug-sweep
     content: Do a final bug pass on touched files for pointer capture, zoom anchor correctness, reset consistency after svg/theme change, event leakage, accessibility labels, and suspicious out-of-scope defects.
-    status: pending
+    status: completed
 isProject: false
 ---
 

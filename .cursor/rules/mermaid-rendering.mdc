@@ -38,6 +38,65 @@ pipelines consume them; never introduce a third without updating this rule:
   inject the vendored bundle and an initializer tag before `</body>` so
   every exported file is self-contained (no network at view time).
 
+# Modal pan/zoom/reset is presentation-only
+
+`MermaidLightboxModal` adds interaction behavior over the SVG it
+receives from `MermaidBlock` (drag pan, wheel zoom, toolbar zoom
+in/out, and reset-to-fit), but that behavior is strictly DOM-transform
+based:
+
+- Pan/zoom state and math live in `frontend/src/hooks/useSvgPanZoom.js`
+  (effects, refs, pointer/wheel handlers, identity-reset action) on
+  top of pure helpers in `frontend/src/utils/svgPanZoomModel.js`
+  (anchor-preserving zoom helper `zoomAtAnchor` plus its internal
+  scale clamp; both shared so wheel zoom and button zoom round-trip
+  through the same formula). The modal itself stays focused on
+  layout: it reads the hook's outputs, applies them as a
+  `translate(...) scale(...)` transform to a child layer wrapped
+  inside an `overflow: hidden` viewport, and renders the toolbar.
+- The modal, the hook, and the model must not call
+  `mermaid.initialize`, `mermaid.parse`, or `mermaid.render` for
+  pan/zoom/reset; those APIs remain owned by `MermaidBlock` (and the
+  one-time singleton config in `useMermaid`). Re-rendering the SVG to
+  zoom would re-open the bomb-graphic risk closed by "Parse before
+  render" and would constitute a third pipeline (forbidden).
+- Wheel zoom and button zoom share one canonical anchor-preserving
+  zoom helper in `svgPanZoomModel`; the math assumes
+  `transformOrigin: '0 0'` on the transform layer, so do not change
+  that origin without re-deriving the helper. Wheel zoom anchors
+  around the cursor, button zoom anchors around the viewport center.
+- The wheel handler must call `event.preventDefault()` so the gesture
+  does not chain into the surrounding `Dialog`/page scroll. Combined
+  with `touchAction: 'none'` on the viewport, this also opts the
+  surface out of native pinch-zoom and two-finger scroll on touch
+  devices, which would otherwise fight the JS transform.
+- Drag pan uses pointer events with `setPointerCapture` so a
+  pointer-up outside the viewport still ends the drag. The viewport
+  also sets `userSelect: 'none'` (and the `-webkit-` companion) to
+  suppress the native text-selection flicker that would otherwise
+  fire while dragging across SVG text labels.
+- "Reset view" restores the identity transform
+  (`scale: 1, translateX: 0, translateY: 0`). The modal's CSS already
+  centers the SVG inside the transform layer (`display: flex` plus
+  `& svg { maxWidth: 100%; maxHeight: 100% }`), so the identity
+  transform *is* the fit-and-center baseline by construction; the
+  hook does not measure the SVG to derive a per-diagram baseline.
+  The hook re-applies identity on modal open and whenever the `svg`
+  prop changes, so reopening the modal and theme-flip-driven SVG
+  regenerations both start from the same predictable centered fit
+  rather than inheriting a stale zoomed/panned state.
+- Toolbar controls live in `MermaidZoomControls`
+  (`frontend/src/components/MermaidZoomControls.js`) and render in
+  the modal's toolbar row alongside `Close` rather than overlaid on
+  diagram content. Disable zoom-out at `minScale` and zoom-in at
+  `maxScale`; the hook exposes those booleans as `controls.canZoomOut`
+  / `controls.canZoomIn` so the disabled state and the clamp logic
+  cannot drift apart.
+- The toolbar row is rendered only when `hasDiagram` is true; the
+  defensive parse-error fallback branch (see "Graceful source
+  fallback on parse error") never gets pan/zoom controls because
+  there is no SVG to transform.
+
 # BLOBs stay out of the cache
 
 Rendered mermaid SVGs are **not** image attachments and must not land in
@@ -139,11 +198,25 @@ Do not silently swallow parse errors or render a blank box.
 
 `MermaidLightboxModal` mirrors the same fallback shape (Typography
 error caption above a `<pre><code>` of the raw source) so the invariant
-holds across both chat-view presentation surfaces. In normal use
-`MermaidBlock` hides the expand affordance whenever `renderError` is
-set, so the modal's fallback branch is defensive — it covers a future
-caller that opens the modal without first checking the success-only
-gate, and prevents the modal from ever painting a blank Paper.
+holds across both chat-view presentation surfaces. The fallback panel
+itself lives in
+`frontend/src/components/MermaidLightboxFallback.js`; the modal renders
+it in the non-`hasDiagram` branch and owns no theming for it directly,
+which is what keeps the modal under the `react-components.mdc` size
+limit and isolates "diagram surface" from "source fallback". In normal
+use `MermaidBlock` hides the expand affordance whenever `renderError`
+is set, so the modal's fallback branch is defensive — it covers a
+future caller that opens the modal without first checking the
+success-only gate, and prevents the modal from ever painting a blank
+Paper.
+
+`MermaidBlock` additionally runs an auto-close-on-error effect keyed
+on the `isErrored` boolean (not the `renderError` message string) so
+that a late-detected parse failure during a theme flip while the
+modal is open closes the modal cleanly instead of surfacing the
+defensive fallback. The boolean dep keeps re-firing limited to
+state-of-error transitions, not message-text changes of an
+already-failed parse.
 
 # Escape before inlining (HTML export)
 

@@ -20,6 +20,17 @@ alwaysApply: false
   terminal mode) have grown it back toward the 250 soft limit while
   the decomposition continues to pay off — the extracted hook and
   DOM helpers stay consumed without duplication.
+- `MermaidLightboxModal.js` is a canonical "decompose before growth"
+  example: pan/zoom state and math live in `useSvgPanZoom` (with pure
+  helpers in `utils/svgPanZoomModel.js`), toolbar actions render
+  through `MermaidZoomControls`, and the defensive parse-error
+  fallback panel lives in `MermaidLightboxFallback`. The modal
+  component itself stays focused on `Dialog` layout and the
+  interactive diagram-surface branch (viewport + transform layer),
+  delegating both the toolbar trio and the source-fallback panel to
+  its siblings. This split keeps the modal under the size limit while
+  isolating "diagram surface", "zoom command bar", and "graceful
+  source fallback" as three independent concerns.
 - Duplicated UI across pages (dialogs, toolbars, cards) is extracted
   into `components/<shared-area>/`. The export format + warning
   dialogs lived twice in the codebase before the refactor and must
@@ -148,3 +159,9 @@ guard in [`mermaid-rendering.mdc`](mermaid-rendering.mdc) from being
 re-opened by a duplicate render call. The same pattern applies to any
 future modal / popover / off-screen surface for prism, monaco, or
 similar imperative-DOM libraries.
+
+When that sibling needs rich interaction (pan/zoom/select/inspect),
+extract the interaction state machine into a dedicated hook under
+`frontend/src/hooks/` instead of growing the presentation component
+with pointer math and clamp logic. `useSvgPanZoom` is the mermaid
+example of this pattern.
