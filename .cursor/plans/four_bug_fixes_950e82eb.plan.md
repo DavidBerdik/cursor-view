@@ -4,7 +4,7 @@ overview: "Fix four bugs in the chat-history viewer: two `# TODO(bug):` markers 
 todos:
   - id: fix-bug-1
     content: "Fix Bug 1 (cross-fade cancel gap): Add `animationcancel` listener via `useEffect` in `frontend/src/hooks/useSvgCrossFade.js`, expose new `outgoingRef`, attach it in `frontend/src/components/MermaidDiagramSurface.js`, and remove the `# TODO(bug):` block."
-    status: pending
+    status: completed
   - id: fix-bug-2
     content: "Fix Bug 2 (mermaid singleton race): Restructure `frontend/src/components/chat-detail/ChatDetail.js`'s fetch effect into three sequential outer phases (markdown prep, theme A prerender, theme B prerender), each using `Promise.all` over messages internally so concurrent renders share one theme. Remove the `# TODO(bug):` block."
     status: pending

@@ -109,6 +109,17 @@ const MAX_CONCURRENT_CROSS_FADES = 5;
 // Returns:
 //   - `surfaceRef`: the consumer attaches this to the surface element
 //     it wants visibility-gated; the hook uses it for `useInView`.
+//   - `outgoingRef`: the consumer attaches this to the outgoing
+//     layer `<Box>` so the hook can subscribe to that DOM node's
+//     `animationcancel` event. React's `onAnimationEnd` JSX prop is
+//     `onanimationend` only -- it does not catch `animationcancel`
+//     -- and the global `@media (prefers-reduced-motion: reduce)`
+//     rule in `index.css` overrides the keyframe to `animation: none
+//     !important` mid-fade, which fires `animationcancel` (not
+//     `animationend`). Without a manually-attached cancel listener,
+//     a reduced-motion flip during the ~200ms fade window leaves the
+//     outgoing layer stuck at `opacity: 1` forever; see the cleanup
+//     `useEffect` below for the wire-up.
 //   - `outgoingSvg`: the previous SVG string while a fade is in
 //     flight, or `null` (instant-swap path or fade complete).
 //     Consumer renders it as an absolutely-positioned, `aria-hidden`,
@@ -120,6 +131,7 @@ const MAX_CONCURRENT_CROSS_FADES = 5;
 //     overlay unmounts cleanly. Stable across renders.
 export function useSvgCrossFade(svg) {
   const surfaceRef = useRef(null);
+  const outgoingRef = useRef(null);
   const inView = useInView(surfaceRef);
   const reducedMotion = useReducedMotion();
   const [outgoingSvg, setOutgoingSvg] = useState(null);
@@ -153,22 +165,42 @@ export function useSvgCrossFade(svg) {
     };
   }, [outgoingSvg]);
 
-  // TODO(bug): The outgoing cross-fade SVG layer sticks on top of
-  // the incoming SVG (until the next svg change for this block) if
-  // the user flips OS-level reduced-motion during the ~200ms fade
-  // window. Suspected cause: the global
-  // `@media (prefers-reduced-motion: reduce)` rule in `index.css`
-  // overrides the keyframe `animation` to `none`, firing
-  // `animationcancel` (not `animationend`); React's
-  // `onAnimationEnd` JSX prop does not catch `animationcancel`, so
-  // `setOutgoingSvg(null)` is never called for this fade. Suspected
-  // fix is to attach an `animationcancel` listener via
-  // `addEventListener` in a `useEffect` (React JSX has no
-  // `onAnimationCancel` shorthand) with the same `setOutgoingSvg(null)`
-  // payload. Not regression-pinned because the frontend has no JS
-  // test harness, so the invariant would be enforced by the
-  // cross-referenced rule and by manual verification only.
+  // Catch the `animationcancel` event the keyframe fires when the
+  // global `@media (prefers-reduced-motion: reduce)` rule in
+  // `index.css` flips on mid-fade and rewrites the running animation
+  // to `animation: none !important`. React's `onAnimationEnd` JSX
+  // prop is `onanimationend` only and there is no
+  // `onAnimationCancel` shorthand, so the cleanup has to be wired
+  // manually via `addEventListener`. Without it the outgoing layer
+  // stays mounted at `opacity: 1` until the next `svg` change for
+  // this block (typically the next theme toggle), visibly stacking
+  // two diagrams. Dep is `outgoingSvg` so the listener is reattached
+  // alongside every newly-mounted outgoing layer (including the
+  // remount-on-rapid-toggle case where `key={outgoingSvg}` swaps the
+  // DOM node out from under us); cleanup removes the listener from
+  // the prior node before it unmounts.
+  useEffect(() => {
+    if (outgoingSvg === null) {
+      return undefined;
+    }
+    const node = outgoingRef.current;
+    if (node === null) {
+      return undefined;
+    }
+    const handler = () => setOutgoingSvg(null);
+    node.addEventListener('animationcancel', handler);
+    return () => {
+      node.removeEventListener('animationcancel', handler);
+    };
+  }, [outgoingSvg]);
+
   const onAnimationEnd = useCallback(() => setOutgoingSvg(null), []);
 
-  return { surfaceRef, outgoingSvg, fadeAnimation: FADE_ANIMATION, onAnimationEnd };
+  return {
+    surfaceRef,
+    outgoingRef,
+    outgoingSvg,
+    fadeAnimation: FADE_ANIMATION,
+    onAnimationEnd,
+  };
 }

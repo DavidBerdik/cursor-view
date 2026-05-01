@@ -42,7 +42,8 @@ import { PALETTE_TRANSITION } from '../theme/transitions';
 // imperative APIs are still `useMermaidRender` and
 // `prerenderMermaidDiagrams`.
 function MermaidDiagramSurface({ svg, darkMode, onOpenModal }) {
-  const { surfaceRef, outgoingSvg, fadeAnimation, onAnimationEnd } = useSvgCrossFade(svg);
+  const { surfaceRef, outgoingRef, outgoingSvg, fadeAnimation, onAnimationEnd } =
+    useSvgCrossFade(svg);
 
   // Diagram body is itself the click surface for the modal (paired
   // with the expand icon in the toolbar above for discoverability /
@@ -128,11 +129,16 @@ function MermaidDiagramSurface({ svg, darkMode, onOpenModal }) {
         // restarts the keyframe. `onAnimationEnd` (from the hook)
         // clears the outgoing slot once the fade completes so the
         // layer is removed from the DOM (no lingering overlay
-        // capturing memory or stacking-context budget). The known-
-        // bug `# TODO(bug):` for the reduced-motion-mid-fade case
-        // lives in `useSvgCrossFade.js` next to the state mutation
-        // it would patch.
+        // capturing memory or stacking-context budget). The hook's
+        // `outgoingRef` attaches an `animationcancel` listener to
+        // this node so a reduced-motion flip mid-fade -- which
+        // rewrites the keyframe to `animation: none !important` and
+        // fires `animationcancel` (not `animationend`) -- still
+        // unmounts the layer; React's JSX has no
+        // `onAnimationCancel` shorthand, so the wire-up has to live
+        // in the hook's `useEffect`.
         <Box
+          ref={outgoingRef}
           key={outgoingSvg}
           aria-hidden="true"
           onAnimationEnd={onAnimationEnd}
