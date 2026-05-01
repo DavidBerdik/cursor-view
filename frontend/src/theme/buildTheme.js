@@ -131,6 +131,27 @@ export function buildTheme() {
         },
       },
       MuiAppBar: {
+        // `enableColorOnDark: true` is load-bearing under
+        // `cssVariables` + `colorSchemes`. MUI 7's default AppBar
+        // ships a scheme-conditional override that, when
+        // `ownerState.enableColorOnDark` is `false` (the default),
+        // applies `theme.applyStyles('dark', { backgroundColor:
+        // theme.vars?.palette.AppBar?.darkBg })` -- which falls
+        // back to `palette.background.default` (`#121212` from
+        // `darkColors`). That conditional is generated at higher
+        // specificity than this `styleOverrides.root.background`
+        // rule, so without flipping the gate the title bar paints
+        // near-black in dark mode even though the static rule
+        // points at `--mui-palette-primary-dark` (= `#005e80`,
+        // the shared blue from `sharedColors.primary.dark`).
+        // Setting the prop default to `true` gates the dark-only
+        // override out, restoring `main`'s pre-CSS-variables
+        // behavior where the AppBar is `#005e80` blue in both
+        // schemes. See `theme-transitions.mdc` "Centralize via
+        // MUI theme `styleOverrides`".
+        defaultProps: {
+          enableColorOnDark: true,
+        },
         styleOverrides: {
           root: {
             background: 'var(--mui-palette-primary-dark)',

@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: fix-bug-3
     content: "Fix Bug 3 (AppBar black in dark mode): Add `defaultProps: { enableColorOnDark: true }` to the `MuiAppBar` config in `frontend/src/theme/buildTheme.js` so the static `background: var(--mui-palette-primary-dark)` style override applies in both schemes (matching `main`'s `#005e80`). Add an intent-only comment explaining the MUI 7 default-override interaction."
-    status: pending
+    status: completed
   - id: fix-bug-4
     content: "Fix Bug 4 (scroll drift on mermaid chats): Add `data-msg-idx={index}` to `MessageBubble`'s outer `<Box>`, thread the prop from `MessageList`, and rewrite `ChatDetail.js`'s scroll save/restore to use anchor-based `{ msgIdx, offset }` JSON in `sessionStorage` with a fallback to legacy plain scrollY."
     status: pending
