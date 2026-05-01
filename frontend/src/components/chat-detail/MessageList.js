@@ -21,7 +21,12 @@ export default function MessageList({ sessionId, messages }) {
   return (
     <Box sx={{ mb: 4 }}>
       {messages.map((message, index) => (
-        <MessageBubble key={index} sessionId={sessionId} message={message} />
+        <MessageBubble
+          key={index}
+          sessionId={sessionId}
+          message={message}
+          index={index}
+        />
       ))}
     </Box>
   );

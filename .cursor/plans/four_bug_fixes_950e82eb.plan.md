@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: fix-bug-4
     content: "Fix Bug 4 (scroll drift on mermaid chats): Add `data-msg-idx={index}` to `MessageBubble`'s outer `<Box>`, thread the prop from `MessageList`, and rewrite `ChatDetail.js`'s scroll save/restore to use anchor-based `{ msgIdx, offset }` JSON in `sessionStorage` with a fallback to legacy plain scrollY."
-    status: pending
+    status: completed
   - id: review-rules
     content: Review every edited file against `.cursor/rules/comments-style.mdc`, `known-bugs.mdc`, `react-components.mdc`, `theme-transitions.mdc`, `mermaid-rendering.mdc`, `frontend-hooks.mdc`, and `project-layout.mdc`. Confirm no rule drift, no comments that re-narrate code, no file over the ~250-line cap, no new mermaid imperative-API call sites, and no orphaned `# TODO(bug):` markers. Note any newly-discovered deferred bugs with fresh `# TODO(bug):` markers per the rule.
     status: pending

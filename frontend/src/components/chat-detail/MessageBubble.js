@@ -17,7 +17,18 @@ import { PALETTE_TRANSITION } from '../../theme/transitions';
 // inside the message block). The Paper's own padding scopes the
 // gallery horizontally, which is why the gallery no longer sets its
 // own role-based asymmetric margins.
-export default function MessageBubble({ sessionId, message }) {
+//
+// `index` is the message's position in the parent `MessageList` and
+// gets attached as `data-msg-idx` on the outermost `<Box>` so
+// `ChatDetail`'s anchor-based scroll restoration can locate the
+// bubble in the post-load layout. The data attribute is the load-
+// bearing handle: `MermaidBlock`'s `content-visibility: auto`
+// placeholder height (400px) does not match the actual diagram
+// height after materialization, so a raw `window.scrollY` save/
+// restore drifts on every refresh of a diagram-heavy chat. Querying
+// by `data-msg-idx` lets the restore recompute against the current
+// layout's `offsetTop` instead.
+export default function MessageBubble({ sessionId, message, index }) {
   const isUser = message.role === 'user';
   // Accent color picks the highlight token for user bubbles and the
   // secondary palette for assistant bubbles. Both are CSS-var
@@ -29,7 +40,7 @@ export default function MessageBubble({ sessionId, message }) {
   const images = Array.isArray(message.images) ? message.images : [];
 
   return (
-    <Box sx={{ mb: 3.5 }}>
+    <Box data-msg-idx={index} sx={{ mb: 3.5 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
         <Avatar
           sx={{

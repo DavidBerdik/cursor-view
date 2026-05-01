@@ -472,6 +472,50 @@ similar) should follow:
   absolute; inset: 0` already scoped to the button's `position:
   relative`.
 
+- **`data-msg-idx={index}` on `MessageBubble`'s outermost `<Box>`
+  (set by `MessageList.map`'s `(message, index)` enumeration).**
+  The SAVE half of an anchor-based scroll restoration on chats
+  with `content-visibility: auto` blocks: at scroll save time the
+  topmost in-viewport bubble is recorded by index plus the user's
+  vertical offset within it (`{ msgIdx, offset }` JSON in
+  `sessionStorage`), and at restore time the anchor element is
+  queried by `[data-msg-idx]` selector so the recomputed
+  `targetY = anchor.offsetTop + offset` is layout-independent.
+  The legacy plain-number `sessionStorage` format from before
+  this change still restores via a `Number(raw)` fallback path.
+  Removing the data attribute reduces save/restore to raw
+  `scrollY`, which silently drifts the moment any layout-shifting
+  placeholder (mermaid 400px, future `content-visibility: auto`
+  consumers) lands above the anchor between save and restore.
+
+The RESTORE half pairs the `data-msg-idx` save with a
+`requestAnimationFrame`-driven re-scroll loop (capped at 5
+iterations) inside the page-level `useLayoutEffect`. The initial
+`scrollTo(0, anchor.offsetTop + offset)` is best-effort because it
+runs at `scrollY = 0` against a layout where every off-screen
+mermaid block is at its 400px placeholder; the
+`scrollTo` itself causes the browser to re-evaluate
+`content-visibility: auto` for blocks now in or near the new
+viewport, materializing them on the next paint and shifting
+`anchor.offsetTop` by the cumulative actual-vs-placeholder height
+delta -- while `scrollY` stays put. Each rAF iteration re-reads
+`document.querySelector('[data-msg-idx="${msgIdx}"]').offsetTop`
+and re-`scrollTo`s when the recomputed `offsetTop + offset`
+differs from the current `scrollY` by more than a 1-px tolerance
+(which prevents a no-op `scrollTo` from re-triggering layout
+work). The 5-frame cap is a safety net against pathological
+materialization cascades; 2-3 frames are typical in practice.
+Skip the loop on the legacy plain-number fallback, the no-saved-
+entry case, and the JSON-with-missing-anchor case (a chat that
+has lost messages) -- there is no anchor to stabilize against.
+Cleanup must `cancelAnimationFrame` the in-flight request so a
+component unmount or a navigation to a new `sessionId` does not
+keep firing the chain. `ChatDetail.js`'s `useLayoutEffect` is the
+canonical site. Removing the rAF loop re-opens the
+scroll-drift-on-mermaid-chats bug; removing the `data-msg-idx`
+save re-opens the same bug from the SAVE side (raw `scrollY`
+becomes layout-dependent again).
+
 This pattern generalizes to any future imperative-DOM library
 (prism, monaco, etc.) whose rendered output is not CSS-animatable
 across re-renders. Keep the previous output mounted for the fade

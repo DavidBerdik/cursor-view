@@ -67,7 +67,7 @@ Two live `# TODO(bug):` markers are in the tree:
   through both themes and inspect each diagram's `stroke` /
   `fill` colors against the expected scheme).
 
-Five retired examples now live in git history:
+Six retired examples now live in git history:
 
 - the swallow-and-stub exception handler in
   `cursor_view/chat_format.py::format_chat_for_frontend`,
@@ -118,7 +118,70 @@ Five retired examples now live in git history:
   under "Theme-tagged prerender entries"; not regression-pinned
   because the frontend has no JS test harness, so the invariant is
   enforced by the cross-referenced rule and by manual verification
-  only).
+  only),
+- the scroll-position drift on refresh of chats with embedded
+  mermaid diagrams in
+  `frontend/src/components/chat-detail/ChatDetail.js`'s
+  `useLayoutEffect` save/restore (a user refreshing a chat such
+  as `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378` from a non-zero
+  scroll position landed slightly above or below the saved
+  position; chats without diagrams restored precisely). Two
+  layout-mismatch invariants were violated together. SAVE side:
+  the legacy `String(window.scrollY)` save was layout-dependent,
+  so any height delta in mermaid blocks above the viewport
+  between save and restore drifted the user; closed by recording
+  an anchor-based `{ msgIdx, offset }` JSON keyed off the
+  topmost in-viewport `MessageBubble`'s `data-msg-idx` attribute
+  (added in
+  [`MessageBubble.js`](frontend/src/components/chat-detail/MessageBubble.js)'s
+  outer `<Box>` and threaded through
+  [`MessageList.js`](frontend/src/components/chat-detail/MessageList.js)),
+  with a `Number(raw)` fallback path on `JSON.parse` failure for
+  the legacy `sessionStorage` format. RESTORE side: the
+  `contentVisibility: 'auto'` hint on `MermaidBlock`'s outer
+  `<Box>` skips layout/paint of off-screen mermaid blocks at the
+  static `containIntrinsicSize: '0 400px'` placeholder height,
+  so when `useLayoutEffect` measured `anchor.offsetTop` at
+  `scrollY = 0` every block above the saved scroll position was
+  at the 400px placeholder; the post-`scrollTo`
+  `content-visibility: auto` re-evaluation materialized blocks
+  now in or near the new viewport, replacing 400px with their
+  actual 600-1000px SVG heights, shifting `anchor.offsetTop` by
+  the cumulative delta while `scrollY` stayed put -- landing the
+  user exactly that delta off the saved anchor. Closed by
+  chasing that shift after the initial `scrollTo` with a
+  `requestAnimationFrame`-driven re-scroll loop (capped at 5
+  frames as a safety net, 2-3 typical in practice) inside the
+  same `useLayoutEffect`: each iteration re-reads
+  `document.querySelector('[data-msg-idx="${msgIdx}"]').offsetTop`,
+  computes `newTargetY = offsetTop + offset`, and re-scrolls when
+  `Math.abs(newTargetY - window.scrollY) > 1`; the 1-px tolerance
+  prevents a no-op `scrollTo` from re-triggering layout work, and
+  the loop is skipped entirely on the legacy plain-number fallback
+  / no-saved-entry / anchor-missing paths. Cleanup
+  `cancelAnimationFrame`s the in-flight rAF. An earlier attempt
+  threaded a `disableContentVisibility` boolean through
+  `MessageList` → `MessageBubble` → `MessageMarkdown` →
+  `MermaidBlock` to disable the `'auto'` hint for the first
+  paint; that approach was reverted because flipping the gate
+  back to `'auto'` one frame after the restore shrinks every
+  off-screen mermaid block from its rendered height back to the
+  400px placeholder, shifting the anchor while `scrollY` stays
+  put, and browser scroll-anchoring does not catch a
+  `content-visibility`-driven layout shift -- so the drift
+  symptom returned. Pinned in
+  [`theme-transitions.mdc`](theme-transitions.mdc) under "Two
+  CSS containment hints" (the `data-msg-idx` SAVE bullet plus
+  the rAF re-scroll RESTORE paragraph). Not regression-pinned
+  because the frontend has no JS test harness, so the invariant
+  is enforced by the cross-referenced rule and by manual
+  verification only -- refresh
+  `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378` and
+  `/chat/7be71d40-07cb-46de-8203-266e17c97ae7` from a non-zero
+  scroll position and confirm the user lands precisely where
+  they were after a one-frame rAF settle, then refresh a
+  diagram-free chat to confirm the legacy-format
+  `sessionStorage` fallback path still restores precisely.
 
 When the next deferred bug surfaces, add the marker rather than
 silently rewriting the code path, then cite that file from this
