@@ -51,59 +51,73 @@ const ChatDetail = () => {
         }
         const fetchedChat = response.data;
         const rawMessages = Array.isArray(fetchedChat.messages) ? fetchedChat.messages : [];
-        const preparedMessages = await Promise.all(
+
+        // Three sequential outer phases (markdown prep, theme A
+        // prerender, theme B prerender) instead of one fused
+        // per-message closure. The dual-theme prerender pair MUST
+        // NOT be nested inside a `Promise.all` over messages: every
+        // call to `prerenderMermaidDiagrams` flips the global
+        // `mermaid.initialize({ theme: ... })` setting and then
+        // runs its own internal `Promise.all` over the diagrams in
+        // one message, so two interleaved per-message pairs would
+        // race on the singleton -- a B-pass call from one message
+        // overwrites the baseline mid-flight, and any other
+        // message's A-pass render that has not yet captured its
+        // config picks up the flipped theme via mermaid's
+        // `processAndSetConfigs` `reset()`-to-baseline at the
+        // start of every `mermaid.render`, producing a wrong-
+        // themed SVG cached under `(source, darkMode)`. The fix
+        // is to give each `prerenderMermaidDiagrams` call uncontested
+        // ownership of the singleton for its full lifetime by
+        // running all messages' active-theme prerenders together,
+        // awaiting completion, then running all messages' opposite-
+        // theme prerenders together. Phase A also moves out of
+        // the per-message closure so its `Promise.all` can fan out
+        // markdown work without any mermaid state at all. See
+        // `mermaid-rendering.mdc` "Render cache and queue" →
+        // `prerenderMermaidDiagrams` writer for the singleton
+        // contract this honors.
+
+        const messagesWithHtml = await Promise.all(
           rawMessages.map(async (message) => {
             const images = Array.isArray(message.images) ? message.images : [];
             if (typeof message.content !== 'string') {
               return { ...message, images };
             }
             const renderedContent = await prepareMarkdownHtml(message.content);
-            // Pre-render mermaid diagrams while the loading spinner is still
-            // visible so MermaidBlock receives a ready SVG on first paint and
-            // there is no flash of raw source text.
-            const mermaidSvgs = await prerenderMermaidDiagrams(renderedContent, darkMode);
-            // Cache-warm the opposite theme so the user's first dark/light
-            // toggle on this chat hits `mermaidRenderCache` for every
-            // diagram instead of falling through to the per-block render
-            // queue (which would re-run `mermaid.parse` + `mermaid.render`
-            // for every diagram serially while the user watches the page
-            // re-flow). The in-message sequential `await` (not
-            // `Promise.all`) is load-bearing for THIS message's dual-theme
-            // pair: `mermaid.initialize` is a singleton, and a parallel
-            // pair would race on `theme: dark | default`. Return value is
-            // unused -- the side effect we want is the cache fill, not the
-            // SVG map. Doubles prerender wall-time on chats with many
-            // diagrams; acceptable in the typical case, and could be
-            // bounded by a count threshold (e.g. only warm both themes
-            // when `< N` diagrams) if it becomes a noticeable load delay.
-            //
-            // TODO(bug): On a chat with multiple messages and many
-            // diagrams, some diagrams may render with the wrong theme on
-            // first paint or after the first toggle, because the
-            // `Promise.all(rawMessages.map(...))` outer iteration runs N
-            // message-level prerenders concurrently while each message's
-            // dual-theme pair fires `mermaid.initialize({ theme: ... })`
-            // with alternating values. Suspected cause: the in-message
-            // sequential `await` only serializes the two prerenders for
-            // ONE message; across messages the dual-theme pairs interleave,
-            // and once a message's B-pass calls
-            // `mermaid.initialize({ theme: !darkMode })` it overwrites the
-            // singleton baseline (mermaid's `processAndSetConfigs` calls
-            // `reset()` to that baseline at the start of every
-            // `mermaid.render`), so any other message's A-pass render that
-            // hasn't yet captured its config will pick up the flipped
-            // theme and produce a wrong-themed SVG cached under
-            // `(source, darkMode)`. Suspected fix: split into two
-            // sequential outer passes (one theme per pass), each using
-            // `Promise.all` over messages internally so all concurrent
-            // prerenders within a pass share one theme. Not regression-
-            // pinned because the frontend has no JS test harness, so the
-            // invariant would be enforced by manual verification on a
-            // diagram-heavy multi-message chat.
-            await prerenderMermaidDiagrams(renderedContent, !darkMode);
-            return { ...message, renderedContent, mermaidSvgs, images };
+            return { ...message, renderedContent, images };
           }),
         );
+
+        const mermaidSvgsByMessage = await Promise.all(
+          messagesWithHtml.map((m) =>
+            typeof m.renderedContent === 'string'
+              ? prerenderMermaidDiagrams(m.renderedContent, darkMode)
+              : Promise.resolve(null),
+          ),
+        );
+
+        // Opposite-theme cache-warm pass. Return value is unused;
+        // the side effect we want is the `mermaidRenderCache` fill
+        // for `(source, !darkMode)` so the user's first dark/light
+        // toggle hits the cache for every diagram instead of
+        // falling through to the per-block render queue.
+        await Promise.all(
+          messagesWithHtml.map((m) =>
+            typeof m.renderedContent === 'string'
+              ? prerenderMermaidDiagrams(m.renderedContent, !darkMode)
+              : Promise.resolve(null),
+          ),
+        );
+
+        const preparedMessages = messagesWithHtml.map((m, idx) => {
+          const mermaidSvgs = mermaidSvgsByMessage[idx];
+          if (mermaidSvgs === null) {
+            return m;
+          }
+          return { ...m, mermaidSvgs };
+        });
+
         if (cancelled) {
           return;
         }
