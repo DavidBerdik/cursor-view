@@ -287,6 +287,35 @@ transition-only-overrides cluster at the bottom of `buildTheme.js`
 `MuiOutlinedInput`, `MuiSvgIcon`, `MuiTypography`) is the canonical
 home; alphabetical order within that cluster keeps diffs reviewable.
 
+`MuiAppBar` carries `defaultProps: { enableColorOnDark: true }`
+alongside its `styleOverrides.root.background:
+var(--mui-palette-primary-dark)`, and the prop default is load-
+bearing under `cssVariables` + `colorSchemes`. MUI 7's default
+`MuiAppBar` ships a scheme-conditional override that, when
+`ownerState.enableColorOnDark` is `false` (the framework default),
+applies `theme.applyStyles('dark', { backgroundColor:
+theme.vars?.palette.AppBar?.darkBg })` -- which falls back to
+`palette.background.default` (`#121212` from `darkColors`). That
+conditional is generated at higher specificity than our static
+`styleOverrides.root.background` rule, so without flipping the
+prop default the title bar paints near-black in dark mode even
+though the static rule points at `--mui-palette-primary-dark`
+(= `#005e80`, the shared blue from `sharedColors.primary.dark`).
+Setting the default to `true` gates the dark-only override out
+and lets the static `--mui-palette-primary-dark` rule apply in
+both schemes (matching the pre-CSS-variables `main`-branch
+behavior, where the AppBar was always `#005e80`). This is the
+same class of load-bearing wire-up as the
+`colorSchemeSelector: 'data-mui-color-scheme'` invariant in the
+"CSS variables palette" section above: a default that MUI flipped
+under us when both color schemes are defined, where the visible
+failure mode is not a build-time error but a wrong color in one
+scheme. Treat any future "the color I see does not match the
+configured `var(--mui-palette-X)` in one scheme only" report as
+a signal that another component's default ships an analogous
+scheme-conditional override; the fix is the same shape (set
+`defaultProps.enableColorOnDark: true` or the equivalent gate).
+
 # Inline `sx` for raw elements
 
 Raw `<Box>` / `<pre>` / `<button>` rendered without a MUI wrapper
@@ -402,11 +431,15 @@ completion regardless, which is the semantic this case needs. Reach
 for `PALETTE_TRANSITION_DURATION` + `PALETTE_TRANSITION_CURVE` for
 the animation shorthand, never the literal numbers.
 
-Four load-bearing pieces of the cross-fade surface exist purely
-for performance, not correctness — but if any one is removed the
-cross-fade goes from "smooth" to "frame-dropping on long
-mermaid-heavy chats". The first three live in `useSvgCrossFade`;
-the last is on the consumer's outgoing-layer `sx`:
+Five load-bearing pieces of the cross-fade surface. The first
+three are perf gates and the fourth is a perf hint -- removing
+any of them takes the cross-fade from "smooth" to "frame-
+dropping on long mermaid-heavy chats" but the fade itself still
+completes. The fifth is a correctness invariant: removing it
+re-opens the outgoing-layer-stuck-at-opacity-1 bug whenever a
+user flips OS-level reduced motion mid-fade. The first three
+and the fifth live in `useSvgCrossFade`; the fourth is on the
+consumer's outgoing-layer `sx`:
 
 - **`useInView` gate** (in the hook). The outgoing layer mounts
   only when the consumer's `surfaceRef` element is on-screen. A
@@ -438,6 +471,29 @@ the last is on the consumer's outgoing-layer `sx`:
   every frame. The standard "do not keep `will-change`
   permanently" caveat does not apply because the outgoing layer
   unmounts at animation-end; the lifetime is bounded.
+- **`animationcancel` listener on the outgoing layer** (in the
+  hook, attached via a `useEffect([outgoingSvg])` against the
+  consumer's `outgoingRef`). The only correctness invariant in
+  this list. The hook's JS-side `useReducedMotion` gate above
+  suppresses NEW outgoing-layer mounts after the OS preference
+  flip, but it does nothing for an in-flight fade whose layer
+  has already mounted. The global
+  `@media (prefers-reduced-motion: reduce)` rule in `index.css`
+  rewrites the running keyframe to `animation: none !important`
+  mid-fade, which fires `animationcancel` (NOT `animationend`)
+  on the outgoing layer; React's `onAnimationEnd` JSX prop is
+  `onanimationend` only and there is no `onAnimationCancel`
+  shorthand, so without a manually-attached listener
+  `setOutgoingSvg(null)` is never called for the cancelled fade
+  and the outgoing layer stays mounted at `opacity: 1` until the
+  next svg change for that block (typically the next theme
+  toggle), visibly stacking two diagrams. The hook's effect
+  attaches the listener whenever an outgoing layer is mounted
+  and removes it in cleanup so the remount-on-rapid-toggle case
+  (where `key={outgoingSvg}` swaps the DOM node out from under
+  us) wires the listener to the new node. The hook returns the
+  `outgoingRef` so the consumer can attach it to the outgoing
+  `<Box>`; both halves are required.
 
 The three gates (visibility, reduced-motion, concurrent-fade cap)
 all suppress the *outgoing layer*, never the underlying render —
@@ -551,6 +607,18 @@ two-pronged because no single mechanism covers both surfaces:
   outgoing layer would still mount and stick at `opacity: 1`
   forever (`onAnimationEnd` never fires when there is no
   animation). The hook's boolean gates the layer mount itself.
+  The companion `animationcancel` listener documented in the
+  "SVG content cross-fade" section's load-bearing-pieces
+  enumeration above covers the orthogonal case where the OS
+  preference flips *during* an in-flight fade, after the
+  outgoing layer has already mounted: the CSS rule rewrites the
+  running keyframe to `animation: none !important`, which fires
+  `animationcancel` (not `animationend`); the listener catches
+  that event and unmounts the layer the same way
+  `onAnimationEnd` would have on a normally-completed fade. The
+  JS gate handles "preference is on at mount time"; the listener
+  handles "preference flipped after mount". Both halves are
+  required.
 
 The CSS rule covers every other animated surface in the codebase
 (every MUI `transition`, every hover bg flip, every scrollbar fade);

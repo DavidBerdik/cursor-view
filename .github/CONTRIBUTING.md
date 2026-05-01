@@ -421,19 +421,36 @@ raises `ProgrammingError`).
   prerender suppression, and the cache + queue routing; consumed
   by `MermaidBlock` so the component itself stays focused on the
   diagram/source toggle, the lightbox modal state, and the auto-
-  close-on-error effect), `useSvgCrossFade` (cross-fade state
+  close-on-error effect),   `useSvgCrossFade` (cross-fade state
   machine for a string-typed imperative-DOM payload &mdash; owns
   the outgoing-layer state, the keyframe constant, the visibility
-  / reduced-motion / concurrent-fade-cap gate triple, and the
-  `onAnimationEnd` cleanup; consumed by `MermaidDiagramSurface`
-  to keep the surface focused on the layered JSX, the per-scheme
-  alpha tint, and the `contain` containment hint), and
+  / reduced-motion / concurrent-fade-cap gate triple, the
+  `onAnimationEnd` cleanup, AND a manually-attached
+  `animationcancel` listener (wired via the consumer's
+  `outgoingRef` because React JSX has no `onAnimationCancel`
+  shorthand) that catches the case where the OS-level
+  reduced-motion preference flips during an in-flight fade and
+  the global CSS rule rewrites the running keyframe to
+  `animation: none !important`, firing `animationcancel` instead
+  of `animationend`; consumed by `MermaidDiagramSurface` to keep
+  the surface focused on the layered JSX, the per-scheme alpha
+  tint, and the `contain` containment hint),
   `useSvgPanZoom` (modal-local transform state, pointer drag,
   wheel/button zoom, and identity-reset for prop-fed SVG surfaces;
   the anchor-preserving zoom math lives in pure helpers in
   `utils/svgPanZoomModel.js`, and the consumer's CSS centers the
   SVG at identity transform so the hook does not measure a
-  per-diagram fit baseline itself).
+  per-diagram fit baseline itself), and `useChatScrollAnchor`
+  (chat-detail scroll save/restore &mdash; owns the
+  `useLayoutEffect` that parses the saved `sessionStorage` entry
+  for the current `sessionId`, restores via `window.scrollTo`,
+  runs a `requestAnimationFrame`-driven re-scroll loop capped at
+  5 iterations to chase `content-visibility: auto`
+  materialization shifts, and registers the debounced scroll
+  listener that saves the anchor-based `{ msgIdx, offset }` JSON
+  back to `sessionStorage`; consumed by `ChatDetail` so the page
+  component stays focused on the fetch-and-prepare pipeline and
+  the layout JSX).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
   consumed by `AppContextMenu`), `mode` (`isDesktopMode()` &mdash;
@@ -507,7 +524,22 @@ raises `ProgrammingError`).
     strip, and keyboard navigation). The mermaid `MermaidLightboxModal`
     above follows the same lightbox pattern (viewport-fixed Paper,
     toolbar actions, theme-token styling) for diagram embeds inside
-    these bubbles.
+    these bubbles. `ChatDetail` delegates its scroll save/restore
+    to `useChatScrollAnchor` (under `hooks/`), which persists an
+    anchor-based `{ msgIdx, offset }` JSON entry to
+    `sessionStorage` keyed off the topmost in-viewport bubble's
+    `data-msg-idx` attribute (set by `MessageList.map`'s
+    `(message, index)` enumeration on `MessageBubble`'s outermost
+    `<Box>`). The data attribute is the load-bearing handle:
+    without it, `MermaidBlock`'s `content-visibility: auto` 400px
+    placeholder height (which does not match the actual rendered
+    diagram height) drifts a raw `window.scrollY` save/restore on
+    every refresh of a diagram-heavy chat, and the hook's rAF
+    re-scroll loop has no anchor to recompute against. See the
+    "Two CSS containment hints" subsection of
+    [`theme-transitions.mdc`](../.cursor/rules/theme-transitions.mdc)
+    for the SAVE side (the `data-msg-idx` bullet) and the RESTORE
+    side (the rAF re-scroll loop paragraph).
   - `export/` &mdash; shared `ExportFormatDialog` and
     `ExportWarningDialog` used by both pages.
 

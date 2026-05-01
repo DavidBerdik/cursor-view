@@ -203,13 +203,44 @@ function useSelection() {
 - `useSvgCrossFade` — cross-fade state machine for a string-typed
   imperative-DOM payload (mermaid SVG today). Owns the outgoing-
   layer state, the visibility / reduced-motion / concurrent-fade-
-  cap gate triple, the keyframe constant, and the
-  `onAnimationEnd` cleanup. Returns
-  `{ surfaceRef, outgoingSvg, fadeAnimation, onAnimationEnd }` —
-  consumer renders the layered JSX and wires those four to the
-  outgoing `<Box>`. Generalizes to future imperative-DOM cross-
-  fades (prism / monaco / similar) where the rendered output is
-  not CSS-animatable across re-renders.
+  cap gate triple, the keyframe constant, the `onAnimationEnd`
+  cleanup, AND a manually-attached `animationcancel` listener
+  for the reduced-motion-flipped-mid-fade case (React's
+  `onAnimationEnd` JSX prop is `onanimationend` only and there
+  is no `onAnimationCancel` shorthand, so the listener has to
+  be wired via `addEventListener` in a `useEffect`). Returns
+  `{ surfaceRef, outgoingRef, outgoingSvg, fadeAnimation,
+  onAnimationEnd }` — consumer renders the layered JSX, attaches
+  `surfaceRef` to the outer surface (the visibility gate reads
+  it via `useInView`) and `outgoingRef` to the outgoing `<Box>`
+  (the cancel-listener `useEffect` reads it), and wires
+  `outgoingSvg` / `fadeAnimation` / `onAnimationEnd` to the same
+  outgoing `<Box>`'s content / `sx.animation` / `onAnimationEnd`
+  prop. Generalizes to future imperative-DOM cross-fades (prism
+  / monaco / similar) where the rendered output is not
+  CSS-animatable across re-renders; the `animationcancel`
+  listener pattern carries over verbatim because the global
+  reduced-motion CSS rule applies to every `animation`
+  property in the codebase.
+- `useChatScrollAnchor` — chat-detail scroll save/restore.
+  Owns the `useLayoutEffect` that, while `ready` is true, parses
+  the saved `sessionStorage` entry for the current `sessionId`
+  (anchor-based `{ msgIdx, offset }` JSON or legacy plain
+  `scrollY` number), restores via `window.scrollTo`, runs the
+  `requestAnimationFrame`-driven re-scroll loop (capped at 5
+  iterations, 1-px tolerance, only on the JSON-with-found-anchor
+  path) that chases `content-visibility: auto` materialization
+  shifts, and registers the scroll listener that debounces
+  saves back into `sessionStorage`. Cleanup
+  `cancelAnimationFrame`s the in-flight rAF, clears the save
+  timer, and removes the scroll listener. Pure side-effect hook
+  (returns nothing); the consumer (`ChatDetail`) just calls it
+  with `sessionId` and `!loading`. Pinned in
+  [`theme-transitions.mdc`](theme-transitions.mdc) "SVG content
+  cross-fade (mermaid diagrams)" → "Two CSS containment hints"
+  for the `data-msg-idx` save side and the rAF re-scroll
+  restore side; consumer-side counterpart of the `data-msg-idx`
+  attribute on `MessageBubble`'s outermost `<Box>`.
 - `useSvgPanZoom` — transform state + pointer drag + wheel/button
   zoom + identity-reset for display-only modal interactions over
   existing SVG DOM (consumer's CSS supplies the fit-and-center

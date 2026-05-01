@@ -16,16 +16,16 @@ todos:
     status: completed
   - id: review-rules
     content: Review every edited file against `.cursor/rules/comments-style.mdc`, `known-bugs.mdc`, `react-components.mdc`, `theme-transitions.mdc`, `mermaid-rendering.mdc`, `frontend-hooks.mdc`, and `project-layout.mdc`. Confirm no rule drift, no comments that re-narrate code, no file over the ~250-line cap, no new mermaid imperative-API call sites, and no orphaned `# TODO(bug):` markers. Note any newly-discovered deferred bugs with fresh `# TODO(bug):` markers per the rule.
-    status: pending
+    status: completed
   - id: update-rules
     content: "Update `.cursor/rules/known-bugs.mdc` to move the four fixed bugs from the 'live markers' section into the 'retired examples' section. Update `.cursor/rules/theme-transitions.mdc` for the new `animationcancel` listener piece, the `MuiAppBar.defaultProps.enableColorOnDark` invariant, and the scroll-drift / anchor-restoration pairing with `content-visibility: auto`. Update `.cursor/rules/mermaid-rendering.mdc`'s `prerenderMermaidDiagrams` writer subsection for the three-phase fetch effect. Update `.cursor/rules/frontend-hooks.mdc`'s `useSvgCrossFade` entry to include the new `outgoingRef` return field."
-    status: pending
+    status: completed
   - id: update-docs
     content: Update `.github/CONTRIBUTING.md`'s `chat-detail/` bullet to mention the anchor-based scroll restoration and the `data-msg-idx` contract on `MessageBubble`. Confirm `README.md` does not need an update (no user-facing feature change; existing 'Smooth dark/light theme fade across the entire UI' line still describes the area).
-    status: pending
+    status: completed
   - id: run-tests
     content: "Run `python -m unittest discover -s tests` from the repo root and confirm every existing test stays green. The four fixes are frontend-only, so no new Python tests are added (the frontend has no JS test harness, per `.cursor/rules/known-bugs.mdc`); the run is a safety check that nothing else regressed. Manually verify each fix per the per-bug verification expectations: Bug 1 — toggle reduced motion mid-fade on a mermaid diagram and confirm no stuck overlay; Bug 2 — open `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378` (or any diagram-heavy multi-message chat) and inspect each diagram's `stroke` / `fill` colors against the active theme, then toggle dark/light from cache and re-inspect; Bug 3 — open any chat in dark mode and confirm the title bar is `#005e80` blue, not `#121212` black; Bug 4 — refresh `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378` and `/chat/7be71d40-07cb-46de-8203-266e17c97ae7` from a non-zero scroll position and confirm the user lands precisely where they were."
-    status: pending
+    status: completed
 isProject: false
 ---
 

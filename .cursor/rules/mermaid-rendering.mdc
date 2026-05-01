@@ -220,19 +220,52 @@ eviction. Two writers exist:
 
 - `prerenderMermaidDiagrams` writes after every successful
   `mermaid.render` call — the cold-page prerender doubles as the
-  cache-warmer. `ChatDetail`'s fetch effect calls it twice
-  sequentially, once for the active `darkMode` and once for
-  `!darkMode`, so the session cache holds both themes' SVGs by the
-  time the loading spinner clears. The user's first toggle on the
-  chat is therefore a cache hit for every diagram regardless of
-  toggle direction; nothing falls through to the per-block render
-  queue. The two calls are sequential because `mermaid.initialize`
-  is a singleton and parallel calls would race on
-  `theme: dark | default`. The trade-off is doubled prerender
-  wall-time on diagram-heavy chats; the count threshold escape
-  hatch (only warm both themes when `< N` diagrams) is flagged
-  inline at the call site for if it ever becomes a noticeable load
-  delay.
+  cache-warmer. `ChatDetail`'s fetch effect drives it through
+  three sequential outer phases so both themes' SVGs are in the
+  session cache by the time the loading spinner clears, and the
+  user's first toggle on the chat is a cache hit for every
+  diagram regardless of toggle direction:
+
+  1. **Phase A — markdown prep.** `Promise.all` over messages
+     calling `prepareMarkdownHtml(message.content)` only. No
+     mermaid state at all; this phase fans out independently of
+     the singleton.
+  2. **Phase B — active-theme prerender.** `Promise.all` over
+     the Phase A output calling `prerenderMermaidDiagrams(
+     m.renderedContent, darkMode)`. The return value populates
+     each message's `mermaidSvgs` field.
+  3. **Phase C — opposite-theme cache-warm.** `Promise.all` over
+     the Phase A output calling `prerenderMermaidDiagrams(
+     m.renderedContent, !darkMode)`. The return value is unused
+     intentionally; the side effect we want is the
+     `mermaidRenderCache` fill for `(source, !darkMode)`.
+
+  The dual-theme prerender pair MUST NOT be nested inside a
+  `Promise.all` over messages -- that was the
+  cross-message-singleton-race shape now retired in
+  [`known-bugs.mdc`](known-bugs.mdc). Each
+  `prerenderMermaidDiagrams` call flips
+  `mermaid.initialize({ theme: ... })` on the global mermaid
+  singleton and then runs its own internal `Promise.all` over
+  the diagrams in one message; if two interleaved per-message
+  pairs ran concurrently, a B-pass call from one message would
+  overwrite the singleton baseline mid-flight, and any other
+  message's A-pass render that had not yet captured its config
+  would pick up the flipped theme via mermaid's
+  `processAndSetConfigs` `reset()`-to-baseline at the start of
+  every `mermaid.render`, producing a wrong-themed SVG cached
+  under `(source, darkMode)`. The three-phase shape gives each
+  `prerenderMermaidDiagrams` call uncontested ownership of the
+  singleton for its full lifetime by running all messages'
+  active-theme prerenders together and awaiting completion
+  before starting the opposite-theme pass; every concurrent
+  render within a phase shares the same theme by construction.
+
+  The trade-off versus a single-theme prerender is doubled
+  prerender wall-time on diagram-heavy chats; the count
+  threshold escape hatch (only warm both themes when `< N`
+  diagrams) is flagged inline at the call site for if it ever
+  becomes a noticeable load delay.
 - `useMermaidRender`'s effect (consumed by `MermaidBlock`) writes
   after every successful `mermaid.render` call inside its queued
   task body. With the dual-theme prerender above, this writer

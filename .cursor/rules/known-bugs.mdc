@@ -17,57 +17,9 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-Two live `# TODO(bug):` markers are in the tree:
+No live `# TODO(bug):` markers are in the tree at present.
 
-- the cross-fade cancellation gap in
-  `frontend/src/hooks/useSvgCrossFade.js`'s `onAnimationEnd`
-  callback (consumed by `MermaidDiagramSurface`'s outgoing-layer
-  `onAnimationEnd` JSX prop). A user who flips OS-level
-  reduced-motion during the ~200ms mermaid SVG cross-fade window
-  sees the outgoing SVG layer stick on top of the incoming SVG
-  until the next svg change for this block (typically the next
-  theme toggle), because the global
-  `@media (prefers-reduced-motion: reduce)` rule in
-  `frontend/src/index.css` overrides the keyframe `animation` to
-  `none`, which fires `animationcancel` (not `animationend`) on
-  the outgoing layer; React's `onAnimationEnd` JSX prop does not
-  catch `animationcancel`, so `setOutgoingSvg(null)` is never
-  called for the cancelled fade. Suspected fix is to attach an
-  `animationcancel` listener via `addEventListener` in a
-  `useEffect` (React JSX has no `onAnimationCancel` shorthand)
-  with the same `setOutgoingSvg(null)` payload. Not regression-
-  pinned because the frontend has no JS test harness, so the
-  invariant would be enforced by the cross-referenced rule and
-  by manual verification only.
-
-- the cross-message mermaid singleton race in
-  `frontend/src/components/chat-detail/ChatDetail.js`'s fetch
-  effect, around the dual-theme `prerenderMermaidDiagrams` call
-  pair. On a chat with multiple messages and many diagrams, some
-  diagrams may render with the wrong theme on first paint (or
-  after the first dark/light toggle from the cache), because the
-  outer `Promise.all(rawMessages.map(...))` runs N message-level
-  prerenders concurrently while each message's dual-theme pair
-  fires `mermaid.initialize({ theme: ... })` with alternating
-  values. Suspected cause: the in-message sequential `await` only
-  serializes the two prerenders for ONE message; across messages
-  the dual-theme pairs interleave, and once any message's B-pass
-  calls `mermaid.initialize({ theme: !darkMode })` it overwrites
-  the singleton baseline (mermaid's `processAndSetConfigs` calls
-  `reset()` to that baseline at the start of every
-  `mermaid.render`), so any other message's A-pass render that
-  hasn't yet captured its config picks up the flipped theme and
-  produces a wrong-themed SVG cached under `(source, darkMode)`.
-  Suspected fix is to split into two sequential outer passes
-  (one theme per pass), each using `Promise.all` over messages
-  internally so all concurrent prerenders within a pass share
-  one theme. Not regression-pinned because the frontend has no
-  JS test harness; the invariant would be enforced by manual
-  verification on a diagram-heavy multi-message chat (toggle
-  through both themes and inspect each diagram's `stroke` /
-  `fill` colors against the expected scheme).
-
-Six retired examples now live in git history:
+Nine retired examples now live in git history:
 
 - the swallow-and-stub exception handler in
   `cursor_view/chat_format.py::format_chat_for_frontend`,
@@ -182,6 +134,125 @@ Six retired examples now live in git history:
   they were after a one-frame rAF settle, then refresh a
   diagram-free chat to confirm the legacy-format
   `sessionStorage` fallback path still restores precisely.
+- the mermaid SVG cross-fade outgoing-layer cancellation gap in
+  `frontend/src/hooks/useSvgCrossFade.js` (consumed by
+  `MermaidDiagramSurface`'s outgoing-layer JSX). A user who
+  flipped OS-level reduced-motion during the ~200ms cross-fade
+  window saw the outgoing SVG stick on top of the incoming SVG
+  until the next svg change for that block (typically the next
+  theme toggle), because the global
+  `@media (prefers-reduced-motion: reduce)` rule in
+  `frontend/src/index.css` overrides the keyframe to
+  `animation: none !important` mid-fade, which fires
+  `animationcancel` (not `animationend`) on the outgoing layer;
+  React's `onAnimationEnd` JSX prop is `onanimationend` only and
+  there is no `onAnimationCancel` shorthand, so
+  `setOutgoingSvg(null)` was never called for the cancelled fade.
+  Closed by exposing a new `outgoingRef` from the hook (the
+  consumer attaches it to the outgoing `<Box>`) and adding a
+  `useEffect([outgoingSvg])` in the hook that calls
+  `outgoingRef.current.addEventListener('animationcancel', () =>
+  setOutgoingSvg(null))` whenever an outgoing layer is mounted,
+  with cleanup that removes the listener before the next
+  remount-on-rapid-toggle swaps the DOM node out from under it.
+  Pinned in [`theme-transitions.mdc`](theme-transitions.mdc) under
+  "SVG content cross-fade (mermaid diagrams)" (the
+  `animationcancel` listener is the fifth load-bearing piece,
+  flagged as a correctness invariant rather than a perf
+  optimization) and in [`frontend-hooks.mdc`](frontend-hooks.mdc)
+  under the `useSvgCrossFade` entry (return shape now includes
+  `outgoingRef`). Not regression-pinned because the frontend has
+  no JS test harness, so the invariant is enforced by the
+  cross-referenced rules and by manual verification only --
+  toggle dark/light on a chat with at least one mermaid diagram,
+  flip the OS-level reduced-motion preference while the ~200ms
+  cross-fade is in flight, and confirm the outgoing layer
+  unmounts within the same frame the keyframe is cancelled
+  instead of sticking until the next theme toggle.
+- the cross-message mermaid singleton race during dual-theme
+  prerender in
+  `frontend/src/components/chat-detail/ChatDetail.js`'s fetch
+  effect. On a diagram-heavy multi-message chat (e.g.
+  `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378`), some diagrams
+  rendered with the wrong theme on first paint or after the
+  first dark/light toggle from the cache, because the legacy
+  fused per-message closure ran the outer
+  `Promise.all(rawMessages.map(...))` over an inner
+  `prerenderMermaidDiagrams(content, darkMode)` /
+  `prerenderMermaidDiagrams(content, !darkMode)` pair. Each
+  `prerenderMermaidDiagrams` call flips
+  `mermaid.initialize({ theme: ... })` on the global mermaid
+  singleton and then runs its own internal `Promise.all` over
+  the diagrams in one message; the in-message sequential `await`
+  serialized only the two calls for ONE message, but across
+  messages the dual-theme pairs interleaved freely. Once any
+  message's B-pass call wrote `theme: !darkMode` to the
+  singleton, mermaid's `processAndSetConfigs` `reset()`-to-
+  baseline at the start of every `mermaid.render` propagated the
+  flipped theme to any other message's A-pass render that had
+  not yet captured its config -- producing a wrong-themed SVG
+  cached under `(source, darkMode)`. Closed by restructuring
+  the fetch effect into three sequential outer phases: Phase A
+  is `Promise.all` over messages calling `prepareMarkdownHtml`
+  only (no mermaid state at all); Phase B is `Promise.all` over
+  messages calling `prerenderMermaidDiagrams(content, darkMode)`
+  for the user's active theme; Phase C is `Promise.all` over
+  messages calling `prerenderMermaidDiagrams(content,
+  !darkMode)` for the cache-warm pass. The sequential `await`
+  between Phase B and Phase C gives each
+  `prerenderMermaidDiagrams` call uncontested ownership of the
+  singleton for its full lifetime, since every concurrent
+  render within a phase shares the same theme. Pinned in
+  [`mermaid-rendering.mdc`](mermaid-rendering.mdc) under "Render
+  cache and queue" → `prerenderMermaidDiagrams` writer (the
+  three-phase shape and the "do not nest the dual-theme pair
+  inside a `Promise.all` over messages" invariant). Not
+  regression-pinned because the frontend has no JS test harness,
+  so the invariant is enforced by the cross-referenced rule and
+  by manual verification only -- open a diagram-heavy multi-
+  message chat such as
+  `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378`, inspect each
+  diagram's `stroke` / `fill` colors against the active theme
+  on first paint, then toggle dark/light from cache and
+  re-inspect; every diagram should match the active theme on
+  first paint and after every toggle.
+- the AppBar (title bar) painting near-black in dark mode after
+  the CSS-variables migration in
+  `frontend/src/theme/buildTheme.js`'s `MuiAppBar` config. After
+  migrating from `createTheme(c, mode)` (one theme per scheme,
+  rebuilt on every toggle) to a single
+  `createTheme({ cssVariables, colorSchemes: { light, dark } })`,
+  the AppBar paints `#121212` in dark mode -- the
+  `darkColors.background.default` value -- instead of the
+  `#005e80` blue from `sharedColors.primary.dark` that `main`
+  used in both schemes. Root cause: MUI 7's default `MuiAppBar`
+  ships a scheme-conditional override that, when
+  `ownerState.enableColorOnDark` is `false` (the default),
+  applies `theme.applyStyles('dark', { backgroundColor:
+  theme.vars?.palette.AppBar?.darkBg })` -- which falls back to
+  `palette.background.default`. That conditional is generated at
+  higher specificity than the static `styleOverrides.root.background:
+  var(--mui-palette-primary-dark)` rule below, so the static
+  override loses the cascade in the dark scheme. (The bug did
+  not surface on `main` because the pre-migration per-mode theme
+  rebuild had no scheme-conditional default to compete against
+  for any single emitted theme.) Closed by adding
+  `defaultProps: { enableColorOnDark: true }` to the
+  `MuiAppBar` config alongside the existing `styleOverrides`,
+  which gates the dark-only override out and lets the static
+  `--mui-palette-primary-dark` rule apply in both schemes.
+  Pinned in [`theme-transitions.mdc`](theme-transitions.mdc)
+  under "Centralize via MUI theme `styleOverrides`" (the
+  `MuiAppBar.defaultProps.enableColorOnDark: true` invariant,
+  flagged as a load-bearing wire-up similar to the
+  `colorSchemeSelector: 'data-mui-color-scheme'` invariant in
+  the "CSS variables palette" section). Not regression-pinned
+  because the frontend has no JS test harness, so the invariant
+  is enforced by the cross-referenced rule and by manual
+  verification only -- open any chat in dark mode and confirm
+  the title bar is `#005e80` blue (the shared `primary.dark`
+  palette token), not `#121212` near-black; toggle to light
+  mode and confirm the AppBar stays the same blue.
 
 When the next deferred bug surfaces, add the marker rather than
 silently rewriting the code path, then cite that file from this
