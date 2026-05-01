@@ -192,6 +192,31 @@ function useSelection() {
   `setRenderError` so the consumer can flip its mode state in the
   same React batch (avoids a one-frame inconsistency in the toolbar
   during failure transitions).
+- `useMermaidBlockHeight` — `ResizeObserver`-driven recorder that
+  observes the consumer's outer `<Box>` and writes the rendered
+  height into
+  [`mermaidHeightCache`](frontend/src/utils/mermaidHeightCache.js)
+  (a session-scoped `sessionStorage`-backed source-keyed height
+  map). Returns `{ ref, persistedHeight }`: the consumer attaches
+  `ref` to the same outer `<Box>` that carries
+  `contentVisibility: 'auto'`, and reads `persistedHeight` once at
+  mount via the hook's lazy `useState` initializer to seed
+  `containIntrinsicSize`. The lazy-once read keeps the
+  placeholder size stable for the block's lifetime even as the
+  observer writes fresher values to the cache for the *next*
+  refresh -- flipping `containIntrinsicSize` mid-session would
+  itself cause a layout shift, the very symptom this pair is
+  closing. `MermaidBlock` is the canonical consumer; pinned in
+  [`theme-transitions.mdc`](theme-transitions.mdc) "Two CSS
+  containment hints" (the persisted-`containIntrinsicSize` bullet)
+  and [`mermaid-rendering.mdc`](mermaid-rendering.mdc) "Render
+  cache and queue" → `mermaidHeightCache` for the cache contract.
+  Companion to `useChatScrollAnchor` below: the height cache is
+  the PRIMARY determinism mechanism for the scroll anchor
+  restore on diagram-heavy chats, the rAF safety net is the
+  fallback. Defensive against missing `ResizeObserver` API: the
+  effect short-circuits silently and the consumer falls back to
+  the static placeholder.
 - `useReducedMotion` — `prefers-reduced-motion: reduce` matchMedia
   with a `change` listener so live OS-setting flips update the
   return value without a reload. Used at the JS-side gate where
@@ -227,19 +252,25 @@ function useSelection() {
   the saved `sessionStorage` entry for the current `sessionId`
   (anchor-based `{ msgIdx, offset }` JSON or legacy plain
   `scrollY` number), restores via `window.scrollTo`, runs the
-  `requestAnimationFrame`-driven re-scroll loop (capped at 5
-  iterations, 1-px tolerance, only on the JSON-with-found-anchor
-  path) that chases `content-visibility: auto` materialization
-  shifts, and registers the scroll listener that debounces
-  saves back into `sessionStorage`. Cleanup
+  `requestAnimationFrame`-driven re-scroll loop (1-px tolerance,
+  stable-frames convergence -- exit after the position is stable
+  for 2 consecutive frames, 30-frame safety ceiling, only on the
+  JSON-with-found-anchor path) that catches the residual
+  `content-visibility: auto` materialization shift on
+  unmeasured-block edge cases, and registers the scroll listener
+  that debounces saves back into `sessionStorage`. Cleanup
   `cancelAnimationFrame`s the in-flight rAF, clears the save
   timer, and removes the scroll listener. Pure side-effect hook
   (returns nothing); the consumer (`ChatDetail`) just calls it
-  with `sessionId` and `!loading`. Pinned in
+  with `sessionId` and `!loading`. The rAF loop is the SAFETY NET
+  for unmeasured-block edge cases; the PRIMARY determinism
+  mechanism on diagram-heavy chats is the persisted-
+  `containIntrinsicSize` pair owned by `useMermaidBlockHeight` +
+  `mermaidHeightCache` above. Pinned in
   [`theme-transitions.mdc`](theme-transitions.mdc) "SVG content
   cross-fade (mermaid diagrams)" → "Two CSS containment hints"
-  for the `data-msg-idx` save side and the rAF re-scroll
-  restore side; consumer-side counterpart of the `data-msg-idx`
+  for the `data-msg-idx` save side and the stable-frames RESTORE
+  paragraph; consumer-side counterpart of the `data-msg-idx`
   attribute on `MessageBubble`'s outermost `<Box>`.
 - `useSvgPanZoom` — transform state + pointer drag + wheel/button
   zoom + identity-reset for display-only modal interactions over

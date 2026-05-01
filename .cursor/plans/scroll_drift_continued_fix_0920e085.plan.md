@@ -4,40 +4,40 @@ overview: "Make the chat-detail scroll restore deterministic on chats with merma
 todos:
   - id: add-height-cache
     content: "Add `frontend/src/utils/mermaidHeightCache.js` modeled on `mermaidRenderCache.js`: source-keyed `getCachedMermaidHeight` / `setCachedMermaidHeight`, sessionStorage-backed, in-memory parsed copy, defensive try/catch around storage access."
-    status: pending
+    status: completed
   - id: add-height-hook
     content: "Add `frontend/src/hooks/useMermaidBlockHeight.js`: `ResizeObserver`-driven recorder that observes the consumer's outer `<Box>` and writes heights to the cache; returns `{ ref, persistedHeight }` with `persistedHeight` read once via lazy `useState` initializer."
-    status: pending
+    status: completed
   - id: wire-height-into-mermaidblock
     content: "Modify `frontend/src/components/MermaidBlock.js` to consume `useMermaidBlockHeight(source)`, attach the ref to the outer `<Box>`, and replace the static `containIntrinsicSize: '0 400px'` with `containIntrinsicSize: \\`0 ${persistedHeight ?? 400}px\\``. Update the existing intent comment block accordingly."
-    status: pending
+    status: completed
   - id: harden-raf-loop
     content: "Modify `frontend/src/hooks/useChatScrollAnchor.js` rAF chase loop: replace the unconditional 5-frame cap with stable-frames-based convergence (exit after position is stable for 2 consecutive frames or after a 30-frame safety cap). Update the comment block to mark the loop as the safety net rather than primary mechanism."
-    status: pending
+    status: completed
   - id: review-against-rules
     content: Re-read each touched file against `.cursor/rules/` (comments-style, known-bugs, project-layout, react-components, frontend-hooks, mermaid-rendering, theme-transitions). Confirm no rule violations; if any drift is found, fix in-place rather than ship.
-    status: pending
+    status: completed
   - id: update-rule-files
     content: "Extend `known-bugs.mdc` retired-example #6 with the continued-fix follow-up; update `theme-transitions.mdc` 'Two CSS containment hints' for the persisted-height + stable-frames pair; add a `useMermaidBlockHeight` entry to `frontend-hooks.mdc`'s canonical-hooks list; add a `mermaidHeightCache` paragraph to `mermaid-rendering.mdc`'s 'Render cache and queue' section."
-    status: pending
+    status: completed
   - id: update-contributing
     content: Update `.github/CONTRIBUTING.md` `utils/` bullet (add `mermaidHeightCache`), `hooks/` bullet (add `useMermaidBlockHeight`), and `chat-detail/` bullet (extend scroll-restore description to mention the height cache as primary and the rAF loop as safety net).
-    status: pending
+    status: completed
   - id: confirm-readme-noop
     content: Confirm `README.md` does not need an update (no user-facing feature change). Note explicitly that the doc-sync requirement was evaluated and is satisfied.
-    status: pending
+    status: completed
   - id: run-python-tests
     content: Run `python -m unittest discover -s tests` from the repo root. Confirm every existing test still passes (the change is frontend-only; the run is a safety check that no rule edit accidentally regresses anything else).
-    status: pending
+    status: completed
   - id: manual-verify
     content: "Manually verify the three scenarios on `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378` and `/chat/7be71d40-07cb-46de-8203-266e17c97ae7`: cold-then-refresh, warm-cache refresh, and a diagram-free chat as a regression check. Inspect `sessionStorage['mermaid-block-heights']` for accumulated source-keyed numeric heights."
-    status: pending
+    status: completed
   - id: audit-implementation
     content: "Re-read every changed file looking for new defects: ResizeObserver-cycle risk, sessionStorage-unavailable crashes, missing rAF cancellation on unmount. Any defect not immediately fixed gets a `# TODO(bug):` marker per `known-bugs.mdc` (symptom + suspected cause)."
-    status: pending
+    status: completed
   - id: audit-project
     content: Sweep the rest of the chat-detail surface (`MermaidBlock`, `MermaidDiagramSurface`, `useChatScrollAnchor`, `useMermaidRender`, `prerenderMermaidDiagrams`) for newly-surfaced suspicious paths. Any finding gets a `# TODO(bug):` marker and a citation from `known-bugs.mdc`'s 'live markers' section. If empty, record that explicitly.
-    status: pending
+    status: completed
 isProject: false
 ---
 

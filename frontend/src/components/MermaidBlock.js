@@ -1,6 +1,7 @@
 import React, { memo, useCallback, useContext, useEffect, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
+import { useMermaidBlockHeight } from '../hooks/useMermaidBlockHeight';
 import { useMermaidRender } from '../hooks/useMermaidRender';
 import { PALETTE_TRANSITION } from '../theme/transitions';
 import MermaidDiagramSurface from './MermaidDiagramSurface';
@@ -22,6 +23,15 @@ import MermaidToolbar from './MermaidToolbar';
 function MermaidBlock({ source, initialSvg, initialError, initialDarkMode }) {
   const { darkMode } = useContext(ThemeModeContext);
   const [mode, setMode] = useState(initialError ? 'source' : 'diagram');
+  // Persisted-across-refresh placeholder height for the
+  // `contentVisibility: 'auto'` outer `<Box>` below. Read once via
+  // a lazy `useState` initializer inside the hook so the value is
+  // stable for this block's lifetime; the hook's `ResizeObserver`
+  // writes the latest measured height back to the cache as the
+  // user scrolls past, so the next refresh reads the freshest
+  // value. See `useMermaidBlockHeight`'s file header for the full
+  // rationale.
+  const { ref: heightRef, persistedHeight } = useMermaidBlockHeight(source);
 
   // The hook fires this synchronously alongside its own
   // `setRenderError` so both state updates land in the same React
@@ -78,6 +88,7 @@ function MermaidBlock({ source, initialSvg, initialError, initialDarkMode }) {
 
   return (
     <Box
+      ref={heightRef}
       sx={{
         position: 'relative',
         my: 1.5,
@@ -91,18 +102,28 @@ function MermaidBlock({ source, initialSvg, initialError, initialDarkMode }) {
         // would otherwise re-layout and re-paint every one of them
         // (each containing a non-trivial inline-styled SVG subtree)
         // even for blocks scrolled far above or below the viewport.
-        // `containIntrinsicSize: '0 400px'` reserves a placeholder
+        // `containIntrinsicSize: '0 Npx'` reserves a placeholder
         // height so the scrollbar doesn't jump as off-screen blocks
-        // materialize (`0` = use parent's width). 400px is a
-        // heuristic for a typical mermaid diagram height in this UI;
-        // a future enhancement could measure rendered heights per
-        // source and feed them back through the prerender cache, but
-        // any heuristic that's roughly right is dramatically better
-        // than the unbounded reflow from `auto` with no intrinsic
-        // size hint. Browsers without `content-visibility` support
-        // (older Firefox) silently ignore both properties.
+        // materialize (`0` = use parent's width). The N is the
+        // height the same block measured in a previous session via
+        // `useMermaidBlockHeight`'s `ResizeObserver` (persisted in
+        // `mermaidHeightCache` under sessionStorage), falling back
+        // to a 400px heuristic when no entry exists yet (first-ever
+        // load, privacy-mode users where sessionStorage is
+        // unavailable, or sources never scrolled into view long
+        // enough for the observer to fire). The persisted-height
+        // path is what makes `useChatScrollAnchor`'s scroll restore
+        // deterministic on refresh of diagram-heavy chats: with the
+        // placeholder matching the actual rendered height, the
+        // anchor's `offsetTop` is correct on first measurement and
+        // the rAF chase loop converges in one frame instead of
+        // racing the browser's `content-visibility` evaluator. See
+        // `theme-transitions.mdc` "Two CSS containment hints" for
+        // the cross-component contract. Browsers without
+        // `content-visibility` support (older Firefox) silently
+        // ignore both properties.
         contentVisibility: 'auto',
-        containIntrinsicSize: '0 400px',
+        containIntrinsicSize: `0 ${persistedHeight ?? 400}px`,
       }}
     >
       {renderError === null && (

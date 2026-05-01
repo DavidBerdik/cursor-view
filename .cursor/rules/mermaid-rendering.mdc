@@ -315,6 +315,63 @@ Diagrams introduced after the initial prerender (e.g. a future
 streaming-messages path) are the only sites that re-introduce
 queue traffic, and only on their first toggle in each theme.
 
+## `mermaidHeightCache`
+
+A layout-axis sibling of `mermaidRenderCache`. Source-keyed
+`Map<source, height>` backed by `sessionStorage` under the
+`mermaid-block-heights` key, with an in-memory parsed copy so
+per-`MermaidBlock`-mount lookups stay O(1) on long chats (the
+parsed copy is hydrated lazily on first `get` / `set` via a
+`null` sentinel so the lazy hydrate fires exactly once). Public
+API is two functions: `getCachedMermaidHeight(source)` returns
+the previously-recorded height or `undefined`;
+`setCachedMermaidHeight(source, height)` no-ops on non-positive
+or non-finite inputs (`ResizeObserver` can fire with `0` between
+mount and first layout) and short-circuits when the new value
+matches the existing one. Both functions wrap every
+`sessionStorage` access in `try`/`catch` so privacy mode /
+disabled storage / quota exceeded silently degrades to "no
+persisted heights" rather than throwing into the chat view.
+
+The single writer is
+[`useMermaidBlockHeight`](frontend/src/hooks/useMermaidBlockHeight.js)'s
+`ResizeObserver` callback (consumed by `MermaidBlock`); the
+single reader is the same hook's lazy `useState` initializer at
+mount. The hook returns `{ ref, persistedHeight }`; the consumer
+attaches `ref` to its outer `<Box>` (the same element carrying
+`contentVisibility: 'auto'`) and uses `persistedHeight` to
+populate `containIntrinsicSize: \`0 ${persistedHeight ?? 400}px\``.
+
+This cache exists to make the chat-detail scroll-anchor restore
+deterministic on refresh of diagram-heavy chats. With placeholders
+matching actual rendered heights, the layout above the saved
+scroll anchor matches the layout at save time before the first
+`scrollTo` runs, so `useChatScrollAnchor`'s rAF re-scroll loop
+becomes the safety net for the residual unmeasured-block case
+rather than the primary mechanism. See
+[`theme-transitions.mdc`](theme-transitions.mdc) "Two CSS
+containment hints" for the consumer-side restore contract this
+cache satisfies, and
+[`frontend-hooks.mdc`](frontend-hooks.mdc) for the hook's
+return-shape and lifecycle invariants.
+
+Source-only keying (no `darkMode` axis): rendered mermaid
+heights vary by ~few pixels across themes (different stroke
+widths, label-tint metrics) -- well inside the 1-px tolerance
+window of the rAF chase loop in `useChatScrollAnchor`. Adding a
+`darkMode` axis would double the storage footprint and force a
+full re-measure on every theme toggle for no perceptible drift
+improvement. Contrast with `mermaidRenderCache` above, which
+keys by `(source, darkMode)` because the SVG *content* genuinely
+differs across themes; height is a layout property, SVG markup
+is not.
+
+`mermaidHeightCache` does NOT call `mermaid.parse`,
+`mermaid.render`, or `mermaid.initialize`. It is pure storage
+plus DOM-size accumulation; the "Two pipelines, one source
+format" invariant at the top of this rule is preserved by
+construction.
+
 ## Wire-up invariants
 
 `useMermaidRender`'s effect (consumed by `MermaidBlock`) must:

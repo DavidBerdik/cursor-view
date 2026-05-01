@@ -134,6 +134,61 @@ Nine retired examples now live in git history:
   they were after a one-frame rAF settle, then refresh a
   diagram-free chat to confirm the legacy-format
   `sessionStorage` fallback path still restores precisely.
+  **Continued fix.** The 5-frame rAF chase loop above proved
+  insufficient on long diagram-heavy chats: rAF callbacks run
+  *between* paints and read `anchor.offsetTop` against the
+  layout as of the previous paint, while
+  `content-visibility: auto` re-evaluation runs as part of the
+  rendering update step *between* rAFs -- so each `scrollTo`
+  triggered another wave of materialization that the next rAF
+  saw, and each new wave pulled MORE blocks into the viewport
+  buffer in a cascade that frequently exceeded the 5-frame cap.
+  When the cascade fit in 5 frames the user landed exact; when
+  it did not, the residual was visible drift, producing a
+  timing-dependent "sometimes lands exact, sometimes off"
+  symptom on the same two URLs. Closed by adding a layout-axis
+  sibling to `mermaidRenderCache`:
+  [`mermaidHeightCache`](frontend/src/utils/mermaidHeightCache.js)
+  (a session-scoped `sessionStorage`-backed source-keyed
+  height map) plus
+  [`useMermaidBlockHeight`](frontend/src/hooks/useMermaidBlockHeight.js)
+  (a `ResizeObserver` hook attached to each `MermaidBlock`'s
+  outer `<Box>` that records the rendered height back to the
+  cache as the block materializes). `MermaidBlock` reads the
+  recorded height via the hook's lazy `useState` initializer
+  and uses it as
+  `containIntrinsicSize: \`0 ${persistedHeight ?? 400}px\``
+  -- so on every refresh after the first the placeholder
+  matches the actual rendered height, the layout above the
+  scroll anchor is deterministic before the first `scrollTo`
+  runs, and the rAF chase loop becomes the safety net for the
+  residual unmeasured-block case (first-ever load of a chat,
+  `sessionStorage` unavailable, or a source the user scrolled
+  past too fast for the observer to fire) rather than the
+  primary mechanism. The 5-frame cap was also replaced with
+  stable-frames-based convergence (exit after the position is
+  stable for 2 consecutive frames, with a 30-frame safety
+  ceiling) so the loop both exits early on the typical fast-
+  converge case and tolerates the rare slow-converge case it
+  could not handle before. Pinned in
+  [`theme-transitions.mdc`](theme-transitions.mdc) under "Two
+  CSS containment hints" (the persisted-`containIntrinsicSize`
+  bullet and the stable-frames RESTORE paragraph),
+  [`frontend-hooks.mdc`](frontend-hooks.mdc) under the new
+  `useMermaidBlockHeight` entry, and
+  [`mermaid-rendering.mdc`](mermaid-rendering.mdc) under
+  "Render cache and queue" → "`mermaidHeightCache`" (the
+  layout-axis sibling subsection). Not regression-pinned
+  because the frontend has no JS test harness, so the invariant
+  is enforced by the cross-referenced rules and by manual
+  verification only -- open
+  `/chat/ec60d4dd-9bac-45af-84e7-bc7e35022378` cold (no
+  `mermaid-block-heights` entry in `sessionStorage` yet), scroll
+  mid-page, refresh, confirm precise landing; refresh again
+  from a fresh non-zero scroll position to confirm the warm-
+  cache case; then refresh a diagram-free chat to confirm the
+  legacy-plain-number `sessionStorage` fallback path is
+  unaffected.
 - the mermaid SVG cross-fade outgoing-layer cancellation gap in
   `frontend/src/hooks/useSvgCrossFade.js` (consumed by
   `MermaidDiagramSurface`'s outgoing-layer JSX). A user who

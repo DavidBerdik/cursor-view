@@ -509,14 +509,33 @@ broader page during the fade window. They are the canonical sites
 for this pattern; future imperative-DOM components (prism, monaco,
 similar) should follow:
 
-- **`contentVisibility: 'auto'` + `containIntrinsicSize: '0 400px'`
-  on `MermaidBlock`'s outer `<Box>`.** Tells the browser to skip
-  layout and paint of off-screen blocks until they scroll into
-  view; the intrinsic-size hint reserves a placeholder height
-  (400px is a heuristic for typical mermaid block height) so the
-  scrollbar does not jump as off-screen blocks materialize. On
-  long chats with many diagrams, this is what keeps the theme
-  toggle from re-painting every off-screen SVG subtree.
+- **`contentVisibility: 'auto'` + persisted
+  `containIntrinsicSize` on `MermaidBlock`'s outer `<Box>`.**
+  Tells the browser to skip layout and paint of off-screen
+  blocks until they scroll into view; the intrinsic-size hint
+  reserves a placeholder height so the scrollbar does not jump
+  as off-screen blocks materialize. The placeholder value is
+  `\`0 ${persistedHeight ?? 400}px\`` where `persistedHeight`
+  comes from
+  [`useMermaidBlockHeight`](frontend/src/hooks/useMermaidBlockHeight.js)
+  (a `ResizeObserver` hook on the same outer `<Box>` that
+  records the rendered height into
+  [`mermaidHeightCache`](frontend/src/utils/mermaidHeightCache.js),
+  a session-scoped `sessionStorage`-backed source-keyed height
+  map). On every refresh after the first the placeholder
+  matches the actual rendered height, which is what makes the
+  scroll-anchor restore deterministic on diagram-heavy chats
+  -- see the RESTORE paragraph below for the consumer side and
+  [`mermaid-rendering.mdc`](mermaid-rendering.mdc) "Render cache
+  and queue" → `mermaidHeightCache` for the cache contract. The
+  static `400px` is a fallback heuristic for the residual case
+  where no entry exists yet (first-ever load of a chat,
+  `sessionStorage` unavailable, or a source the user scrolled
+  past too fast for the observer to fire); the
+  `useChatScrollAnchor` rAF chase loop catches the cascade in
+  that path. On long chats with many diagrams, this whole
+  containment hint is also what keeps the theme toggle from
+  re-painting every off-screen SVG subtree.
 - **`contain: 'layout paint style'` on `MermaidDiagramSurface`'s
   outer `<Box component="button">`.** Tells the browser the
   surface's layout, paint, and style cannot affect siblings or
@@ -545,32 +564,47 @@ similar) should follow:
   consumers) lands above the anchor between save and restore.
 
 The RESTORE half pairs the `data-msg-idx` save with a
-`requestAnimationFrame`-driven re-scroll loop (capped at 5
-iterations) inside the page-level `useLayoutEffect`. The initial
-`scrollTo(0, anchor.offsetTop + offset)` is best-effort because it
-runs at `scrollY = 0` against a layout where every off-screen
-mermaid block is at its 400px placeholder; the
-`scrollTo` itself causes the browser to re-evaluate
+`requestAnimationFrame`-driven re-scroll loop in
+[`useChatScrollAnchor`](frontend/src/hooks/useChatScrollAnchor.js)
+that is the SAFETY NET for the residual case where a block above
+the anchor lacks a persisted height entry. The persisted-
+`containIntrinsicSize` bullet above is the PRIMARY determinism
+mechanism: with placeholders matching actual rendered heights,
+the initial `scrollTo(0, anchor.offsetTop + offset)` lands on the
+correct visual position before the loop runs at all, and the
+loop converges in zero or one frame. The unmeasured-block
+fallback path is what the loop catches: when a block above the
+anchor falls through to the static 400px placeholder (first-
+ever load, `sessionStorage` unavailable, or a source the user
+scrolled past too fast for the `ResizeObserver` to fire),
+`scrollTo` causes the browser to re-evaluate
 `content-visibility: auto` for blocks now in or near the new
 viewport, materializing them on the next paint and shifting
-`anchor.offsetTop` by the cumulative actual-vs-placeholder height
+`anchor.offsetTop` by the cumulative actual-vs-400px height
 delta -- while `scrollY` stays put. Each rAF iteration re-reads
 `document.querySelector('[data-msg-idx="${msgIdx}"]').offsetTop`
 and re-`scrollTo`s when the recomputed `offsetTop + offset`
-differs from the current `scrollY` by more than a 1-px tolerance
-(which prevents a no-op `scrollTo` from re-triggering layout
-work). The 5-frame cap is a safety net against pathological
-materialization cascades; 2-3 frames are typical in practice.
-Skip the loop on the legacy plain-number fallback, the no-saved-
-entry case, and the JSON-with-missing-anchor case (a chat that
-has lost messages) -- there is no anchor to stabilize against.
-Cleanup must `cancelAnimationFrame` the in-flight request so a
-component unmount or a navigation to a new `sessionId` does not
-keep firing the chain. `ChatDetail.js`'s `useLayoutEffect` is the
-canonical site. Removing the rAF loop re-opens the
-scroll-drift-on-mermaid-chats bug; removing the `data-msg-idx`
-save re-opens the same bug from the SAVE side (raw `scrollY`
-becomes layout-dependent again).
+differs from the current `scrollY` by more than a 1-px
+tolerance (which prevents a no-op `scrollTo` from re-triggering
+layout work). Convergence rule: exit when the position is
+STABLE for two consecutive frames (one stable frame can be a
+false negative if `content-visibility` re-evaluation is still
+pending in the browser's rendering update step; two stable
+frames means the cascade has fully propagated). A 30-frame
+safety ceiling guards against a pathological cascade that never
+settles. Skip the loop on the legacy plain-number fallback, the
+no-saved-entry case, and the JSON-with-missing-anchor case (a
+chat that has lost messages) -- there is no anchor to stabilize
+against. Cleanup must `cancelAnimationFrame` the in-flight
+request so a component unmount or a navigation to a new
+`sessionId` does not keep firing the chain. Removing the
+persisted-height bullet above re-opens the scroll-drift-on-
+mermaid-chats bug on every refresh of a diagram-heavy chat;
+removing the rAF safety net re-opens the same bug for first-
+ever-load and unmeasured-block edge cases; removing the
+`data-msg-idx` save re-opens the bug from the SAVE side (raw
+`scrollY` becomes layout-dependent again). All three
+load-bearing pieces are required.
 
 This pattern generalizes to any future imperative-DOM library
 (prism, monaco, etc.) whose rendered output is not CSS-animatable

@@ -421,7 +421,19 @@ raises `ProgrammingError`).
   prerender suppression, and the cache + queue routing; consumed
   by `MermaidBlock` so the component itself stays focused on the
   diagram/source toggle, the lightbox modal state, and the auto-
-  close-on-error effect),   `useSvgCrossFade` (cross-fade state
+  close-on-error effect), `useMermaidBlockHeight`
+  (`ResizeObserver`-driven recorder that observes
+  `MermaidBlock`'s outer `<Box>` and persists each block's
+  rendered height into `mermaidHeightCache` for use as
+  `containIntrinsicSize` on the next refresh; returns
+  `{ ref, persistedHeight }` with `persistedHeight` read once
+  via a lazy `useState` initializer so the placeholder size
+  stays stable for the block's lifetime; consumer-side
+  counterpart of the height cache, and the primary determinism
+  mechanism for `useChatScrollAnchor`'s scroll restore on
+  diagram-heavy chats &mdash; see "Two CSS containment hints"
+  in [`theme-transitions.mdc`](../.cursor/rules/theme-transitions.mdc)),
+  `useSvgCrossFade` (cross-fade state
   machine for a string-typed imperative-DOM payload &mdash; owns
   the outgoing-layer state, the keyframe constant, the visibility
   / reduced-motion / concurrent-fade-cap gate triple, the
@@ -444,11 +456,19 @@ raises `ProgrammingError`).
   (chat-detail scroll save/restore &mdash; owns the
   `useLayoutEffect` that parses the saved `sessionStorage` entry
   for the current `sessionId`, restores via `window.scrollTo`,
-  runs a `requestAnimationFrame`-driven re-scroll loop capped at
-  5 iterations to chase `content-visibility: auto`
-  materialization shifts, and registers the debounced scroll
-  listener that saves the anchor-based `{ msgIdx, offset }` JSON
-  back to `sessionStorage`; consumed by `ChatDetail` so the page
+  runs a `requestAnimationFrame`-driven re-scroll loop with
+  stable-frames-based convergence (exit after the position is
+  stable for 2 consecutive frames, with a 30-frame safety
+  ceiling) that catches `content-visibility: auto`
+  materialization shifts in the residual unmeasured-block case
+  &mdash; the rAF loop is the safety net, the primary
+  determinism mechanism is `useMermaidBlockHeight` +
+  `mermaidHeightCache` populating accurate
+  `containIntrinsicSize` so the layout above the anchor is
+  deterministic before the first `scrollTo` &mdash; and
+  registers the debounced scroll listener that saves the
+  anchor-based `{ msgIdx, offset }` JSON back to
+  `sessionStorage`; consumed by `ChatDetail` so the page
   component stays focused on the fetch-and-prepare pipeline and
   the layout JSX).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
@@ -467,7 +487,23 @@ raises `ProgrammingError`).
   renders one at a time instead of racing all of them on the JS
   thread; consulted only on cache miss, see
   [`mermaid-rendering.mdc`](../.cursor/rules/mermaid-rendering.mdc)
-  "Render cache and queue" for the wire-up invariants).
+  "Render cache and queue" for the wire-up invariants), and
+  `mermaidHeightCache` (layout-axis sibling of
+  `mermaidRenderCache`; session-scoped `sessionStorage`-backed
+  source-keyed `Map<source, height>` populated by
+  `useMermaidBlockHeight`'s `ResizeObserver` and read by the
+  same hook's lazy `useState` initializer so `MermaidBlock` can
+  set `containIntrinsicSize: \`0 ${persistedHeight ?? 400}px\``
+  on its outer `<Box>`; this is what makes
+  `useChatScrollAnchor`'s scroll restore deterministic on
+  refresh of diagram-heavy chats by ensuring the layout above
+  the saved anchor matches the layout at save time before the
+  first `scrollTo` runs; the cache wraps every `sessionStorage`
+  access in `try`/`catch` so privacy-mode / quota-exceeded
+  silently degrades to "no persisted heights" rather than
+  throwing into the chat view, see
+  [`mermaid-rendering.mdc`](../.cursor/rules/mermaid-rendering.mdc)
+  "Render cache and queue" → "`mermaidHeightCache`").
 - `markdown/` &mdash; the unified/remark/rehype pipeline that
   pre-renders chat messages to HTML.
 - `components/`
@@ -530,16 +566,30 @@ raises `ProgrammingError`).
     `sessionStorage` keyed off the topmost in-viewport bubble's
     `data-msg-idx` attribute (set by `MessageList.map`'s
     `(message, index)` enumeration on `MessageBubble`'s outermost
-    `<Box>`). The data attribute is the load-bearing handle:
-    without it, `MermaidBlock`'s `content-visibility: auto` 400px
-    placeholder height (which does not match the actual rendered
-    diagram height) drifts a raw `window.scrollY` save/restore on
-    every refresh of a diagram-heavy chat, and the hook's rAF
-    re-scroll loop has no anchor to recompute against. See the
+    `<Box>`). Three load-bearing pieces make the restore precise
+    on diagram-heavy chats: the `data-msg-idx` SAVE that anchors
+    to a specific bubble (raw `window.scrollY` would be layout-
+    dependent and drift the moment any layout-shifting placeholder
+    lands above the anchor between save and restore); the
+    persisted-height layer (`useMermaidBlockHeight` +
+    `mermaidHeightCache`) that gives every off-screen
+    `MermaidBlock` an accurate `containIntrinsicSize` so the
+    layout above the anchor is deterministic before the first
+    `scrollTo` runs; and the rAF chase loop with stable-frames
+    convergence as the safety net for the residual unmeasured-
+    block case. The persisted-height layer is the primary
+    determinism mechanism &mdash; without it, the rAF loop is
+    racing the browser's `content-visibility: auto` evaluator
+    between paints on every refresh of a diagram-heavy chat, a
+    cascade that frequently exceeded the original 5-frame cap
+    and produced the "sometimes lands exact, sometimes off"
+    symptom retired in
+    [`known-bugs.mdc`](../.cursor/rules/known-bugs.mdc). See the
     "Two CSS containment hints" subsection of
     [`theme-transitions.mdc`](../.cursor/rules/theme-transitions.mdc)
-    for the SAVE side (the `data-msg-idx` bullet) and the RESTORE
-    side (the rAF re-scroll loop paragraph).
+    for the SAVE side (the `data-msg-idx` bullet), the persisted-
+    `containIntrinsicSize` bullet, and the stable-frames RESTORE
+    paragraph.
   - `export/` &mdash; shared `ExportFormatDialog` and
     `ExportWarningDialog` used by both pages.
 
