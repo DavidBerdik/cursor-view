@@ -159,7 +159,17 @@ Subpackages:
   `iter_chat_from_item_table` and `iter_global_legacy_chatdata`.
 - `desktop/` &mdash; pywebview launcher. `__init__.py` hosts
   `run_desktop`; `api.py` is the JS &harr; Python bridge;
-  `window_state.py` persists window geometry across launches.
+  `window_state.py` persists window geometry across launches;
+  `readiness.py` is the stdlib-only `wait_for_server` probe that polls
+  `GET /` until the daemon Flask thread answers; `splash.py` provides
+  the inline HTML splash (fed to `create_window(html=...)`, since
+  Chromium backends block top-level `data:` navigation) the window
+  shows while that probe runs.
+  `run_desktop` opens the window on the splash and only navigates to the
+  loopback URL once `wait_for_server` succeeds, so cold launches never
+  flash the webview's native "site can't be reached" frame (see the
+  "Wait before navigating" invariant in
+  [`.cursor/rules/desktop-mode.mdc`](../.cursor/rules/desktop-mode.mdc)).
 
 The cache SQLite layout has two kinds of tables, owned by
 `cursor_view/chat_index/schema.py`:

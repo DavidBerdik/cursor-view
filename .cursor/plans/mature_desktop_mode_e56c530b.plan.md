@@ -4,13 +4,13 @@ overview: Mature the experimental pywebview desktop mode so it is robust enough 
 todos:
   - id: 01a-readiness-probe
     content: Add cursor_view/desktop/readiness.py exposing wait_for_server(port, timeout) using stdlib urllib.request polling, and refactor run_desktop to wait before navigating the webview
-    status: pending
+    status: completed
   - id: 01b-splash-payload
     content: "Add cursor_view/desktop/splash.py providing an inline data: URI splash payload, and use it as the create_window initial url so the window has visible content during the readiness probe"
-    status: pending
+    status: completed
   - id: 01c-rules-and-docs-startup
     content: Re-read python-standards.mdc against the new readiness module; create or extend .cursor/rules/desktop-mode.mdc with the wait-before-navigate invariant; update .github/CONTRIBUTING.md cursor_view/desktop/ bullet
-    status: pending
+    status: completed
   - id: 02a-shutdown-drain
     content: In run_desktop, wrap webview.start in a try/except KeyboardInterrupt/finally; explicitly call server.shutdown(); log a lazy %s warning if server_thread.join times out with the thread still alive
     status: pending

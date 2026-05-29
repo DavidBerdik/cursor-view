@@ -14,6 +14,8 @@ from werkzeug.serving import make_server
 from cursor_view.app_factory import create_app
 from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.desktop.api import DesktopApi
+from cursor_view.desktop.readiness import wait_for_server
+from cursor_view.desktop.splash import splash_html
 from cursor_view.desktop.window_state import (
     DEFAULT_HEIGHT,
     DEFAULT_WIDTH,
@@ -62,9 +64,18 @@ def run_desktop() -> None:
         x, y = centered_position(width, height)
         start_maximized = False
 
+    # Open on a self-contained splash instead of the loopback URL: the
+    # daemon Flask thread may not be accepting connections yet on a cold
+    # launch, and navigating straight to it briefly flashes the webview's
+    # native "site can't be reached" frame. The real URL is loaded by
+    # _navigate_when_ready below, only after wait_for_server confirms the
+    # server answers. The splash is passed as html= (not a data: URL):
+    # Chromium-based backends block top-level data: navigation, which
+    # resolves as a relative path against the loopback origin and 404s.
+    target_url = f"http://127.0.0.1:{port}/"
     window = webview.create_window(
         title="Cursor View",
-        url=f"http://127.0.0.1:{port}/",
+        html=splash_html(),
         js_api=DesktopApi(port),
         width=width,
         height=height,
@@ -112,8 +123,22 @@ def run_desktop() -> None:
     window.events.restored += _on_restored
     window.events.closing += _on_closing
 
+    def _navigate_when_ready() -> None:
+        # Runs on pywebview's worker thread once the GUI loop is up, so
+        # it can block on the readiness probe without freezing the window
+        # painting the splash. A timeout still navigates: a best-effort
+        # load lets the webview surface its own diagnostic frame rather
+        # than stranding the user on the splash forever (the native
+        # startup-error dialog is Improvement 03's concern).
+        if not wait_for_server(port):
+            logger.warning(
+                "Loading %s without a successful readiness probe", target_url
+            )
+        window.load_url(target_url)
+
     try:
         webview.start(
+            _navigate_when_ready,
             private_mode=False,
             storage_path=webview_storage_path(),
         )

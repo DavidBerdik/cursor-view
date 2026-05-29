@@ -1,0 +1,61 @@
+---
+description: Invariants for the pywebview desktop launcher under cursor_view/desktop/
+globs: cursor_view/desktop/**/*.py
+alwaysApply: false
+---
+
+# Desktop mode invariants
+
+The desktop launcher (`cursor_view/desktop/`) runs the same Flask app
+that terminal mode serves, but inside a native pywebview window pointed
+at a random loopback port. The invariants below are the ones that are
+easy to regress because they straddle the Python launcher, the embedded
+webview, and the React app.
+
+## Wait before navigating
+
+`cursor_view/desktop/__init__.py::run_desktop` must **never** point the
+window at `http://127.0.0.1:{port}/` as the `create_window(url=...)`
+initial URL. The Werkzeug server runs on a daemon thread that is not
+guaranteed to be accepting connections by the time pywebview navigates,
+so an eager navigation flashes the embedded webview's native "site
+can't be reached" frame on cold launches.
+
+The required shape, owned by `run_desktop`:
+
+- Create the window on the inline splash from
+  `cursor_view/desktop/splash.py::splash_html()`, passed as
+  `webview.create_window(html=...)`, never on the loopback URL.
+- Pass a worker function to `webview.start(func, ...)` that calls
+  `cursor_view/desktop/readiness.py::wait_for_server(port)` and only
+  then calls `window.load_url(target_url)`. The probe runs on
+  pywebview's worker thread so blocking on it cannot freeze the splash
+  paint.
+- A readiness timeout still navigates (best-effort) after a lazy `%s`
+  warning, so the user is never stranded on the splash; the native
+  startup-error dialog is a separate concern (Improvement 03).
+
+Feed the splash as `html=`, **not** as an initial
+`url="data:text/html;..."`. Chromium-based backends (notably WebView2
+on Windows) block *top-level* navigation to `data:` URLs, so pywebview
+resolves the payload as a relative path against the loopback origin and
+the window 404s before the server is even up. The `html=` path routes
+through each backend's native string-loader (WebView2
+`NavigateToString`, WKWebView `loadHTMLString`, WebKitGTK `load_html`)
+which has no such restriction.
+
+`wait_for_server` is stdlib-only (`urllib.request`), polls `GET /`
+every 50ms with a 0.5s per-request timeout, returns `True` on the first
+HTTP 200 and `False` on timeout, and stays silent on the first failed
+attempt (connection-refused while the socket is still binding is the
+expected cold-launch steady state). Do not swap it for `requests` or
+add a heavier dependency — the stdlib-only discipline keeps the
+PyInstaller bundle and its import-time cost lean, matching the
+image-loading and export modules.
+
+The splash markup is inline on purpose: it needs no disk read, ships
+inside the PyInstaller bundle for free, and cannot 404 the way a
+relative asset could before the server is up. Do not move it into
+`cursor_view/export/vendor/` — that directory is reserved for
+HTML-export third-party assets per
+[`project-layout.mdc`](project-layout.mdc).
