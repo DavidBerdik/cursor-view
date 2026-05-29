@@ -19,6 +19,13 @@ from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.desktop.api import DesktopApi
 from cursor_view.desktop.error_window import build_error_html, show_startup_error
 from cursor_view.desktop.readiness import wait_for_server
+from cursor_view.desktop.single_instance import (
+    FOCUS_ROUTE,
+    acquire_lock,
+    notify_existing,
+    read_lock,
+    release_lock,
+)
 from cursor_view.desktop.splash import splash_html
 from cursor_view.desktop.window_state import (
     DEFAULT_HEIGHT,
@@ -33,6 +40,30 @@ from cursor_view.desktop.window_state import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _register_focus_route(app) -> None:
+    """Register the desktop-only ``POST /__desktop_focus__`` route.
+
+    A second launch that loses the single-instance race POSTs here to ask
+    the running instance to surface its window. Registered only in desktop
+    mode (terminal mode never calls this), so ``cursor_view/routes.py``
+    stays free of desktop / webview concerns.
+    """
+
+    def _focus():
+        windows = webview.windows
+        if not windows:
+            return {"focused": False, "error": "No window"}
+        try:
+            windows[0].show()
+            windows[0].restore()
+        except Exception as exc:
+            logger.warning("Failed to focus desktop window on IPC request: %s", exc)
+            return {"focused": False, "error": str(exc)}
+        return {"focused": True, "error": None}
+
+    app.add_url_rule(FOCUS_ROUTE, "desktop_focus", _focus, methods=["POST"])
 
 
 def run_desktop() -> None:
@@ -58,6 +89,21 @@ def run_desktop() -> None:
         logger.exception("Desktop startup failed before the window could open")
         show_startup_error(str(exc), traceback.format_exc())
         sys.exit(1)
+
+    # Single-instance: if a live desktop instance already holds the lock,
+    # ask it to focus its window and exit instead of opening a second one
+    # on a second random port. The just-bound listening socket is closed
+    # explicitly (server.shutdown would deadlock since serve_forever has
+    # not started) before exiting cleanly.
+    if not acquire_lock(port):
+        existing = read_lock()
+        if existing is not None:
+            notify_existing(existing.get("port"))
+        logger.info("Another Cursor View desktop instance is running; focusing it")
+        server.server_close()
+        sys.exit(0)
+
+    _register_focus_route(app)
 
     logger.info("Starting Flask server on http://127.0.0.1:%s", port)
 
@@ -200,6 +246,7 @@ def run_desktop() -> None:
             logger.warning(
                 "Flask server thread did not exit within %ss", join_timeout
             )
+        release_lock()
 
 
 def main() -> None:

@@ -75,3 +75,32 @@ relative asset could before the server is up. Do not move it into
 `cursor_view/export/vendor/` — that directory is reserved for
 HTML-export third-party assets per
 [`project-layout.mdc`](project-layout.mdc).
+
+## Single-instance lockfile
+
+Desktop mode is single-instance. `cursor_view/desktop/single_instance.py`
+owns a `desktop.lock` JSON file (`{pid, port, started_at_ns}`) in
+`cursor_view_cache_dir()`, next to `webview-storage/`. `run_desktop`
+calls `acquire_lock(port)` after binding the listening socket: on a
+live-holder collision it `notify_existing(port)`s the running instance
+(loopback `POST /__desktop_focus__`, which calls
+`webview.windows[0].show()/restore()`), closes its own socket with
+`server.server_close()` (not `server.shutdown()`, which deadlocks before
+`serve_forever` runs), and exits 0. The lock is released in the
+`finally` via `release_lock()`, which only deletes the file when the
+recorded PID is still ours.
+
+Staleness is PID-liveness, and the liveness probe is platform-split for
+a load-bearing reason: **never call `os.kill(pid, 0)` on Windows.**
+CPython implements `os.kill` on Windows via
+`OpenProcess` + `TerminateProcess(handle, sig)`, so a signal-0 "probe"
+would kill the target (including the test process). POSIX uses
+`os.kill(pid, 0)`; Windows opens the process with
+`PROCESS_QUERY_LIMITED_INFORMATION` through `ctypes` and checks
+`GetExitCodeProcess == STILL_ACTIVE` — a read-only existence check. The
+focus route is registered only in desktop mode (via
+`_register_focus_route` in `cursor_view/desktop/__init__.py`), never in
+`cursor_view/routes.py`, so terminal mode stays free of webview
+concerns. Regression-pinned by `tests/test_desktop_single_instance.py`
+(including a direct `_process_alive(os.getpid())` assertion that doubles
+as the Windows self-termination safety check).

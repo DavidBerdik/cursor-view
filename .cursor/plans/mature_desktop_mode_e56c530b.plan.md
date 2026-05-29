@@ -28,16 +28,16 @@ todos:
     status: completed
   - id: 04a-lockfile
     content: Implement cursor_view/desktop/single_instance.py with acquire_lock(port) and notify_existing(port_from_lock); register POST /__desktop_focus__ in desktop mode that calls webview.windows[0].show()/restore()
-    status: pending
+    status: completed
   - id: 04b-stale-detection
     content: Add cross-platform stale-PID detection using os.kill(pid, 0) plus a Windows fallback via the IPC GET timeout
-    status: pending
+    status: completed
   - id: 04c-tests-single-instance
     content: Add tests/test_desktop_single_instance.py exercising acquire-then-second-acquire-fails-then-release-then-re-acquire; ensure python -m unittest discover -s tests stays green per project-layout.mdc
-    status: pending
+    status: completed
   - id: 04d-rules-and-docs-instance
     content: Add the single-instance lockfile invariant to .cursor/rules/desktop-mode.mdc; update .github/CONTRIBUTING.md desktop bullet; update README.md to mention desktop.lock alongside webview-storage/
-    status: pending
+    status: completed
   - id: 05a-menu-tree
     content: Implement cursor_view/desktop/menu.py exposing build_menu(api) returning the File/Edit/View/Help tree; pass menu= into webview.start with hasattr fallback for backends without menu support
     status: pending

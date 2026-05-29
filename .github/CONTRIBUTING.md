@@ -168,7 +168,14 @@ Subpackages:
   startup-error window (`show_startup_error` for failures before the GUI
   loop starts, `build_error_html` for the readiness-timeout case that
   loads into the already-open splash window) with the message and
-  traceback HTML-escaped.
+  traceback HTML-escaped; `single_instance.py` enforces one desktop
+  instance via a `desktop.lock` (`{pid, port, started_at_ns}`) file in
+  the cache dir — a second launch `notify_existing`s the running
+  instance over a loopback `POST /__desktop_focus__` (registered only in
+  desktop mode) and exits. Its PID-liveness probe is platform-split
+  (`os.kill(pid, 0)` on POSIX, a read-only `ctypes` `OpenProcess` check
+  on Windows, since `os.kill` on Windows routes through
+  `TerminateProcess`).
   `run_desktop` opens the window on the splash and only navigates to the
   loopback URL once `wait_for_server` succeeds, so cold launches never
   flash the webview's native "site can't be reached" frame (see the
