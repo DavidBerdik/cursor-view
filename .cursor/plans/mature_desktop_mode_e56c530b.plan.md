@@ -13,13 +13,13 @@ todos:
     status: completed
   - id: 02a-shutdown-drain
     content: In run_desktop, wrap webview.start in a try/except KeyboardInterrupt/finally; explicitly call server.shutdown(); log a lazy %s warning if server_thread.join times out with the thread still alive
-    status: pending
+    status: completed
   - id: 02b-signal-handler
     content: Install a signal.SIGTERM handler in run_desktop that destroys the active webview window to unblock webview.start(); skip on Windows where SIGTERM semantics differ
-    status: pending
+    status: completed
   - id: 02c-rules-and-docs-shutdown
     content: Re-read python-standards.mdc Logging section to confirm lazy %s adherence on the new error paths; no rule/README update expected unless a new invariant emerges
-    status: pending
+    status: completed
   - id: 03a-error-window
     content: "Add cursor_view/desktop/error_window.py with show_startup_error(message, traceback) using a single data: HTML pywebview window; wrap cleanup_orphan_temp_files / make_server / wait_for_server in run_desktop with a try/except routing to it"
     status: pending

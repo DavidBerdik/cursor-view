@@ -6,6 +6,8 @@ giving the app the appearance of a standalone desktop application.
 """
 
 import logging
+import signal
+import sys
 import threading
 
 import webview
@@ -123,6 +125,24 @@ def run_desktop() -> None:
     window.events.restored += _on_restored
     window.events.closing += _on_closing
 
+    # webview.start() blocks the main thread inside the native GUI loop,
+    # so a SIGTERM (e.g. `kill <pid>`, a supervisor stop) would otherwise
+    # be deferred until the loop happens to return. Destroying the window
+    # unblocks webview.start() and lets the finally block below drain the
+    # Flask server cleanly. Skipped on Windows, where SIGTERM is not a
+    # real signal (CRT maps it to immediate process termination, so a
+    # handler cannot run the orderly shutdown anyway).
+    if sys.platform != "win32":
+
+        def _handle_sigterm(_signum: int, _frame: object) -> None:
+            logger.info("Received SIGTERM; destroying window to begin shutdown")
+            try:
+                window.destroy()
+            except Exception as exc:
+                logger.warning("Failed to destroy window on SIGTERM: %s", exc)
+
+        signal.signal(signal.SIGTERM, _handle_sigterm)
+
     def _navigate_when_ready() -> None:
         # Runs on pywebview's worker thread once the GUI loop is up, so
         # it can block on the readiness probe without freezing the window
@@ -142,10 +162,22 @@ def run_desktop() -> None:
             private_mode=False,
             storage_path=webview_storage_path(),
         )
+    except KeyboardInterrupt:
+        # Ctrl-C while the GUI loop is running surfaces here on the main
+        # thread; fall through to the finally so the server still drains.
+        logger.info("Interrupted; shutting down")
     finally:
         logger.info("Shutting down Flask server")
         server.shutdown()
-        server_thread.join(timeout=5)
+        join_timeout = 5
+        server_thread.join(timeout=join_timeout)
+        if server_thread.is_alive():
+            # daemon=True means the process can still exit, but a thread
+            # stuck mid-request points at a Werkzeug shutdown that did not
+            # take; surface it so a hanging exit is diagnosable.
+            logger.warning(
+                "Flask server thread did not exit within %ss", join_timeout
+            )
 
 
 def main() -> None:
