@@ -9,6 +9,7 @@ import logging
 import signal
 import sys
 import threading
+import traceback
 
 import webview
 from werkzeug.serving import make_server
@@ -16,6 +17,7 @@ from werkzeug.serving import make_server
 from cursor_view.app_factory import create_app
 from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.desktop.api import DesktopApi
+from cursor_view.desktop.error_window import build_error_html, show_startup_error
 from cursor_view.desktop.readiness import wait_for_server
 from cursor_view.desktop.splash import splash_html
 from cursor_view.desktop.window_state import (
@@ -40,11 +42,23 @@ def run_desktop() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    cleanup_orphan_temp_files()
+    # Everything up to a bound listening socket can fail before there is
+    # any window to surface a traceback in (a lost free_port race that
+    # leaves the port bound, no privilege to bind loopback, a cleanup
+    # error). Route those to a native error window instead of dying with
+    # a traceback the headless desktop binary would never show, then exit
+    # non-zero. This boundary runs before webview.start, so it is safe for
+    # show_startup_error to run its own GUI loop.
+    try:
+        cleanup_orphan_temp_files()
+        app = create_app()
+        port = free_port()
+        server = make_server("127.0.0.1", port, app, threaded=True)
+    except Exception as exc:
+        logger.exception("Desktop startup failed before the window could open")
+        show_startup_error(str(exc), traceback.format_exc())
+        sys.exit(1)
 
-    app = create_app()
-    port = free_port()
-    server = make_server("127.0.0.1", port, app, threaded=True)
     logger.info("Starting Flask server on http://127.0.0.1:%s", port)
 
     server_thread = threading.Thread(
@@ -144,17 +158,25 @@ def run_desktop() -> None:
         signal.signal(signal.SIGTERM, _handle_sigterm)
 
     def _navigate_when_ready() -> None:
-        # Runs on pywebview's worker thread once the GUI loop is up, so
-        # it can block on the readiness probe without freezing the window
-        # painting the splash. A timeout still navigates: a best-effort
-        # load lets the webview surface its own diagnostic frame rather
-        # than stranding the user on the splash forever (the native
-        # startup-error dialog is Improvement 03's concern).
-        if not wait_for_server(port):
-            logger.warning(
-                "Loading %s without a successful readiness probe", target_url
+        # Runs on pywebview's worker thread once the GUI loop is up, so it
+        # can block on the readiness probe without freezing the window
+        # painting the splash. On timeout the main loop is already running,
+        # so a second webview.start() (and thus show_startup_error) is not
+        # possible -- load the error page into the existing splash window
+        # instead of stranding the user on the spinner or flashing the
+        # webview's own "site can't be reached" frame.
+        if wait_for_server(port):
+            window.load_url(target_url)
+        else:
+            logger.error(
+                "Flask server never answered the readiness probe on port %s", port
             )
-        window.load_url(target_url)
+            window.load_html(
+                build_error_html(
+                    "The local Cursor View server did not respond in time, "
+                    "so the app could not load."
+                )
+            )
 
     try:
         webview.start(

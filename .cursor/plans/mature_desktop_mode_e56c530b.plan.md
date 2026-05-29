@@ -22,10 +22,10 @@ todos:
     status: completed
   - id: 03a-error-window
     content: "Add cursor_view/desktop/error_window.py with show_startup_error(message, traceback) using a single data: HTML pywebview window; wrap cleanup_orphan_temp_files / make_server / wait_for_server in run_desktop with a try/except routing to it"
-    status: pending
+    status: completed
   - id: 03b-rules-and-docs-error
     content: Re-read python-standards.mdc; update .github/CONTRIBUTING.md desktop bullet to enumerate the new error_window module
-    status: pending
+    status: completed
   - id: 04a-lockfile
     content: Implement cursor_view/desktop/single_instance.py with acquire_lock(port) and notify_existing(port_from_lock); register POST /__desktop_focus__ in desktop mode that calls webview.windows[0].show()/restore()
     status: pending

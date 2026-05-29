@@ -164,7 +164,11 @@ Subpackages:
   `GET /` until the daemon Flask thread answers; `splash.py` provides
   the inline HTML splash (fed to `create_window(html=...)`, since
   Chromium backends block top-level `data:` navigation) the window
-  shows while that probe runs.
+  shows while that probe runs; `error_window.py` renders a native
+  startup-error window (`show_startup_error` for failures before the GUI
+  loop starts, `build_error_html` for the readiness-timeout case that
+  loads into the already-open splash window) with the message and
+  traceback HTML-escaped.
   `run_desktop` opens the window on the splash and only navigates to the
   loopback URL once `wait_for_server` succeeds, so cold launches never
   flash the webview's native "site can't be reached" frame (see the

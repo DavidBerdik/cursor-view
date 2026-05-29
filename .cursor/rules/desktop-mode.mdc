@@ -42,7 +42,23 @@ resolves the payload as a relative path against the loopback origin and
 the window 404s before the server is even up. The `html=` path routes
 through each backend's native string-loader (WebView2
 `NavigateToString`, WKWebView `loadHTMLString`, WebKitGTK `load_html`)
-which has no such restriction.
+which has no such restriction. The same `html=`-not-`data:` rule
+applies to every inline page the launcher shows, including the native
+startup-error window in `cursor_view/desktop/error_window.py`.
+
+## Startup errors go to a native window
+
+Anything in `run_desktop` that can fail before the GUI loop starts
+(`cleanup_orphan_temp_files`, `create_app`, `free_port`, `make_server`)
+is wrapped in a single try/except that routes to
+`cursor_view/desktop/error_window.py::show_startup_error` and exits
+non-zero. `show_startup_error` runs its own `webview.start()` loop, so
+it must only be called before the main `webview.start` — never from the
+readiness worker. The readiness-timeout case (the main loop is already
+running) instead loads `build_error_html(...)` into the existing splash
+window via `window.load_html`. Both paths HTML-escape the message and
+traceback (`html.escape`) before they reach the markup, so a failure
+string containing `<` / `&` cannot break or inject into the page.
 
 `wait_for_server` is stdlib-only (`urllib.request`), polls `GET /`
 every 50ms with a 0.5s per-request timeout, returns `True` on the first
