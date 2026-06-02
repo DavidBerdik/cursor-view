@@ -40,19 +40,19 @@ todos:
     status: completed
   - id: 05a-menu-tree
     content: Implement cursor_view/desktop/menu.py exposing build_menu(api) returning the File/Edit/View/Help tree; pass menu= into webview.start with hasattr fallback for backends without menu support
-    status: pending
+    status: completed
   - id: 05b-bridge-methods
     content: Add quit_app, reload_window, and (debug-only) toggle_devtools bridge methods on DesktopApi; route every menu action through the bridge so it remains the single source of truth for cross-mode actions
-    status: pending
+    status: completed
   - id: 05c-frontend-events
     content: Add frontend/src/utils/desktopEvents.js constants module and frontend/src/hooks/useDesktopMenuEvents.js installing the global CustomEvent listener; call the hook from App.js::ThemeModeBridge
-    status: pending
+    status: completed
   - id: 05d-fallback
     content: Document the WebKitGTK menu support gap and the no-menu fallback path in .cursor/rules/desktop-mode.mdc
-    status: pending
+    status: completed
   - id: 05e-rules-and-docs-menu
     content: Re-read react-components.mdc and frontend-hooks.mdc; update frontend-hooks.mdc Canonical hooks list with useDesktopMenuEvents; update .github/CONTRIBUTING.md desktop and frontend hooks bullets; mention native menu in README Running the binary
-    status: pending
+    status: completed
   - id: 06a-menu-accelerators
     content: Add platform-correct accelerator strings (Cmd vs Ctrl) to every MenuAction in cursor_view/desktop/menu.py
     status: pending

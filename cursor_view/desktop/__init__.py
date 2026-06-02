@@ -18,6 +18,7 @@ from cursor_view.app_factory import create_app
 from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.desktop.api import DesktopApi
 from cursor_view.desktop.error_window import build_error_html, show_startup_error
+from cursor_view.desktop.menu import build_menu
 from cursor_view.desktop.readiness import wait_for_server
 from cursor_view.desktop.single_instance import (
     FOCUS_ROUTE,
@@ -135,10 +136,11 @@ def run_desktop() -> None:
     # Chromium-based backends block top-level data: navigation, which
     # resolves as a relative path against the loopback origin and 404s.
     target_url = f"http://127.0.0.1:{port}/"
+    api = DesktopApi(port)
     window = webview.create_window(
         title="Cursor View",
         html=splash_html(),
-        js_api=DesktopApi(port),
+        js_api=api,
         width=width,
         height=height,
         x=x,
@@ -224,11 +226,24 @@ def run_desktop() -> None:
                 )
             )
 
+    # Native menus give the desktop window the File / Edit / View / Help
+    # affordances users expect; every cross-mode action routes through the
+    # DesktopApi bridge (see cursor_view/desktop/menu.py). Some pywebview
+    # backends (notably WebKitGTK) ship without menu support and silently
+    # ignore menu=, so gate construction behind the API check and fall back
+    # to no menu rather than risk an AttributeError on import-light backends.
+    if hasattr(webview.menu, "Menu"):
+        menu_items = build_menu(api)
+    else:
+        menu_items = []
+        logger.info("Native menus unsupported on this backend; continuing without one")
+
     try:
         webview.start(
             _navigate_when_ready,
             private_mode=False,
             storage_path=webview_storage_path(),
+            menu=menu_items,
         )
     except KeyboardInterrupt:
         # Ctrl-C while the GUI loop is running surfaces here on the main

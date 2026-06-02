@@ -104,3 +104,48 @@ focus route is registered only in desktop mode (via
 concerns. Regression-pinned by `tests/test_desktop_single_instance.py`
 (including a direct `_process_alive(os.getpid())` assertion that doubles
 as the Windows self-termination safety check).
+
+## Native menu bar
+
+The desktop window carries a File / Edit / View / Help menu built by
+`cursor_view/desktop/menu.py::build_menu(api)` and passed to
+`webview.start(menu=...)`. Two invariants keep it robust:
+
+- **Route cross-mode actions through the bridge.** Every menu leaf that
+  has cross-mode meaning calls a `cursor_view/desktop/api.py::DesktopApi`
+  method rather than reimplementing the action: `Reload` →
+  `reload_window`, `Quit` → `quit_app`, `View → Toggle Theme` →
+  `toggle_theme`, `Help → Documentation` / `GitHub` →
+  `open_url_in_browser`. The bridge is the single source of truth shared
+  with terminal mode and the keyboard-shortcut path (Improvement 06), so
+  the menu never owns logic the bridge should. Theme state in particular
+  lives entirely in the React app — `toggle_theme` dispatches the
+  `cursor-view:toggle-theme` `CustomEvent` (constant `EVENT_TOGGLE_THEME`
+  in `api.py`, mirrored byte-for-byte by `DESKTOP_EVENT_TOGGLE_THEME` in
+  `frontend/src/utils/desktopEvents.js`), which `useDesktopMenuEvents`
+  (called once from `App.js::ThemeModeBridge`) turns back into the same
+  `toggleDarkMode` the Header button drives. The clipboard **Edit** items
+  (cut / copy / paste / select-all) are the deliberate exception: they
+  are pure embedded-webview operations with no terminal-mode counterpart,
+  so `menu.py::_run_edit_command` delegates them straight to the active
+  window via `document.execCommand` instead of adding bridge surface. New
+  menu bridge methods return the `{ok, error}` dict shape and must never
+  raise across the JS boundary, matching `open_url_in_browser`. The
+  `View → Toggle Developer Tools` item is appended only when the bridge
+  was constructed with `debug=True` (`menu.py` reads the private
+  `api._debug` directly so the flag stays out of pywebview's JS-exposed
+  surface); `toggle_devtools` is best-effort because pywebview has no
+  portable runtime devtools toggle.
+
+- **No-menu fallback.** Not every backend renders `menu=`. WebKitGTK in
+  particular silently ignores it, and a future stripped backend might not
+  expose `webview.menu.Menu` at all. `run_desktop` gates construction
+  behind `if hasattr(webview.menu, "Menu")` and falls back to an empty
+  menu list with a single lazy `%s` `logger.info`, never an error — the
+  app must launch fine with no menu. Because the menu is best-effort,
+  every action it exposes must also be reachable another way (the Header
+  button for theme, the right-click context menu for external links, the
+  window controls for quit), so a backend that drops the menu never
+  strands a user without the underlying capability. `build_menu` itself
+  stays pure (constructs and returns the tree, no side effects) so
+  importing `menu.py` never touches process state.

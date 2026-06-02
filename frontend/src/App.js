@@ -9,6 +9,7 @@ import ChatDetail from './components/chat-detail/ChatDetail';
 import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
 import { ThemeModeContext } from './contexts/ThemeModeContext';
+import { useDesktopMenuEvents } from './hooks/useDesktopMenuEvents';
 import { buildTheme } from './theme/buildTheme';
 import { readThemeCookie, writeThemeCookie } from './theme/themeCookie';
 
@@ -87,6 +88,13 @@ function ThemeModeBridge({ children }) {
     }
     setMode(nextMode);
   };
+
+  // Translate native desktop-menu actions (View -> Toggle Theme today)
+  // into the same toggle the Header button drives. Installed here, at the
+  // single ThemeModeBridge mount, so the listener is global and shares the
+  // exact toggle path (cookie write + View Transition) rather than
+  // duplicating theme logic on the Python side. No-op in terminal mode.
+  useDesktopMenuEvents({ onToggleTheme: toggleDarkMode });
 
   // Memoize the context value so consumers re-render only when
   // `darkMode` actually flips, not on every parent re-render.

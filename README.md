@@ -69,6 +69,13 @@ cursor-view --port 8080     # use a different port
 cursor-view --desktop       # experimental webview UI instead of the browser
 ```
 
+In `--desktop` mode the window carries a native File / Edit / View / Help
+menu bar (Reload, Quit, clipboard edit commands, Toggle Theme, plus
+Documentation / GitHub links that open in your default browser). On
+backends without native menu support (notably some Linux WebKitGTK
+builds) the menu is omitted and every action remains reachable from the
+in-app UI.
+
 On macOS the `.app` bundle is purely cosmetic packaging around the same
 `cursor-view` binary, so double-clicking `Cursor View.app` in Finder
 behaves like double-clicking the Windows `.exe`: it starts the server and

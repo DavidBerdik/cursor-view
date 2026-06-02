@@ -158,7 +158,15 @@ Subpackages:
   bubbleId order SQLite returns). `item_table.py` owns
   `iter_chat_from_item_table` and `iter_global_legacy_chatdata`.
 - `desktop/` &mdash; pywebview launcher. `__init__.py` hosts
-  `run_desktop`; `api.py` is the JS &harr; Python bridge;
+  `run_desktop`; `api.py` is the JS &harr; Python bridge (export save,
+  external-link routing, plus the menu actions `toggle_theme` /
+  `reload_window` / `quit_app` / debug-only `toggle_devtools`);
+  `menu.py` builds the native File / Edit / View / Help menu tree
+  (`build_menu(api)`) passed to `webview.start(menu=...)`, routing every
+  cross-mode action through the `api.py` bridge and falling back to no
+  menu on backends without menu support (see the "Native menu bar"
+  invariant in
+  [`.cursor/rules/desktop-mode.mdc`](../.cursor/rules/desktop-mode.mdc));
   `window_state.py` persists window geometry across launches;
   `readiness.py` is the stdlib-only `wait_for_server` probe that polls
   `GET /` until the daemon Flask thread answers; `splash.py` provides
@@ -421,7 +429,12 @@ raises `ProgrammingError`).
   reaches a fetching hook's dep array; `ChatList` pairs it with
   `useChatSummaries` so typing into the search bar fires one
   `/api/chats` request per pause instead of one per keystroke),
-  `useExportFlow`, `useExportWarningPreference`, `useInView`
+  `useExportFlow`, `useExportWarningPreference`, `useDesktopMenuEvents`
+  (bridges native desktop-menu actions into React state by listening
+  for the window `CustomEvent`s the Python menu dispatches &mdash; see
+  `utils/desktopEvents.js` for the names; called once from
+  `App.js::ThemeModeBridge` and a no-op in terminal mode),
+  `useInView`
   (IntersectionObserver visibility for a `ref`'d element, with
   default-`true` fallback when the API is unavailable; consumed by
   `MermaidDiagramSurface` to skip the cross-fade overlay for
@@ -494,9 +507,12 @@ raises `ProgrammingError`).
   the layout JSX).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
-  consumed by `AppContextMenu`), `mode` (`isDesktopMode()` &mdash;
+  consumed by `AppContextMenu`),   `mode` (`isDesktopMode()` &mdash;
   shared pywebview-runtime detection consumed by both `exportChat.js`
-  and `AppContextMenu.js`), `mermaidRenderCache` (session-scoped
+  and `AppContextMenu.js`), `desktopEvents` (the `CustomEvent` name
+  constants the native desktop menu dispatches into the React app,
+  kept byte-for-byte in sync with `cursor_view/desktop/api.py` and
+  consumed by `useDesktopMenuEvents`), `mermaidRenderCache` (session-scoped
   `Map<key, svg>` keyed by `(source, darkMode)` so repeat dark/light
   toggles short-circuit at the cache layer instead of re-running
   `mermaid.parse + mermaid.render`; the bomb-graphic invariant from

@@ -1,5 +1,6 @@
 """JS-to-Python bridge exposed to the React UI via pywebview."""
 
+import json
 import logging
 import pathlib
 import urllib.request
@@ -20,6 +21,13 @@ EXTENSIONS: dict[str, str] = {
     "markdown": "md",
 }
 
+# Custom-event names dispatched into the React app for menu actions that
+# the frontend (not Python) owns. The string values MUST stay
+# byte-for-byte in sync with the constants in
+# ``frontend/src/utils/desktopEvents.js``; the matching listeners live in
+# ``frontend/src/hooks/useDesktopMenuEvents.js``.
+EVENT_TOGGLE_THEME = "cursor-view:toggle-theme"
+
 
 class DesktopApi:
     """JS-to-Python bridge exposed to the React UI via pywebview.
@@ -29,8 +37,134 @@ class DesktopApi:
     to be written to disk from Python using a native save dialog.
     """
 
-    def __init__(self, port: int) -> None:
+    def __init__(self, port: int, debug: bool = False) -> None:
         self._port = port
+        # Private so pywebview's js_api introspection (which exposes every
+        # public, non-underscore attribute of this object to JS) does not
+        # surface it. menu.py reads it directly to gate the debug-only
+        # developer-tools menu item.
+        self._debug = debug
+
+    def _active_window(self) -> "webview.Window | None":
+        """Return the window menu / bridge actions should target.
+
+        Mirrors :meth:`save_export`'s lookup: prefer the focused window,
+        fall back to the first created one, and tolerate the brief
+        startup window where neither exists yet.
+        """
+        win = webview.active_window()
+        if win is None and webview.windows:
+            win = webview.windows[0]
+        return win
+
+    def _dispatch_event(self, event_name: str) -> dict[str, Any]:
+        """Dispatch a window ``CustomEvent`` into the embedded React app.
+
+        Menu actions the frontend owns (theme toggle today) are delivered
+        as events rather than mutated from Python, so the React app stays
+        the single source of truth for its own state. ``json.dumps``
+        quotes the event name so an unexpected value cannot break out of
+        the evaluated JS string. Returns the ``{ok, error}`` shape rather
+        than raising, matching the bridge's never-raise-across-JS rule.
+        """
+        win = self._active_window()
+        if win is None:
+            logger.warning("Cannot dispatch %s: no active window", event_name)
+            return {"ok": False, "error": "No active window"}
+        try:
+            win.evaluate_js(
+                f"window.dispatchEvent(new CustomEvent({json.dumps(event_name)}))"
+            )
+        except Exception as exc:
+            logger.warning("Failed to dispatch %s to the webview: %s", event_name, exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "error": None}
+
+    def toggle_theme(self) -> dict[str, Any]:
+        """Ask the React app to flip its color scheme.
+
+        The View -> Toggle Theme menu item routes here instead of
+        touching theme state in Python: the theme lives entirely in the
+        React app (``ThemeModeContext`` plus the persisted cookie), so
+        the bridge stays the single source of truth by dispatching the
+        same ``cursor-view:toggle-theme`` event the frontend listens for
+        via ``useDesktopMenuEvents``.
+        """
+        return self._dispatch_event(EVENT_TOGGLE_THEME)
+
+    def reload_window(self) -> dict[str, Any]:
+        """Reload the current page in the desktop window.
+
+        Uses ``window.location.reload()`` so the in-app route is
+        preserved (a ``load_url`` back to ``/`` would always bounce the
+        user to the chat list). Returns the ``{ok, error}`` shape and
+        never raises across the JS boundary.
+        """
+        win = self._active_window()
+        if win is None:
+            logger.warning("reload_window called with no active window")
+            return {"ok": False, "error": "No active window"}
+        try:
+            win.evaluate_js("window.location.reload()")
+        except Exception as exc:
+            logger.warning("Failed to reload the desktop window: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "error": None}
+
+    def quit_app(self) -> dict[str, Any]:
+        """Close the desktop window, unblocking ``webview.start``.
+
+        Destroying every window returns control from the native GUI loop
+        so ``run_desktop``'s ``finally`` drains the Flask server and
+        releases the single-instance lock. Returns the ``{ok, error}``
+        shape; a failure to destroy is logged rather than raised so a
+        menu click never escapes pywebview's menu thread.
+        """
+        windows = list(webview.windows)
+        if not windows:
+            logger.warning("quit_app called with no windows to destroy")
+            return {"ok": False, "error": "No window"}
+        try:
+            for win in windows:
+                win.destroy()
+        except Exception as exc:
+            logger.warning("Failed to destroy window(s) on quit: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "error": None}
+
+    def toggle_devtools(self) -> dict[str, Any]:
+        """Toggle the embedded webview's developer tools (debug builds only).
+
+        pywebview has no portable runtime devtools toggle: dev tools are
+        enabled wholesale by ``webview.start(debug=True)`` and surfaced
+        through each backend's own affordance (right-click Inspect on
+        WebView2 / WKWebView). This method is wired into the menu only
+        when the bridge was constructed with ``debug=True``, so the item
+        never appears in release builds; it calls the window's
+        ``toggle_devtools`` if a backend exposes one and otherwise
+        reports the gap in the ``{ok, error}`` shape rather than raising.
+        """
+        if not self._debug:
+            return {
+                "ok": False,
+                "error": "Developer tools are available in debug builds only",
+            }
+        win = self._active_window()
+        if win is None:
+            return {"ok": False, "error": "No active window"}
+        toggler = getattr(win, "toggle_devtools", None)
+        if not callable(toggler):
+            logger.info("Active webview backend exposes no developer-tools toggle")
+            return {
+                "ok": False,
+                "error": "Developer tools toggle is not supported by this backend",
+            }
+        try:
+            toggler()
+        except Exception as exc:
+            logger.warning("Failed to toggle developer tools: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True, "error": None}
 
     def save_export(
         self,

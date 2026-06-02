@@ -170,6 +170,23 @@ function useSelection() {
 
 - `useChatSummaries` — fetch + `latestRef` + `AbortController` +
   `refresh()`.
+- `useDesktopMenuEvents` — bridges native desktop-menu actions into
+  React state. The desktop menu (`cursor_view/desktop/menu.py`) lives
+  in Python and cannot call React directly, so cross-mode menu actions
+  are dispatched as window `CustomEvent`s (names in
+  `frontend/src/utils/desktopEvents.js`, dispatched by
+  `cursor_view/desktop/api.py`'s bridge methods) that this hook turns
+  back into the handlers the consumer passes (`onToggleTheme` today).
+  Pure side-effect hook (returns nothing); installs one listener per
+  supported event and removes them all on cleanup. Reads the handlers
+  through a ref so the window listener is installed once and always
+  invokes the latest callback rather than re-subscribing whenever the
+  consumer passes a fresh closure — the canonical stable-listener
+  pattern for a global event listener whose handler is recreated each
+  render (`App.js::ThemeModeBridge` recreates `toggleDarkMode` every
+  render). Called unconditionally regardless of mode: in terminal mode
+  no menu dispatches these events, so the listeners simply never fire,
+  and no `isDesktopMode()` gate is needed.
 - `useDebouncedValue` — coalesce a high-churn input value before it
   reaches a fetching hook's dep array.
 - `useExportFlow` — multi-step dialog state machine.
