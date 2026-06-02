@@ -290,3 +290,33 @@ unchanged and unauthenticated exactly as before. Regression-pinned by
 (401 on missing/wrong header and cookie, 200 on correct header and
 cookie, non-`/api` ungated, `OPTIONS` ungated, and the HTML-shell cookie
 bootstrap with its `HttpOnly` / `SameSite` attributes).
+
+## File-manager integration uses subprocess only
+
+"Reveal exported file", "Open Cache Folder", and "View Logs" all go
+through [`cursor_view/desktop/reveal.py`](../../cursor_view/desktop/reveal.py),
+which shells out to the platform's own file manager / default handler
+and **must not** grow a heavier dependency (no Pillow, no Qt/GTK file
+dialog, no `plyer`) — the stdlib-only discipline keeps the PyInstaller
+bundle and its import cost lean, matching the image-loading, readiness,
+and logging modules.
+
+- `reveal_in_file_manager(path)` selects the file in its folder:
+  `open -R` (macOS), `explorer /select,` (Windows, where the `/select,`
+  token must stay one argument and the process is fire-and-forget
+  because `explorer` exits non-zero even on success), and `xdg-open
+  <parent>` (Linux, which has no select-a-file flag — documented
+  limitation: it opens the containing folder).
+- `open_path(path)` opens a file or folder with the default handler:
+  `open` (macOS), `os.startfile` (Windows; the idiomatic call, and the
+  only branch that is Windows-only), `xdg-open` (Linux).
+
+Both return `bool` and never raise (a failed reveal is a
+quality-of-life miss, not a crash), logging each failure path with lazy
+`%s`. The three `DesktopApi` methods (`reveal_export`, `open_cache_folder`,
+`open_log_file`) wrap them in the standard `{ok, error}` shape;
+`open_log_file` reads the `desktop.log` path stashed on the bridge at
+launch (Improvement 11). On the frontend, the post-export
+`ExportRevealSnackbar` (state owned by `useExportFlow`) is the only
+Reveal entry point; it appears only after a desktop save because the
+browser export path returns no file path.

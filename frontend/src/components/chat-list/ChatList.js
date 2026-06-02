@@ -18,6 +18,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useExportFlow } from '../../hooks/useExportFlow';
 import ExportFormatDialog from '../export/ExportFormatDialog';
 import ExportWarningDialog from '../export/ExportWarningDialog';
+import ExportRevealSnackbar from '../export/ExportRevealSnackbar';
 import EmptyState from './EmptyState';
 import ProjectGroup from './ProjectGroup';
 import SearchBar from './SearchBar';
@@ -44,6 +45,9 @@ const ChatList = () => {
     requestExport,
     handleFormatConfirm,
     handleWarningConfirm,
+    snackbarOpen,
+    closeSnackbar,
+    revealSavedFile,
   } = useExportFlow({ darkMode });
 
   const groupedProjects = useMemo(() => {
@@ -158,6 +162,12 @@ const ChatList = () => {
         dontShow={dontShow}
         onDontShowChange={setDontShow}
         onClose={handleWarningConfirm}
+      />
+
+      <ExportRevealSnackbar
+        open={snackbarOpen}
+        onReveal={revealSavedFile}
+        onClose={closeSnackbar}
       />
 
       <SearchBar

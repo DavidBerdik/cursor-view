@@ -17,6 +17,7 @@ import { useChatScrollAnchor } from '../../hooks/useChatScrollAnchor';
 import { useExportFlow } from '../../hooks/useExportFlow';
 import ExportFormatDialog from '../export/ExportFormatDialog';
 import ExportWarningDialog from '../export/ExportWarningDialog';
+import ExportRevealSnackbar from '../export/ExportRevealSnackbar';
 import ChatMetaPanel from './ChatMetaPanel';
 import MessageList from './MessageList';
 
@@ -36,6 +37,9 @@ const ChatDetail = () => {
     requestExport,
     handleFormatConfirm,
     handleWarningConfirm,
+    snackbarOpen,
+    closeSnackbar,
+    revealSavedFile,
   } = useExportFlow({ darkMode });
 
   useEffect(() => {
@@ -192,6 +196,12 @@ const ChatDetail = () => {
         dontShow={dontShow}
         onDontShowChange={setDontShow}
         onClose={handleWarningConfirm}
+      />
+
+      <ExportRevealSnackbar
+        open={snackbarOpen}
+        onReveal={revealSavedFile}
+        onClose={closeSnackbar}
       />
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, mt: 2, gap: 2 }}>

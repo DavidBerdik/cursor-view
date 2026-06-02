@@ -118,16 +118,16 @@ todos:
     status: completed
   - id: 12a-reveal-helper
     content: Implement cursor_view/desktop/reveal.py with reveal_in_file_manager(path) using subprocess.Popen per platform (open -R / explorer /select, / xdg-open with the parent-folder limitation documented)
-    status: pending
+    status: completed
   - id: 12b-bridge-and-menu
     content: Add open_log_file, open_cache_folder, and reveal_export(path) bridge methods returning the standard {ok, error} shape; wire menu items in cursor_view/desktop/menu.py
-    status: pending
+    status: completed
   - id: 12c-frontend-toast
     content: Surface a MUI Snackbar with a Reveal action in the post-export flow; integrate via useExportFlow per react-components.mdc Effects and export flow rule
-    status: pending
+    status: completed
   - id: 12d-rules-and-docs-reveal
     content: Add the subprocess-for-reveal invariant (no Pillow / heavy deps) to .cursor/rules/desktop-mode.mdc; update CONTRIBUTING.md desktop bullet
-    status: pending
+    status: completed
   - id: 13a-bridge-method-diag
     content: Implement DesktopApi.get_diagnostics() returning version, platform, pywebview version + active backend, Python version, cache dir, log dir
     status: pending

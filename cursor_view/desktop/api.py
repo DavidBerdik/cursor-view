@@ -10,6 +10,9 @@ from urllib.parse import urlparse
 
 import webview
 
+from cursor_view.desktop.reveal import open_path, reveal_in_file_manager
+from cursor_view.paths import cursor_view_cache_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -196,6 +199,51 @@ class DesktopApi:
             logger.warning("Failed to toggle developer tools: %s", exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "error": None}
+
+    def open_log_file(self) -> dict[str, Any]:
+        """Open the desktop ``desktop.log`` file in the default handler.
+
+        Backs the View -> View Logs menu item. The path was stashed at
+        launch by ``run_desktop`` (Improvement 11). Returns the standard
+        ``{ok, error}`` shape; never raises across the JS boundary.
+        """
+        if self._log_path is None:
+            logger.warning("open_log_file called but no log path is configured")
+            return {"ok": False, "error": "Log file path is not available"}
+        if open_path(self._log_path):
+            return {"ok": True, "error": None}
+        return {"ok": False, "error": "Could not open the log file"}
+
+    def open_cache_folder(self) -> dict[str, Any]:
+        """Open the Cursor View cache directory in the file manager.
+
+        Backs the File -> Open Cache Folder menu item. This is the folder
+        holding ``webview-storage/``, ``desktop.lock``, ``logs/``, and the
+        chat-index cache.
+        """
+        try:
+            cache_dir = cursor_view_cache_dir()
+        except Exception as exc:
+            logger.warning("Failed to resolve cache dir: %s", exc)
+            return {"ok": False, "error": str(exc)}
+        if open_path(cache_dir):
+            return {"ok": True, "error": None}
+        return {"ok": False, "error": "Could not open the cache folder"}
+
+    def reveal_export(self, path: str) -> dict[str, Any]:
+        """Reveal a just-exported file in the OS file manager.
+
+        Called from the post-export Snackbar's "Reveal" action with the
+        ``path`` ``save_export`` returned. Selects the file in Finder /
+        Explorer (or opens its parent folder on Linux). Returns the
+        standard ``{ok, error}`` shape.
+        """
+        if not isinstance(path, str) or not path:
+            logger.warning("reveal_export called without a path: %r", path)
+            return {"ok": False, "error": "Missing path"}
+        if reveal_in_file_manager(pathlib.Path(path)):
+            return {"ok": True, "error": None}
+        return {"ok": False, "error": "Could not reveal the file"}
 
     def save_export(
         self,

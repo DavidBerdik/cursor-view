@@ -27,6 +27,12 @@ export function useExportFlow({ darkMode }) {
   const [pendingSessionId, setPendingSessionId] = useState(null);
   const [formatDialogOpen, setFormatDialogOpen] = useState(false);
   const [warningDialogOpen, setWarningDialogOpen] = useState(false);
+  // Post-save "reveal" toast. Only the desktop bridge's save_export
+  // returns a `path` (browser mode streams a download with no path), so a
+  // non-null `savedPath` already implies desktop mode -- the Snackbar and
+  // its Reveal action are never shown in the browser.
+  const [savedPath, setSavedPath] = useState(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
   const { dontShow, setDontShow, persist } = useExportWarningPreference();
 
   const proceed = useCallback(
@@ -34,7 +40,10 @@ export function useExportFlow({ darkMode }) {
       const result = await exportChat({ sessionId, format: fmt, darkMode });
       if (result.saved) {
         if (result.path) {
-          alert(`Saved to ${result.path}`);
+          // Desktop save: replace the old blocking alert with a Snackbar
+          // that offers to reveal the file in the OS file manager.
+          setSavedPath(result.path);
+          setSnackbarOpen(true);
         }
         return;
       }
@@ -45,6 +54,25 @@ export function useExportFlow({ darkMode }) {
     },
     [darkMode],
   );
+
+  const closeSnackbar = useCallback(() => {
+    setSnackbarOpen(false);
+  }, []);
+
+  const revealSavedFile = useCallback(() => {
+    setSnackbarOpen(false);
+    const path = savedPath;
+    if (!path) {
+      return;
+    }
+    // Per-method bridge gate (the readiness race does not apply here --
+    // by the time a user clicks Reveal, pywebview is long since injected).
+    const api =
+      typeof window !== 'undefined' && window.pywebview && window.pywebview.api;
+    if (api && typeof api.reveal_export === 'function') {
+      api.reveal_export(path);
+    }
+  }, [savedPath]);
 
   const requestExport = useCallback((sessionId) => {
     setPendingSessionId(sessionId);
@@ -95,5 +123,9 @@ export function useExportFlow({ darkMode }) {
     requestExport,
     handleFormatConfirm,
     handleWarningConfirm,
+    savedPath,
+    snackbarOpen,
+    closeSnackbar,
+    revealSavedFile,
   };
 }

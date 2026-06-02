@@ -182,6 +182,14 @@ Subpackages:
   (under the cache dir) alongside the stderr handler, and
   `redirect_stdio_to_logging()` routes stray stdout/stderr into the log
   in frozen builds only (the windowless Windows binary has no console);
+  `reveal.py` is the stdlib-only OS file-manager integration &mdash;
+  `reveal_in_file_manager(path)` selects a file (`open -R` /
+  `explorer /select,` / `xdg-open <parent>`) and `open_path(path)`
+  opens a file or folder with the default handler, backing the
+  `reveal_export` / `open_cache_folder` / `open_log_file` bridge methods
+  and their menu items (see the "File-manager integration uses
+  subprocess only" invariant in
+  [`.cursor/rules/desktop-mode.mdc`](../.cursor/rules/desktop-mode.mdc));
   `window_state.py` persists window geometry across launches;
   `readiness.py` is the stdlib-only `wait_for_server` probe that polls
   `GET /` until the daemon Flask thread answers; `splash.py` provides
@@ -672,8 +680,11 @@ raises `ProgrammingError`).
     for the SAVE side (the `data-msg-idx` bullet), the persisted-
     `containIntrinsicSize` bullet, and the stable-frames RESTORE
     paragraph.
-  - `export/` &mdash; shared `ExportFormatDialog` and
-    `ExportWarningDialog` used by both pages.
+  - `export/` &mdash; shared `ExportFormatDialog`,
+    `ExportWarningDialog`, and `ExportRevealSnackbar` (the post-export
+    toast whose "Reveal" action calls the desktop bridge's
+    `reveal_export`; state owned by `useExportFlow`, shown only after a
+    desktop-mode save) used by both pages.
 
 ## Assets and configuration
 

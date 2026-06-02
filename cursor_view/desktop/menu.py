@@ -103,6 +103,7 @@ def build_menu(api: "DesktopApi") -> list["webview.menu.Menu"]:
         "File",
         [
             Action(_with_accelerator("Reload", "R"), api.reload_window),
+            Action("Open Cache Folder", api.open_cache_folder),
             Separator(),
             Action(_with_accelerator("Quit", "Q"), api.quit_app),
         ],
@@ -122,7 +123,10 @@ def build_menu(api: "DesktopApi") -> list["webview.menu.Menu"]:
         ],
     )
 
-    view_items = [Action(_with_accelerator("Toggle Theme", "T"), api.toggle_theme)]
+    view_items = [
+        Action(_with_accelerator("Toggle Theme", "T"), api.toggle_theme),
+        Action("View Logs", api.open_log_file),
+    ]
     # Underscore attribute read is intentional: _debug is private to the
     # bridge and must stay out of the JS-exposed surface pywebview builds
     # from DesktopApi's public methods, so menu.py (a sibling in the same
