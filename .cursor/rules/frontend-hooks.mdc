@@ -205,6 +205,20 @@ function useSelection() {
   hint in `Header.js`. See
   [`desktop-mode.mdc`](desktop-mode.mdc) "Detecting desktop mode in
   React" for the render-time vs call-time invariant.
+- `useDesktopExternalLinks` — global capture-phase `click` / `auxclick`
+  interceptor (called once from `App.js::ThemeModeBridge`) that routes
+  external, non-same-origin `<a>` / `<area>` clicks to
+  `pywebview.api.open_url_in_browser` in desktop mode so they open in
+  the OS default browser instead of navigating the embedded webview or
+  spawning a second pywebview window. Pure side-effect hook: no return,
+  no args, removes both listeners on cleanup. Call-time `isDesktopMode()`
+  gate (no `useDesktopReady` needed — by click time pywebview is
+  injected) and falls through to native behavior when the bridge is not
+  ready, for same-origin links, for the `download` attribute, and for
+  non-http/https schemes. Covers left / middle / modifier clicks (all
+  route externally) but leaves right-click to the context menu. See
+  [`desktop-mode.mdc`](desktop-mode.mdc) "External links route through
+  the bridge".
 - `useGlobalKeyboardShortcuts` — registers a single global `keydown`
   listener that dispatches to a caller-supplied `shortcuts` map
   (`{ 'mod+t': () => ... }`; combo parsing + the `mod` = Cmd-on-macOS /

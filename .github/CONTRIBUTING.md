@@ -434,6 +434,14 @@ raises `ProgrammingError`).
   for the window `CustomEvent`s the Python menu dispatches &mdash; see
   `utils/desktopEvents.js` for the names; called once from
   `App.js::ThemeModeBridge` and a no-op in terminal mode),
+  `useDesktopExternalLinks` (global capture-phase `click`/`auxclick`
+  interceptor, called once from `App.js::ThemeModeBridge`, that routes
+  external non-same-origin `<a>`/`<area>` clicks to
+  `pywebview.api.open_url_in_browser` in desktop mode &mdash; so the
+  Header GitHub button, chat-content links, and the image lightbox open
+  in the OS browser instead of the embedded webview; preserves native
+  behavior for same-origin links, `download`, non-http(s) schemes, and
+  all of terminal mode),
   `useDesktopReady` (reactive desktop-runtime readiness boolean: seeds
   from the synchronous `isDesktopMode()` then flips on pywebview's
   `pywebviewready` event &mdash; necessary because pywebview's

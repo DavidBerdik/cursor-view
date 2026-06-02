@@ -215,3 +215,34 @@ events that fire in desktop mode anyway. Anything that does have such a
 cost (building a non-empty map, mounting a desktop-only component
 subtree, choosing a desktop-only branch) must use `useDesktopReady`
 instead.
+
+## External links route through the bridge
+
+External links (any `href` whose origin is not the loopback
+`window.location.origin`) must never navigate the embedded webview or
+spawn a second pywebview window — they go to the user's default browser
+via `DesktopApi.open_url_in_browser` (which enforces the http/https
+allowlist Python-side). Two surfaces share that single bridge method:
+
+- The right-click "Open in Browser Tab" item in
+  `frontend/src/components/AppContextMenu.js` (per-click, explicit).
+- The global capture-phase interceptor in
+  [`useDesktopExternalLinks`](../../frontend/src/hooks/useDesktopExternalLinks.js),
+  called once from `App.js::ThemeModeBridge`, which transparently
+  covers every `<a>` / `<area>` in the app (Header GitHub button, chat
+  content links, image-lightbox "open in new tab") without changing
+  their markup.
+
+The interceptor is a call-time gate (`isDesktopMode()` inside the
+handler, not at mount — so no `useDesktopReady` needed: by click time
+pywebview is long since injected) and falls through to native behavior
+when the bridge is not ready. It deliberately leaves three cases to the
+platform: same-origin links (in-app react-router navigation), the
+`download` attribute (a "save this file" affordance the bridge cannot
+honor), and non-http/https schemes (`mailto:` / `tel:`, which the
+bridge would reject anyway). It listens on both `click` and `auxclick`
+and `preventDefault`s for left, middle, and modifier (Cmd/Ctrl/Shift)
+clicks so every variant lands in the one OS browser tab; right-click
+(`auxclick` button 2) is left to the context menu. Terminal/browser
+mode is entirely unaffected because the handler no-ops outside desktop
+mode, preserving native `<a>` behavior.

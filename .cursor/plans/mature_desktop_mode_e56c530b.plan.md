@@ -85,13 +85,13 @@ todos:
     status: completed
   - id: 09a-link-hook
     content: Implement frontend/src/hooks/useDesktopExternalLinks.js with a single capture-phase document click listener that routes non-same-origin anchor clicks to pywebview.api.open_url_in_browser; call from App.js::ThemeModeBridge
-    status: pending
+    status: completed
   - id: 09b-edge-cases
     content: Cover middle-click, modifier-click, area maps, and the download attribute (always preserve native behavior); ensure terminal mode is unaffected
-    status: pending
+    status: completed
   - id: 09c-rules-and-docs-links
     content: Re-read react-components.mdc and frontend-hooks.mdc; add the External links route through bridge invariant to .cursor/rules/desktop-mode.mdc; update CONTRIBUTING.md frontend hooks bullet
-    status: pending
+    status: completed
   - id: 10a-token-middleware
     content: Implement cursor_view/desktop/auth.py with generate_token() and install_auth(app, token) registering a before_request 401 gate on /api/* for missing or wrong X-Cursor-View-Token header / cursor-view-token cookie; call from run_desktop only (terminal mode unchanged)
     status: pending

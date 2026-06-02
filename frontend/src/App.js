@@ -9,6 +9,7 @@ import ChatDetail from './components/chat-detail/ChatDetail';
 import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
 import { ThemeModeContext } from './contexts/ThemeModeContext';
+import { useDesktopExternalLinks } from './hooks/useDesktopExternalLinks';
 import { useDesktopMenuEvents } from './hooks/useDesktopMenuEvents';
 import { useDesktopReady } from './hooks/useDesktopReady';
 import { useGlobalKeyboardShortcuts } from './hooks/useGlobalKeyboardShortcuts';
@@ -97,6 +98,13 @@ function ThemeModeBridge({ children }) {
   // exact toggle path (cookie write + View Transition) rather than
   // duplicating theme logic on the Python side. No-op in terminal mode.
   useDesktopMenuEvents({ onToggleTheme: toggleDarkMode });
+
+  // Route external (non-same-origin) link clicks to the OS default browser
+  // through the bridge in desktop mode, so a `<a target="_blank">` (the
+  // Header GitHub button, links in chat content, the image lightbox) opens a
+  // real browser tab instead of navigating the embedded webview away or
+  // spawning an unstyled second pywebview window. No-op in terminal mode.
+  useDesktopExternalLinks();
 
   // Global keyboard shortcuts. Bound only in desktop mode: in browser mode
   // these combos collide with the browser's own (Ctrl/Cmd+T new tab,
