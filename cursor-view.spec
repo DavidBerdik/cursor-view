@@ -1,6 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
 
+from cursor_view import __version__
+
 ICON = {
     "win32": "assets/icons/cursor-view.ico",
     "darwin": "assets/icons/cursor-view.icns",
@@ -110,7 +112,23 @@ if sys.platform == 'darwin':
             'CFBundleExecutable': 'cursor-view-desktop',
             'CFBundleName': 'Cursor View',
             'CFBundleDisplayName': 'Cursor View',
-            'CFBundleShortVersionString': '0.1.0',
+            # CFBundleShortVersionString is the user-visible marketing
+            # version; CFBundleVersion is the build/identity version macOS
+            # uses to distinguish builds. Source both from the single
+            # cursor_view.__version__ literal so they never drift.
+            'CFBundleShortVersionString': __version__,
+            'CFBundleVersion': __version__,
+            # Surfaces a proper category in Finder ("Developer Tools") and
+            # the Mac App Store taxonomy rather than the unclassified
+            # default.
+            'LSApplicationCategoryType': 'public.app-category.developer-tools',
+            'NSHumanReadableCopyright': '© 2026 Cursor View contributors',
+            # Let the .app chrome (Dock, title bar, native dialogs) track
+            # the system light/dark appearance instead of being pinned to
+            # Aqua light. The embedded webview already follows the OS
+            # theme; without this key the surrounding native chrome would
+            # stay light even in macOS dark mode.
+            'NSRequiresAquaSystemAppearance': False,
             # Keep LSUIElement False so that --desktop mode (the only case
             # the .app shows a window) gets a proper Dock entry. In default
             # terminal mode the .app will briefly show a Dock icon for a

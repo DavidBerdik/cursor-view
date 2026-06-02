@@ -94,8 +94,10 @@ in-app UI.
 On macOS the `.app` bundle wraps the windowless `cursor-view-desktop`
 binary (the two binaries are functionally identical on macOS), so
 double-clicking `Cursor View.app` in Finder still starts the Flask
-server and opens the browser today. To launch the experimental desktop
-mode from Finder, pass the flag explicitly:
+server and opens the browser today. Finder shows it under the
+"Developer Tools" category, and in desktop mode its window chrome
+follows the system light/dark appearance. To launch the experimental
+desktop mode from Finder, pass the flag explicitly:
 
 ```
 open -a "Cursor View" --args --desktop

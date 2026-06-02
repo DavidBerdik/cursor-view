@@ -76,13 +76,13 @@ todos:
     status: completed
   - id: 08a-version-source
     content: Add __version__ constant to cursor_view/__init__.py and source CFBundleShortVersionString from it in cursor-view.spec
-    status: pending
+    status: completed
   - id: 08b-info-plist-keys
     content: Add CFBundleVersion, LSApplicationCategoryType (public.app-category.developer-tools), NSHumanReadableCopyright, and NSRequiresAquaSystemAppearance keys to the BUNDLE info_plist
-    status: pending
+    status: completed
   - id: 08c-rules-and-docs-plist
     content: Re-read python-standards.mdc Module and function size against the new __init__.py; update README Standalone binary subsection if anything is user-visible
-    status: pending
+    status: completed
   - id: 09a-link-hook
     content: Implement frontend/src/hooks/useDesktopExternalLinks.js with a single capture-phase document click listener that routes non-same-origin anchor clicks to pywebview.api.open_url_in_browser; call from App.js::ThemeModeBridge
     status: pending
