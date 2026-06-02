@@ -10,6 +10,8 @@ import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
 import { ThemeModeContext } from './contexts/ThemeModeContext';
 import { useDesktopMenuEvents } from './hooks/useDesktopMenuEvents';
+import { useDesktopReady } from './hooks/useDesktopReady';
+import { useGlobalKeyboardShortcuts } from './hooks/useGlobalKeyboardShortcuts';
 import { buildTheme } from './theme/buildTheme';
 import { readThemeCookie, writeThemeCookie } from './theme/themeCookie';
 
@@ -95,6 +97,48 @@ function ThemeModeBridge({ children }) {
   // exact toggle path (cookie write + View Transition) rather than
   // duplicating theme logic on the Python side. No-op in terminal mode.
   useDesktopMenuEvents({ onToggleTheme: toggleDarkMode });
+
+  // Global keyboard shortcuts. Bound only in desktop mode: in browser mode
+  // these combos collide with the browser's own (Ctrl/Cmd+T new tab,
+  // Ctrl/Cmd+R reload, Ctrl/Cmd+Q quit), so we leave the browser in charge
+  // there. In the chromeless desktop window the same combos are the only way
+  // to drive Reload / Quit / Toggle Theme by keyboard, since pywebview cannot
+  // bind the accelerators it displays in the native menu (see
+  // cursor_view/desktop/menu.py). Reload and Quit route through the bridge so
+  // the menu, the keyboard, and any future affordance share one code path;
+  // theme reuses the same toggle as the menu and Header button. The empty map
+  // in terminal mode means the hook's listener never matches anything. Edit
+  // shortcuts (Cmd/Ctrl+C etc.) are intentionally absent so the embedded
+  // webview keeps handling them natively.
+  //
+  // The gate is `desktopReady` (reactive), NOT a render-time
+  // `isDesktopMode()` call. pywebview's WebView2 backend injects
+  // `window.pywebview` from `NavigationCompleted`, which runs after the React
+  // bundle has executed and `App` has already mounted -- so a synchronous
+  // mount-time check sees `false`, this memo would resolve to `{}`, and
+  // pywebview's later injection would never re-fire the memo (its only other
+  // dep being `darkMode`). `useDesktopReady` flips `true` when pywebview's
+  // `pywebviewready` event fires, the memo recomputes, and the shortcut map
+  // is installed.
+  const desktopReady = useDesktopReady();
+  const shortcuts = useMemo(() => {
+    if (!desktopReady) {
+      return {};
+    }
+    const callBridge = (method) => {
+      const api = typeof window !== 'undefined' && window.pywebview && window.pywebview.api;
+      if (api && typeof api[method] === 'function') {
+        api[method]();
+      }
+    };
+    return {
+      'mod+t': () => toggleDarkMode(),
+      'mod+r': () => callBridge('reload_window'),
+      'mod+q': () => callBridge('quit_app'),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [darkMode, desktopReady]);
+  useGlobalKeyboardShortcuts(shortcuts);
 
   // Memoize the context value so consumers re-render only when
   // `darkMode` actually flips, not on every parent re-render.

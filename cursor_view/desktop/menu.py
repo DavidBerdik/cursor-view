@@ -22,6 +22,7 @@ back to no menu (see the "Native menu bar" invariant in
 from __future__ import annotations
 
 import logging
+import sys
 from typing import TYPE_CHECKING
 
 import webview
@@ -30,6 +31,29 @@ if TYPE_CHECKING:
     from cursor_view.desktop.api import DesktopApi
 
 logger = logging.getLogger(__name__)
+
+# pywebview's webview.menu.MenuAction takes only (title, function) -- it has
+# no shortcut/key parameter (the upstream class still carries a
+# "# TODO: support platform-agnostic shortcut" stub), and no backend binds an
+# accelerator from the menu. The actual key handling therefore lives in the
+# frontend (frontend/src/hooks/useGlobalKeyboardShortcuts.js, wired from
+# App.js in desktop mode for Reload / Quit / Toggle Theme; clipboard edit keys
+# are handled natively by the embedded webview). The accelerator strings below
+# are display-only hints appended to the item titles so the shortcuts are
+# discoverable in the menu, using the platform-correct modifier (Cmd on macOS,
+# Ctrl elsewhere).
+_IS_MAC = sys.platform == "darwin"
+
+
+def _with_accelerator(title: str, key: str) -> str:
+    """Append a platform-correct, display-only accelerator hint to a title.
+
+    pywebview cannot bind the accelerator (see the module note), so this is
+    purely a discoverability hint; the binding lives in the frontend hook
+    and must use the same combo.
+    """
+    combo = f"\u2318{key}" if _IS_MAC else f"Ctrl+{key}"
+    return f"{title} ({combo})"
 
 # Canonical project URLs surfaced by the Help menu. These are the
 # project's own repository (mirrored by the Header GitHub button), not
@@ -78,24 +102,27 @@ def build_menu(api: "DesktopApi") -> list["webview.menu.Menu"]:
     file_menu = Menu(
         "File",
         [
-            Action("Reload", api.reload_window),
+            Action(_with_accelerator("Reload", "R"), api.reload_window),
             Separator(),
-            Action("Quit", api.quit_app),
+            Action(_with_accelerator("Quit", "Q"), api.quit_app),
         ],
     )
 
     edit_menu = Menu(
         "Edit",
         [
-            Action("Cut", lambda: _run_edit_command("cut")),
-            Action("Copy", lambda: _run_edit_command("copy")),
-            Action("Paste", lambda: _run_edit_command("paste")),
+            Action(_with_accelerator("Cut", "X"), lambda: _run_edit_command("cut")),
+            Action(_with_accelerator("Copy", "C"), lambda: _run_edit_command("copy")),
+            Action(_with_accelerator("Paste", "V"), lambda: _run_edit_command("paste")),
             Separator(),
-            Action("Select All", lambda: _run_edit_command("selectAll")),
+            Action(
+                _with_accelerator("Select All", "A"),
+                lambda: _run_edit_command("selectAll"),
+            ),
         ],
     )
 
-    view_items = [Action("Toggle Theme", api.toggle_theme)]
+    view_items = [Action(_with_accelerator("Toggle Theme", "T"), api.toggle_theme)]
     # Underscore attribute read is intentional: _debug is private to the
     # bridge and must stay out of the JS-exposed surface pywebview builds
     # from DesktopApi's public methods, so menu.py (a sibling in the same

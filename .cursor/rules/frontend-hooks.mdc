@@ -187,6 +187,39 @@ function useSelection() {
   render). Called unconditionally regardless of mode: in terminal mode
   no menu dispatches these events, so the listeners simply never fire,
   and no `isDesktopMode()` gate is needed.
+- `useDesktopReady` — reactive desktop-runtime readiness boolean.
+  `frontend/src/utils/mode.js::isDesktopMode()` is the right primitive
+  for **call-time** gates (event handlers, action callbacks) but racy
+  at render/mount time, because pywebview's WebView2 backend injects
+  `window.pywebview` from `NavigationCompleted` — after the React
+  bundle runs and `App` has already mounted. A synchronous render-time
+  check returns `false` on first render and pywebview's later
+  injection never re-fires React. This hook seeds from the synchronous
+  check (so callers that mount *after* pywebview is ready see `true`
+  on first render) and then subscribes to the one-shot
+  `pywebviewready` event with cleanup, flipping its returned boolean
+  and forcing a re-render once the bridge is live. One concern only:
+  desktop-runtime readiness detection. Canonical consumers: the
+  shortcut-map `useMemo` in `App.js::ThemeModeBridge` (lists
+  `desktopReady` in its dep array) and the `(Ctrl+T)` / `(⌘T)` tooltip
+  hint in `Header.js`. See
+  [`desktop-mode.mdc`](desktop-mode.mdc) "Detecting desktop mode in
+  React" for the render-time vs call-time invariant.
+- `useGlobalKeyboardShortcuts` — registers a single global `keydown`
+  listener that dispatches to a caller-supplied `shortcuts` map
+  (`{ 'mod+t': () => ... }`; combo parsing + the `mod` = Cmd-on-macOS /
+  Ctrl-elsewhere resolution live in pure helpers in
+  `frontend/src/utils/keyboardShortcuts.js`). One concern only — combo
+  matching + dispatch — so the consumer owns which actions exist and
+  which mode they apply to; `App.js` populates the map only in desktop
+  mode (the combos collide with the browser's own Ctrl/Cmd+T / +R / +Q
+  in terminal mode, and the native menu's accelerators are display-only
+  because pywebview cannot bind them). Reads the map through a ref so
+  the listener installs once and always sees the latest bindings, and
+  only calls `event.preventDefault()` when a binding actually matches so
+  unrelated keystrokes (including native webview edit shortcuts like
+  Cmd/Ctrl+C) pass through. Same stable-listener shape as
+  `useDesktopMenuEvents`.
 - `useDebouncedValue` — coalesce a high-churn input value before it
   reaches a fetching hook's dep array.
 - `useExportFlow` — multi-step dialog state machine.

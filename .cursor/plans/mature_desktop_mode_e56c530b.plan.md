@@ -55,16 +55,16 @@ todos:
     status: completed
   - id: 06a-menu-accelerators
     content: Add platform-correct accelerator strings (Cmd vs Ctrl) to every MenuAction in cursor_view/desktop/menu.py
-    status: pending
+    status: completed
   - id: 06b-keyboard-hook
     content: Implement frontend/src/hooks/useGlobalKeyboardShortcuts.js with a stable-callback shortcuts argument; wire it from App.js
-    status: pending
+    status: completed
   - id: 06c-discoverability
     content: Extend MUI Tooltip titles in Header.js with the keyboard-shortcut hints so users discover them
-    status: pending
+    status: completed
   - id: 06d-rules-and-docs-shortcuts
     content: Re-read frontend-hooks.mdc One concern per hook clause; update its Canonical hooks list and .github/CONTRIBUTING.md frontend hooks bullet
-    status: pending
+    status: completed
   - id: 07a-spec-split
     content: Refactor cursor-view.spec into two-EXE form (a console=True terminal binary plus a console=False desktop binary) sharing the same Analysis/PYZ; OR flip to single-EXE windowless and depend on Improvement 11 for log-file diagnostics
     status: pending

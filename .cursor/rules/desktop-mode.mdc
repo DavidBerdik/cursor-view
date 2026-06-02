@@ -149,3 +149,69 @@ The desktop window carries a File / Edit / View / Help menu built by
   strands a user without the underlying capability. `build_menu` itself
   stays pure (constructs and returns the tree, no side effects) so
   importing `menu.py` never touches process state.
+
+- **Menu accelerators are display-only; the frontend binds them.**
+  pywebview's `webview.menu.MenuAction` takes only `(title, function)` —
+  it has no shortcut/key parameter and no backend binds an accelerator
+  from the menu. `menu.py::_with_accelerator` therefore appends the
+  shortcut to the item *title* as a discoverability hint only
+  (Cmd-glyph on macOS via `sys.platform == "darwin"`, `Ctrl+` prefix
+  elsewhere). The real key handling lives in the frontend:
+  `frontend/src/hooks/useGlobalKeyboardShortcuts.js` registers one
+  global `keydown` listener, and `App.js` populates its `shortcuts` map
+  **only in desktop mode** (Reload → `reload_window`, Quit → `quit_app`,
+  Toggle Theme → `toggleDarkMode`) because the same combos collide with
+  the browser's own in terminal mode. Clipboard edit keys
+  (Cmd/Ctrl+C/X/V/A) are intentionally absent from that map so the
+  embedded webview keeps handling them natively. The display format in
+  `_with_accelerator` (Python) and `formatShortcut` (JS, in
+  `frontend/src/utils/keyboardShortcuts.js`) must stay in sync, as must
+  each displayed combo and its actual binding in `App.js`. The
+  `Header.js` theme-toggle tooltip shows the `Ctrl/Cmd+T` hint only in
+  desktop mode for the same reason the binding is desktop-only.
+
+## Detecting desktop mode in React: render-time vs call-time
+
+`frontend/src/utils/mode.js::isDesktopMode()` checks `!!window.pywebview`.
+That is the right primitive for **call-time** gates — event handlers,
+action callbacks, anywhere code runs in response to a user gesture — but
+it is racy at **render/mount time** and must not be used there.
+
+The race: pywebview's WebView2 backend on Windows injects
+`window.pywebview` from its `NavigationCompleted` callback (see the
+upstream `webview/platforms/edgechromium.py::on_navigation_completed` →
+`webview/util.py::inject_pywebview`, which fires the `pywebviewready`
+event only after injection). That runs **after** the React bundle has
+executed and `App` has already mounted. A synchronous `isDesktopMode()`
+inside a `useMemo` / `useEffect` / render body therefore returns `false`
+on first render; pywebview's later injection triggers no React
+re-render, so a memo whose only deps are unrelated state (e.g.
+`[darkMode]`) stays stuck on its initial value forever. This is what
+broke the keyboard-shortcut map in [`App.js`](../../frontend/src/App.js)
+before the `useDesktopReady` migration: the shortcuts map resolved to
+`{}` on cold launch, pywebview's later inject never re-fired the memo,
+and Ctrl/Cmd+T / Cmd+R / Cmd+Q never matched anything.
+
+Use [`useDesktopReady`](../../frontend/src/hooks/useDesktopReady.js) at
+render/mount time. It seeds from the synchronous `isDesktopMode()`
+check (so callers that mount *after* pywebview is ready render `true`
+immediately) and then subscribes to the one-shot `pywebviewready`
+event, flipping its returned boolean and forcing a re-render once the
+bridge is live. Canonical consumers:
+
+- `App.js::ThemeModeBridge` gates its `useMemo(shortcuts)` on
+  `desktopReady` and lists it in the dep array, so the shortcut map
+  installs the moment pywebview is injected.
+- `Header.js` gates the `(Ctrl+T)` / `(⌘T)` tooltip hint on
+  `desktopReady` so the hint appears on first paint of the post-inject
+  render rather than only after some unrelated state changes.
+
+`useDesktopMenuEvents` is the counter-example that confirms the
+discipline: it installs its global window event listener
+unconditionally (no mount-time gate at all) and the menu's Toggle Theme
+worked correctly while the shortcuts were broken. That pattern is
+viable when the listener has no per-mode setup cost and only matches
+events that fire in desktop mode anyway. Anything that does have such a
+cost (building a non-empty map, mounting a desktop-only component
+subtree, choosing a desktop-only branch) must use `useDesktopReady`
+instead.

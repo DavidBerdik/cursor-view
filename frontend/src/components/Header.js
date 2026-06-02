@@ -6,9 +6,21 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import DarkModeIcon from '@mui/icons-material/DarkMode';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import { ThemeModeContext } from '../contexts/ThemeModeContext';
+import { useDesktopReady } from '../hooks/useDesktopReady';
+import { formatShortcut } from '../utils/keyboardShortcuts';
 
 const Header = () => {
   const { darkMode, toggleDarkMode } = useContext(ThemeModeContext);
+
+  // The Ctrl/Cmd+T shortcut is only bound in desktop mode (App.js leaves the
+  // browser in charge of these combos otherwise), so the hint is shown there
+  // too -- advertising it in browser mode would be misleading since the
+  // browser would open a new tab instead. Gated on `useDesktopReady` (not
+  // `isDesktopMode()`) because pywebview's `window.pywebview` injection
+  // races with React mount on Windows/WebView2; a synchronous render-time
+  // check would miss it on first paint and the hint would never appear.
+  const desktopReady = useDesktopReady();
+  const themeShortcutHint = desktopReady ? ` (${formatShortcut('T')})` : '';
 
   return (
     <AppBar position="sticky" sx={{ mb: 4, color: 'white' }}>
@@ -30,7 +42,7 @@ const Header = () => {
             </Typography>
           </Box>
 
-          <Tooltip title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}>
+          <Tooltip title={`${darkMode ? 'Switch to light mode' : 'Switch to dark mode'}${themeShortcutHint}`}>
             <IconButton
               onClick={toggleDarkMode}
               color="inherit"

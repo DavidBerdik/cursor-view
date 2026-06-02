@@ -434,6 +434,22 @@ raises `ProgrammingError`).
   for the window `CustomEvent`s the Python menu dispatches &mdash; see
   `utils/desktopEvents.js` for the names; called once from
   `App.js::ThemeModeBridge` and a no-op in terminal mode),
+  `useDesktopReady` (reactive desktop-runtime readiness boolean: seeds
+  from the synchronous `isDesktopMode()` then flips on pywebview's
+  `pywebviewready` event &mdash; necessary because pywebview's
+  WebView2 backend injects `window.pywebview` from
+  `NavigationCompleted`, *after* React has already mounted, so a
+  render-time `isDesktopMode()` is racy and a memo gated on it would
+  stay stuck on cold launch; consumed by the shortcut-map `useMemo` in
+  `App.js` and the `(Ctrl+T)` / `(\u2318T)` tooltip hint in
+  `Header.js`),
+  `useGlobalKeyboardShortcuts` (registers one global `keydown` listener
+  that dispatches to a caller-supplied `{ 'mod+t': () => ... }` map &mdash;
+  combo parsing and the platform `mod` resolution live in
+  `utils/keyboardShortcuts.js`; `App.js` populates the map only when
+  `useDesktopReady` is true so Reload / Quit / Toggle Theme bind once
+  pywebview is live, since the native menu's accelerators are
+  display-only),
   `useInView`
   (IntersectionObserver visibility for a `ref`'d element, with
   default-`true` fallback when the API is unavailable; consumed by
@@ -509,10 +525,16 @@ raises `ProgrammingError`).
   `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
   consumed by `AppContextMenu`),   `mode` (`isDesktopMode()` &mdash;
   shared pywebview-runtime detection consumed by both `exportChat.js`
-  and `AppContextMenu.js`), `desktopEvents` (the `CustomEvent` name
+  and `AppContextMenu.js`),   `desktopEvents` (the `CustomEvent` name
   constants the native desktop menu dispatches into the React app,
   kept byte-for-byte in sync with `cursor_view/desktop/api.py` and
-  consumed by `useDesktopMenuEvents`), `mermaidRenderCache` (session-scoped
+  consumed by `useDesktopMenuEvents`), `keyboardShortcuts`
+  (`isMac` / `formatShortcut` / `eventMatchesCombo` &mdash; the
+  combo-string parser and platform `mod`-modifier resolution shared by
+  `useGlobalKeyboardShortcuts` and the `Header.js` shortcut hint, with
+  the display format matching the accelerator hints
+  `cursor_view/desktop/menu.py` appends to the native menu titles),
+  `mermaidRenderCache` (session-scoped
   `Map<key, svg>` keyed by `(source, darkMode)` so repeat dark/light
   toggles short-circuit at the cache layer instead of re-running
   `mermaid.parse + mermaid.render`; the bomb-graphic invariant from
