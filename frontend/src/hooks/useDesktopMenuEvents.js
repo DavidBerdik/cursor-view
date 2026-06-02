@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 
-import { DESKTOP_EVENT_TOGGLE_THEME } from '../utils/desktopEvents';
+import {
+  DESKTOP_EVENT_TOGGLE_THEME,
+  DESKTOP_EVENT_OPEN_ABOUT,
+} from '../utils/desktopEvents';
 
 // Bridges native desktop-menu actions into React state.
 //
@@ -20,12 +23,13 @@ import { DESKTOP_EVENT_TOGGLE_THEME } from '../utils/desktopEvents';
 // the consumer passes a fresh closure (`App.js::ThemeModeBridge` recreates
 // `toggleDarkMode` every render). This mirrors the stable-callback discipline
 // in `frontend-hooks.mdc`.
-export function useDesktopMenuEvents({ onToggleTheme } = {}) {
-  const handlersRef = useRef({ onToggleTheme });
+export function useDesktopMenuEvents({ onToggleTheme, onOpenAbout } = {}) {
+  const handlersRef = useRef({ onToggleTheme, onOpenAbout });
 
   useEffect(() => {
     handlersRef.current.onToggleTheme = onToggleTheme;
-  }, [onToggleTheme]);
+    handlersRef.current.onOpenAbout = onOpenAbout;
+  }, [onToggleTheme, onOpenAbout]);
 
   useEffect(() => {
     const handleToggleTheme = () => {
@@ -34,10 +38,18 @@ export function useDesktopMenuEvents({ onToggleTheme } = {}) {
         fn();
       }
     };
+    const handleOpenAbout = () => {
+      const fn = handlersRef.current.onOpenAbout;
+      if (typeof fn === 'function') {
+        fn();
+      }
+    };
 
     window.addEventListener(DESKTOP_EVENT_TOGGLE_THEME, handleToggleTheme);
+    window.addEventListener(DESKTOP_EVENT_OPEN_ABOUT, handleOpenAbout);
     return () => {
       window.removeEventListener(DESKTOP_EVENT_TOGGLE_THEME, handleToggleTheme);
+      window.removeEventListener(DESKTOP_EVENT_OPEN_ABOUT, handleOpenAbout);
     };
   }, []);
 }

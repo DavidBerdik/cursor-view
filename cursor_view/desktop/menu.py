@@ -139,6 +139,8 @@ def build_menu(api: "DesktopApi") -> list["webview.menu.Menu"]:
     help_menu = Menu(
         "Help",
         [
+            Action("About Cursor View", api.open_about),
+            Separator(),
             Action("Documentation", lambda: api.open_url_in_browser(DOCUMENTATION_URL)),
             Action("GitHub", lambda: api.open_url_in_browser(GITHUB_URL)),
         ],

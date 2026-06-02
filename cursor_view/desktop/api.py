@@ -1,8 +1,11 @@
 """JS-to-Python bridge exposed to the React UI via pywebview."""
 
+import importlib.metadata
 import json
 import logging
 import pathlib
+import platform
+import sys
 import urllib.request
 import webbrowser
 from typing import Any
@@ -10,8 +13,9 @@ from urllib.parse import urlparse
 
 import webview
 
+from cursor_view import __version__
 from cursor_view.desktop.reveal import open_path, reveal_in_file_manager
-from cursor_view.paths import cursor_view_cache_dir
+from cursor_view.paths import cursor_view_cache_dir, cursor_view_log_dir
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,7 @@ EXTENSIONS: dict[str, str] = {
 # ``frontend/src/utils/desktopEvents.js``; the matching listeners live in
 # ``frontend/src/hooks/useDesktopMenuEvents.js``.
 EVENT_TOGGLE_THEME = "cursor-view:toggle-theme"
+EVENT_OPEN_ABOUT = "cursor-view:open-about"
 
 
 class DesktopApi:
@@ -125,6 +130,17 @@ class DesktopApi:
         via ``useDesktopMenuEvents``.
         """
         return self._dispatch_event(EVENT_TOGGLE_THEME)
+
+    def open_about(self) -> dict[str, Any]:
+        """Ask the React app to open the About dialog.
+
+        The Help -> About menu item routes here; the dialog itself lives
+        in the React app (it fetches diagnostics via get_diagnostics), so
+        the bridge just dispatches the cursor-view:open-about event the
+        frontend's useDesktopMenuEvents listens for, mirroring
+        toggle_theme.
+        """
+        return self._dispatch_event(EVENT_OPEN_ABOUT)
 
     def reload_window(self) -> dict[str, Any]:
         """Reload the current page in the desktop window.
@@ -244,6 +260,40 @@ class DesktopApi:
         if reveal_in_file_manager(pathlib.Path(path)):
             return {"ok": True, "error": None}
         return {"ok": False, "error": "Could not reveal the file"}
+
+    def get_diagnostics(self) -> dict[str, Any]:
+        """Return environment details for the About dialog / bug reports.
+
+        Backs the Help -> About modal. Every value is resolved
+        defensively so a single lookup failure (e.g. pywebview metadata
+        missing in an odd packaging) degrades to "unknown" rather than
+        raising across the JS boundary. ``webview.guilib`` is the active
+        platform module once ``webview.start`` is running (it is ``None``
+        before that), and its ``renderer`` attribute is the backend name
+        (``edgechromium`` / ``cocoa`` / ``gtk`` / ``qt``).
+        """
+        try:
+            pywebview_version = importlib.metadata.version("pywebview")
+        except Exception:
+            pywebview_version = "unknown"
+        backend = getattr(getattr(webview, "guilib", None), "renderer", None) or "unknown"
+        try:
+            cache_dir = str(cursor_view_cache_dir())
+        except Exception:
+            cache_dir = "unknown"
+        try:
+            log_dir = str(cursor_view_log_dir())
+        except Exception:
+            log_dir = "unknown"
+        return {
+            "version": __version__,
+            "platform": f"{platform.system()} {platform.release()}",
+            "pywebview_version": pywebview_version,
+            "pywebview_backend": backend,
+            "python_version": platform.python_version(),
+            "cache_dir": cache_dir,
+            "log_dir": log_dir,
+        }
 
     def save_export(
         self,

@@ -130,16 +130,16 @@ todos:
     status: completed
   - id: 13a-bridge-method-diag
     content: Implement DesktopApi.get_diagnostics() returning version, platform, pywebview version + active backend, Python version, cache dir, log dir
-    status: pending
+    status: completed
   - id: 13b-react-modal
     content: Add frontend/src/components/AboutDialog.js (single file, under the 250-line cap) with a Copy to Clipboard action
-    status: pending
+    status: completed
   - id: 13c-menu-wiring-about
     content: Add Help -> About menu item routing through a cursor-view:open-about CustomEvent
-    status: pending
+    status: completed
   - id: 13d-rules-and-docs-about
     content: Re-read react-components.mdc; update CONTRIBUTING.md frontend components bullet to list AboutDialog.js
-    status: pending
+    status: completed
   - id: 14a-workflow-file
     content: "Author .github/workflows/desktop-build.yml with a 3-OS PyInstaller matrix building per-OS artifacts on push to main and on v* tag pushes; per Improvement 07's spec split, each per-OS upload must include both binaries (cursor-view and cursor-view-desktop) from the single COLLECT'd dist/cursor-view/ tree"
     status: pending

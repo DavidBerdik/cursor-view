@@ -11,3 +11,4 @@
 // The string values MUST stay byte-for-byte in sync with the matching
 // constants in `cursor_view/desktop/api.py` (e.g. `EVENT_TOGGLE_THEME`).
 export const DESKTOP_EVENT_TOGGLE_THEME = 'cursor-view:toggle-theme';
+export const DESKTOP_EVENT_OPEN_ABOUT = 'cursor-view:open-about';

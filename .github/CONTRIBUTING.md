@@ -597,10 +597,15 @@ raises `ProgrammingError`).
 - `markdown/` &mdash; the unified/remark/rehype pipeline that
   pre-renders chat messages to HTML.
 - `components/`
-  - `Header.js`, `AppContextMenu.js`, `MessageMarkdown.js`,
+  - `Header.js`, `AppContextMenu.js`, `AboutDialog.js`,
+    `MessageMarkdown.js`,
     `MermaidBlock.js`, `MermaidDiagramSurface.js`, `MermaidToolbar.js`,
     `MermaidLightboxModal.js`, `MermaidZoomControls.js`,
-    `MermaidLightboxFallback.js` &mdash; global UI. `MermaidBlock`
+    `MermaidLightboxFallback.js` &mdash; global UI. `AboutDialog` is the
+    desktop-mode Help -> About modal: it fetches `get_diagnostics` from
+    the bridge and offers Copy to Clipboard, mounted in
+    `App.js::ThemeModeBridge` and opened via the `cursor-view:open-about`
+    event (`useDesktopMenuEvents`). `MermaidBlock`
     renders a mermaid fenced code block as a live diagram (default)
     or raw source, with a per-block toggle and a parse-error
     fallback. Its sibling `MermaidToolbar` holds the

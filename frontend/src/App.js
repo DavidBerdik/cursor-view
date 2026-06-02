@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, useColorScheme } from '@mui/material/styles';
@@ -8,6 +8,7 @@ import ChatList from './components/chat-list/ChatList';
 import ChatDetail from './components/chat-detail/ChatDetail';
 import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
+import AboutDialog from './components/AboutDialog';
 import { ThemeModeContext } from './contexts/ThemeModeContext';
 import { useDesktopAuth } from './hooks/useDesktopAuth';
 import { useDesktopExternalLinks } from './hooks/useDesktopExternalLinks';
@@ -93,12 +94,20 @@ function ThemeModeBridge({ children }) {
     setMode(nextMode);
   };
 
-  // Translate native desktop-menu actions (View -> Toggle Theme today)
-  // into the same toggle the Header button drives. Installed here, at the
-  // single ThemeModeBridge mount, so the listener is global and shares the
-  // exact toggle path (cookie write + View Transition) rather than
-  // duplicating theme logic on the Python side. No-op in terminal mode.
-  useDesktopMenuEvents({ onToggleTheme: toggleDarkMode });
+  // About dialog open state, driven by the Help -> About menu item via
+  // the cursor-view:open-about event (desktop mode only).
+  const [aboutOpen, setAboutOpen] = useState(false);
+
+  // Translate native desktop-menu actions into React: View -> Toggle Theme
+  // reuses the same toggle the Header button drives (shared cookie write +
+  // View Transition path rather than duplicating theme logic in Python),
+  // and Help -> About opens the diagnostics dialog. Installed here at the
+  // single ThemeModeBridge mount so the listeners are global. No-op in
+  // terminal mode (no menu dispatches these events).
+  useDesktopMenuEvents({
+    onToggleTheme: toggleDarkMode,
+    onOpenAbout: () => setAboutOpen(true),
+  });
 
   // Route external (non-same-origin) link clicks to the OS default browser
   // through the bridge in desktop mode, so a `<a target="_blank">` (the
@@ -169,6 +178,7 @@ function ThemeModeBridge({ children }) {
   return (
     <ThemeModeContext.Provider value={themeModeValue}>
       {children}
+      <AboutDialog open={aboutOpen} onClose={() => setAboutOpen(false)} />
     </ThemeModeContext.Provider>
   );
 }
