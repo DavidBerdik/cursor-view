@@ -17,6 +17,7 @@ from werkzeug.serving import make_server
 from cursor_view.app_factory import create_app
 from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.desktop.api import DesktopApi
+from cursor_view.desktop.auth import generate_token, install_auth
 from cursor_view.desktop.error_window import build_error_html, show_startup_error
 from cursor_view.desktop.menu import build_menu
 from cursor_view.desktop.readiness import wait_for_server
@@ -84,6 +85,13 @@ def run_desktop() -> None:
     try:
         cleanup_orphan_temp_files()
         app = create_app()
+        # Loopback-token auth gates /api/* so another local process that
+        # finds the random port cannot read chats. Installed only here in
+        # desktop mode; terminal mode leaves create_app() untouched. The
+        # same token is handed to the bridge (get_token) for the React
+        # app's axios header and bootstrapped as a cookie for <img> URLs.
+        auth_token = generate_token()
+        install_auth(app, auth_token)
         port = free_port()
         server = make_server("127.0.0.1", port, app, threaded=True)
     except Exception as exc:
@@ -136,7 +144,7 @@ def run_desktop() -> None:
     # Chromium-based backends block top-level data: navigation, which
     # resolves as a relative path against the loopback origin and 404s.
     target_url = f"http://127.0.0.1:{port}/"
-    api = DesktopApi(port)
+    api = DesktopApi(port, token=auth_token)
     window = webview.create_window(
         title="Cursor View",
         html=splash_html(),

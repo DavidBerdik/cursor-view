@@ -41,6 +41,15 @@ mode where the UI is rendered inside a native OS webview window (WebView2
 on Windows, WKWebView on macOS, WebKitGTK/Qt on Linux) via
 [pywebview](https://pywebview.flowrl.com/).
 
+**Local-process security boundary.** In `--desktop` mode the local API is
+protected by a per-launch secret token: the webview sends it on every
+request, and any other process on your machine that connects to the
+loopback port without it gets a `401`. This narrows the exposure of your
+chat data to the desktop window itself. Terminal/browser mode is
+unchanged &mdash; it serves the API to your browser without this token,
+exactly as before, so treat the terminal-mode server as accessible to any
+local process (the same as any local dev server).
+
 ### Run from source (desktop mode)
 
 ```

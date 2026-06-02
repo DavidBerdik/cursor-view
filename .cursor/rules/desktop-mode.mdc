@@ -246,3 +246,47 @@ clicks so every variant lands in the one OS browser tab; right-click
 (`auxclick` button 2) is left to the context menu. Terminal/browser
 mode is entirely unaffected because the handler no-ops outside desktop
 mode, preserving native `<a>` behavior.
+
+## Loopback-token auth in desktop mode
+
+The random loopback port only deters drive-by scans; any local process
+running as the same user can otherwise read every indexed chat off
+`127.0.0.1:{port}`. [`cursor_view/desktop/auth.py`](../../cursor_view/desktop/auth.py)
+closes that gap with a per-launch secret:
+
+- `generate_token()` returns `secrets.token_urlsafe(32)`; `run_desktop`
+  generates one token per launch, passes it to both `install_auth` and
+  `DesktopApi(token=...)`, and it is never persisted.
+- `install_auth(app, token)` registers a `before_request` that 401s any
+  `/api/*` request whose `X-Cursor-View-Token` header **or**
+  `cursor-view-token` cookie does not match (constant-time
+  `hmac.compare_digest`). Non-`/api` paths (the SPA shell, static
+  assets, `/__desktop_focus__`) and `OPTIONS` preflight are never
+  gated — the shell must load so it can pick up the token, and the gate
+  must not break CORS preflight.
+- The same `install_auth` registers an `after_request` that sets the
+  `cursor-view-token` cookie (`HttpOnly`, `SameSite=Strict`, not
+  `Secure` because loopback is plain http) on the `text/html` SPA shell
+  response, so non-axios same-origin requests (notably
+  `<img src="/api/chat/.../image/...">`) carry the token automatically.
+  This is an app-level hook, **not** a blueprint: a blueprint would have
+  to shadow the catch-all `/` route in `cursor_view/routes.py` and risk
+  an ambiguous mapping. `routes.py` stays free of desktop concerns.
+
+Frontend: [`useDesktopAuth`](../../frontend/src/hooks/useDesktopAuth.js)
+(called once from `App.js::ThemeModeBridge`, gated on `useDesktopReady`)
+reads the token from the bridge's `get_token()` and sets it as the
+default `X-Cursor-View-Token` axios header. The header and the cookie
+are belt-and-suspenders: same-origin axios requests send the cookie
+automatically too, so the brief window before the header is set still
+authenticates. Exposing the token to the page via `get_token()` is safe
+— the bridge is reachable only from inside our own webview, and the
+token's job is to lock out *other* local processes that can read neither
+the bridge nor the in-page value.
+
+**Terminal mode never calls `install_auth`**, so browser mode is
+unchanged and unauthenticated exactly as before. Regression-pinned by
+[`tests/test_desktop_auth.py`](../../tests/test_desktop_auth.py)
+(401 on missing/wrong header and cookie, 200 on correct header and
+cookie, non-`/api` ungated, `OPTIONS` ungated, and the HTML-shell cookie
+bootstrap with its `HttpOnly` / `SameSite` attributes).

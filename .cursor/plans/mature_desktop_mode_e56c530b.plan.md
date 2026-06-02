@@ -94,19 +94,19 @@ todos:
     status: completed
   - id: 10a-token-middleware
     content: Implement cursor_view/desktop/auth.py with generate_token() and install_auth(app, token) registering a before_request 401 gate on /api/* for missing or wrong X-Cursor-View-Token header / cursor-view-token cookie; call from run_desktop only (terminal mode unchanged)
-    status: pending
+    status: completed
   - id: 10b-cookie-bootstrap
     content: Make the initial GET / response set the auth cookie via a small desktop-only Flask blueprint so cursor_view/routes.py stays free of desktop concerns
-    status: pending
+    status: completed
   - id: 10c-frontend-axios
     content: Add a desktop-only useDesktopAuth hook that reads the token via pywebview.api.get_token() and configures axios.defaults.headers.common[X-Cursor-View-Token]; non-axios <img> requests inherit via the cookie
-    status: pending
+    status: completed
   - id: 10d-tests-auth
     content: Add tests/test_desktop_auth.py exercising the 401 path on missing/wrong token and the 200 path on correct token
-    status: pending
+    status: completed
   - id: 10e-rules-and-docs-auth
     content: Add the Loopback-token auth in desktop mode invariant to .cursor/rules/desktop-mode.mdc; update README Setup & Running to clarify the new local-process security boundary; update CONTRIBUTING.md desktop bullet
-    status: pending
+    status: completed
   - id: 11a-log-file
     content: Add cursor_view_log_dir() to cursor_view/paths.py; implement cursor_view/desktop/logging_setup.py::configure_desktop_logging() with a 1MB-cap RotatingFileHandler under cursor-view/logs/desktop.log; call from run_desktop before cleanup_orphan_temp_files
     status: pending

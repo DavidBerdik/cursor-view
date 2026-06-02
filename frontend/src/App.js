@@ -9,6 +9,7 @@ import ChatDetail from './components/chat-detail/ChatDetail';
 import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
 import { ThemeModeContext } from './contexts/ThemeModeContext';
+import { useDesktopAuth } from './hooks/useDesktopAuth';
 import { useDesktopExternalLinks } from './hooks/useDesktopExternalLinks';
 import { useDesktopMenuEvents } from './hooks/useDesktopMenuEvents';
 import { useDesktopReady } from './hooks/useDesktopReady';
@@ -105,6 +106,11 @@ function ThemeModeBridge({ children }) {
   // real browser tab instead of navigating the embedded webview away or
   // spawning an unstyled second pywebview window. No-op in terminal mode.
   useDesktopExternalLinks();
+
+  // In desktop mode, read the loopback-auth token from the bridge once and
+  // set it as the default axios header so every /api/* request passes the
+  // auth gate (cursor_view/desktop/auth.py). No-op in terminal mode.
+  useDesktopAuth();
 
   // Global keyboard shortcuts. Bound only in desktop mode: in browser mode
   // these combos collide with the browser's own (Ctrl/Cmd+T new tab,

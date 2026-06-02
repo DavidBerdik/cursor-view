@@ -37,13 +37,18 @@ class DesktopApi:
     to be written to disk from Python using a native save dialog.
     """
 
-    def __init__(self, port: int, debug: bool = False) -> None:
+    def __init__(self, port: int, debug: bool = False, token: str | None = None) -> None:
         self._port = port
         # Private so pywebview's js_api introspection (which exposes every
         # public, non-underscore attribute of this object to JS) does not
         # surface it. menu.py reads it directly to gate the debug-only
         # developer-tools menu item.
         self._debug = debug
+        # The loopback-auth token (cursor_view/desktop/auth.py). Private
+        # for the same introspection reason; the React app reads it via
+        # the public get_token() bridge method below, never as an
+        # auto-exposed attribute.
+        self._token = token
 
     def _active_window(self) -> "webview.Window | None":
         """Return the window menu / bridge actions should target.
@@ -79,6 +84,22 @@ class DesktopApi:
             logger.warning("Failed to dispatch %s to the webview: %s", event_name, exc)
             return {"ok": False, "error": str(exc)}
         return {"ok": True, "error": None}
+
+    def get_token(self) -> str:
+        """Return the loopback-auth token for the React app to use.
+
+        Called once at boot by the frontend ``useDesktopAuth`` hook,
+        which sets it as the default ``X-Cursor-View-Token`` axios
+        header so every ``/api/*`` request passes the desktop-mode
+        auth gate (see ``cursor_view/desktop/auth.py``). Returns an
+        empty string if no token was configured (defensive; desktop
+        launches always pass one). Exposing the token to the page is
+        safe -- the bridge is reachable only from inside our own
+        embedded webview, and the token's purpose is to lock out
+        *other* local processes that can read neither the bridge nor
+        the in-page value.
+        """
+        return self._token or ""
 
     def toggle_theme(self) -> dict[str, Any]:
         """Ask the React app to flip its color scheme.

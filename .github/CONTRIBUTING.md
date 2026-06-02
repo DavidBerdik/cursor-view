@@ -167,6 +167,15 @@ Subpackages:
   menu on backends without menu support (see the "Native menu bar"
   invariant in
   [`.cursor/rules/desktop-mode.mdc`](../.cursor/rules/desktop-mode.mdc));
+  `auth.py` is the desktop-only loopback-token gate &mdash;
+  `generate_token()` mints a per-launch secret and `install_auth(app,
+  token)` registers a `before_request` that 401s `/api/*` without the
+  matching `X-Cursor-View-Token` header or `cursor-view-token` cookie
+  plus an `after_request` that bootstraps that cookie on the SPA shell
+  (installed only from `run_desktop`, so terminal mode and `routes.py`
+  stay untouched; see the "Loopback-token auth in desktop mode"
+  invariant in
+  [`.cursor/rules/desktop-mode.mdc`](../.cursor/rules/desktop-mode.mdc));
   `window_state.py` persists window geometry across launches;
   `readiness.py` is the stdlib-only `wait_for_server` probe that polls
   `GET /` until the daemon Flask thread answers; `splash.py` provides
