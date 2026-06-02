@@ -18,6 +18,10 @@ from cursor_view.app_factory import create_app
 from cursor_view.cleanup import cleanup_orphan_temp_files
 from cursor_view.desktop.api import DesktopApi
 from cursor_view.desktop.auth import generate_token, install_auth
+from cursor_view.desktop.logging_setup import (
+    configure_desktop_logging,
+    redirect_stdio_to_logging,
+)
 from cursor_view.desktop.error_window import build_error_html, show_startup_error
 from cursor_view.desktop.menu import build_menu
 from cursor_view.desktop.readiness import wait_for_server
@@ -83,6 +87,13 @@ def run_desktop() -> None:
     # non-zero. This boundary runs before webview.start, so it is safe for
     # show_startup_error to run its own GUI loop.
     try:
+        # File logging first so anything the startup sequence logs (and any
+        # stray library stdout/stderr in the frozen windowless binary, which
+        # has no console) lands in desktop.log. Kept inside the startup
+        # try/except so a logging-setup failure routes to the error window
+        # rather than crashing before any window exists.
+        log_path = configure_desktop_logging()
+        redirect_stdio_to_logging()
         cleanup_orphan_temp_files()
         app = create_app()
         # Loopback-token auth gates /api/* so another local process that
@@ -144,7 +155,7 @@ def run_desktop() -> None:
     # Chromium-based backends block top-level data: navigation, which
     # resolves as a relative path against the loopback origin and 404s.
     target_url = f"http://127.0.0.1:{port}/"
-    api = DesktopApi(port, token=auth_token)
+    api = DesktopApi(port, token=auth_token, log_path=log_path)
     window = webview.create_window(
         title="Cursor View",
         html=splash_html(),

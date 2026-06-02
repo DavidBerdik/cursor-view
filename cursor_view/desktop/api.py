@@ -37,7 +37,13 @@ class DesktopApi:
     to be written to disk from Python using a native save dialog.
     """
 
-    def __init__(self, port: int, debug: bool = False, token: str | None = None) -> None:
+    def __init__(
+        self,
+        port: int,
+        debug: bool = False,
+        token: str | None = None,
+        log_path: "pathlib.Path | None" = None,
+    ) -> None:
         self._port = port
         # Private so pywebview's js_api introspection (which exposes every
         # public, non-underscore attribute of this object to JS) does not
@@ -49,6 +55,10 @@ class DesktopApi:
         # the public get_token() bridge method below, never as an
         # auto-exposed attribute.
         self._token = token
+        # Path to the desktop.log file (cursor_view/desktop/logging_setup.py),
+        # stashed for the future "View Logs" / "Open Log File" menu item
+        # (Improvement 12). Private for the same introspection reason.
+        self._log_path = log_path
 
     def _active_window(self) -> "webview.Window | None":
         """Return the window menu / bridge actions should target.

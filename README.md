@@ -124,6 +124,15 @@ warning opt-out) in a per-user webview profile directory:
 
 Delete that folder to reset preferences.
 
+Desktop mode also writes a rotating log file to `logs/desktop.log`
+(1&nbsp;MB cap, 3 backups) in the same `cursor-view` cache directory
+(e.g. `%LOCALAPPDATA%\cursor-view\logs\desktop.log` on Windows,
+`~/Library/Caches/cursor-view/logs/desktop.log` on macOS,
+`$XDG_CACHE_HOME/cursor-view/logs/desktop.log` on Linux). This is the
+first place to look &mdash; and the file to attach to a bug report
+&mdash; when the desktop app misbehaves, since the windowless Windows
+binary has no console to print to.
+
 Desktop mode is single-instance: launching `--desktop` while it is
 already running focuses the existing window instead of opening a second
 one. It tracks the running instance with a `desktop.lock` file in the

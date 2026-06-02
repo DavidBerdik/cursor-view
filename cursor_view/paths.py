@@ -78,3 +78,21 @@ def cursor_view_cache_dir() -> pathlib.Path:
         fallback = pathlib.Path(BASE_PATH) / ".cursor-view-cache"
         fallback.mkdir(parents=True, exist_ok=True)
         return fallback
+
+
+def cursor_view_log_dir() -> pathlib.Path:
+    """Return the directory for Cursor View log files, creating it.
+
+    Lives under ``cursor_view_cache_dir()`` (next to ``webview-storage/``
+    and ``desktop.lock``) so all per-user Cursor View state shares one
+    root. Mirrors ``cursor_view_cache_dir``'s permission fallback so a
+    read-only cache root still yields a writable log directory.
+    """
+    log_dir = cursor_view_cache_dir() / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+    except PermissionError:
+        fallback = pathlib.Path(BASE_PATH) / ".cursor-view-cache" / "logs"
+        fallback.mkdir(parents=True, exist_ok=True)
+        return fallback

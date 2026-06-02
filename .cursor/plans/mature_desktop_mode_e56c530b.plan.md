@@ -109,13 +109,13 @@ todos:
     status: completed
   - id: 11a-log-file
     content: Add cursor_view_log_dir() to cursor_view/paths.py; implement cursor_view/desktop/logging_setup.py::configure_desktop_logging() with a 1MB-cap RotatingFileHandler under cursor-view/logs/desktop.log; call from run_desktop before cleanup_orphan_temp_files
-    status: pending
+    status: completed
   - id: 11b-stdout-redirect
     content: Add a frozen-only (sys.frozen) stdout/stderr redirect to a logging adapter so libraries that bypass the logger still write to the file
-    status: pending
+    status: completed
   - id: 11c-rules-and-docs-logging
     content: Re-read python-standards.mdc Logging section; update CONTRIBUTING.md desktop bullet to mention the log module + path; update README User preferences subsection with the log path
-    status: pending
+    status: completed
   - id: 12a-reveal-helper
     content: Implement cursor_view/desktop/reveal.py with reveal_in_file_manager(path) using subprocess.Popen per platform (open -R / explorer /select, / xdg-open with the parent-folder limitation documented)
     status: pending

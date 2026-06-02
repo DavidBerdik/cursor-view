@@ -176,6 +176,12 @@ Subpackages:
   stay untouched; see the "Loopback-token auth in desktop mode"
   invariant in
   [`.cursor/rules/desktop-mode.mdc`](../.cursor/rules/desktop-mode.mdc));
+  `logging_setup.py` adds desktop-mode file logging &mdash;
+  `configure_desktop_logging()` attaches a 1&nbsp;MB-cap (3-backup)
+  `RotatingFileHandler` writing to `cursor_view_log_dir()/desktop.log`
+  (under the cache dir) alongside the stderr handler, and
+  `redirect_stdio_to_logging()` routes stray stdout/stderr into the log
+  in frozen builds only (the windowless Windows binary has no console);
   `window_state.py` persists window geometry across launches;
   `readiness.py` is the stdlib-only `wait_for_server` probe that polls
   `GET /` until the daemon Flask thread answers; `splash.py` provides
