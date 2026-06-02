@@ -67,13 +67,13 @@ todos:
     status: completed
   - id: 07a-spec-split
     content: Refactor cursor-view.spec into two-EXE form (a console=True terminal binary plus a console=False desktop binary) sharing the same Analysis/PYZ; OR flip to single-EXE windowless and depend on Improvement 11 for log-file diagnostics
-    status: pending
+    status: completed
   - id: 07b-ci-update
     content: If Improvement 14's CI workflow is in place, ensure both the console-bearing and windowless artifacts are uploaded per OS
-    status: pending
+    status: completed
   - id: 07c-rules-and-docs-console
     content: Re-read project-layout.mdc spec-changes-need-rule-sync clause; update README Running the binary and CONTRIBUTING.md Build a standalone binary section to enumerate both binaries
-    status: pending
+    status: completed
   - id: 08a-version-source
     content: Add __version__ constant to cursor_view/__init__.py and source CFBundleShortVersionString from it in cursor-view.spec
     status: pending
@@ -141,10 +141,10 @@ todos:
     content: Re-read react-components.mdc; update CONTRIBUTING.md frontend components bullet to list AboutDialog.js
     status: pending
   - id: 14a-workflow-file
-    content: Author .github/workflows/desktop-build.yml with a 3-OS PyInstaller matrix building per-OS artifacts on push to main and on v* tag pushes
+    content: "Author .github/workflows/desktop-build.yml with a 3-OS PyInstaller matrix building per-OS artifacts on push to main and on v* tag pushes; per Improvement 07's spec split, each per-OS upload must include both binaries (cursor-view and cursor-view-desktop) from the single COLLECT'd dist/cursor-view/ tree"
     status: pending
   - id: 14b-smoke-test
-    content: Add a per-OS smoke step that runs dist/cursor-view --help (and --terminal --no-browser once Improvement 21 lands) to catch import-time regressions
+    content: "Add a per-OS smoke step that runs dist/cursor-view/cursor-view --help AND dist/cursor-view/cursor-view-desktop --help (the two-EXE split from Improvement 07; once Improvement 21 lands also run --terminal --no-browser) to catch import-time regressions in either binary"
     status: pending
   - id: 14c-rules-and-docs-ci
     content: "Re-read project-layout.mdc Files with no caller clause; if Improvement 23's bug-sweep added a temporary # TODO(bug): marker for the missing workflow, retire it here per known-bugs.mdc and cite the closure in the rule"
@@ -517,7 +517,7 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 **How it will be implemented.**
 - New [`.github/workflows/desktop-build.yml`](.github/workflows/desktop-build.yml) using a 3-OS `matrix.os: [ubuntu-latest, windows-latest, macos-latest]`.
-- Per-OS steps: checkout, setup Python 3.11, setup Node 20, `pip install -r requirements.txt`, `npm ci && npm run build` in `frontend/`, `pyinstaller cursor-view.spec`, smoke-test `dist/cursor-view --help` (and `--terminal --no-browser` once Improvement 21 lands), `actions/upload-artifact@v4` for the per-OS dist folder.
+- Per-OS steps: checkout, setup Python 3.11, setup Node 20, `pip install -r requirements.txt`, `npm ci && npm run build` in `frontend/`, `pyinstaller cursor-view.spec`, smoke-test BOTH `dist/cursor-view/cursor-view --help` AND `dist/cursor-view/cursor-view-desktop --help` (the two-EXE split landed in Improvement 07 — a single `cursor-view --help` would not catch an import-time regression in the desktop-only path; once Improvement 21 lands also run `--terminal --no-browser`), `actions/upload-artifact@v4` for the per-OS dist folder (which contains both binaries from a single `COLLECT()`).
 - Trigger on `push` to `main` AND on `push` of tags matching `v*`. Tag pushes additionally upload to a draft release via `softprops/action-gh-release`.
 - Decide if Linux build also produces an AppImage now or later (defer to follow-up).
 

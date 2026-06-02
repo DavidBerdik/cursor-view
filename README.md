@@ -60,13 +60,28 @@ sudo apt install libwebkit2gtk-4.1-0
 
 ### Running the binary
 
-By default the binary starts the Flask server and opens the browser:
+The build ships two executables side-by-side in `dist/cursor-view/` that
+share a single bundled Python runtime:
+
+- `cursor-view` &mdash; the original console-bearing binary. On Windows,
+  launching it always shows a Windows console window for stdout, even
+  with `--desktop`.
+- `cursor-view-desktop` &mdash; a windowless variant intended for
+  desktop-mode launches. On Windows it never shows the console window,
+  which is the only practical difference; on macOS and Linux the
+  `console` setting has no user-visible effect, so the two binaries
+  behave identically there.
+
+Both binaries accept the same flags (`__main__.py` still defaults to
+terminal mode for either binary; you opt into the webview UI by passing
+`--desktop`):
 
 ```
-cursor-view                 # default: terminal/server mode + auto-open browser
-cursor-view --no-browser    # server only; open the browser yourself
-cursor-view --port 8080     # use a different port
-cursor-view --desktop       # experimental webview UI instead of the browser
+cursor-view                          # terminal/server mode + auto-open browser
+cursor-view --no-browser             # server only; open the browser yourself
+cursor-view --port 8080              # use a different port
+cursor-view --desktop                # webview UI (Windows: console window shows up)
+cursor-view-desktop --desktop        # webview UI with no Windows console window
 ```
 
 In `--desktop` mode the window carries a native File / Edit / View / Help
@@ -76,11 +91,11 @@ backends without native menu support (notably some Linux WebKitGTK
 builds) the menu is omitted and every action remains reachable from the
 in-app UI.
 
-On macOS the `.app` bundle is purely cosmetic packaging around the same
-`cursor-view` binary, so double-clicking `Cursor View.app` in Finder
-behaves like double-clicking the Windows `.exe`: it starts the server and
-opens the browser. To launch the experimental desktop mode from Finder,
-pass the flag explicitly:
+On macOS the `.app` bundle wraps the windowless `cursor-view-desktop`
+binary (the two binaries are functionally identical on macOS), so
+double-clicking `Cursor View.app` in Finder still starts the Flask
+server and opens the browser today. To launch the experimental desktop
+mode from Finder, pass the flag explicitly:
 
 ```
 open -a "Cursor View" --args --desktop

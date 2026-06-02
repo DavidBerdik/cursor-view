@@ -33,12 +33,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-exe = EXE(
+# Two thin EXE entry points share a single Analysis / PYZ / runtime tree.
+# The split exists to fix the "this feels unprofessional" issue on Windows
+# where the console-bearing binary (console=True) pops a console window
+# even when --desktop is passed: the second windowless binary
+# (console=False) is the one Windows users should launch for the desktop
+# UI. exclude_binaries=True on each EXE moves the shared bootloader /
+# Python runtime / `datas` / `binaries` into the single COLLECT() below
+# instead of duplicating them per EXE, keeping dist/ at one runtime tree
+# with two ~MB-scale launchers next to it. On macOS and Linux the
+# `console` setting has no Windows-style "pops a console window" effect,
+# but each platform's bootloader still differs slightly between the two
+# variants -- the split is harmless on those platforms and lets the
+# macOS BUNDLE below wrap the windowless variant verbatim.
+exe_terminal = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='cursor-view',
     debug=False,
     bootloader_ignore_signals=False,
@@ -50,19 +62,52 @@ exe = EXE(
     icon=ICON,
 )
 
+exe_desktop = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='cursor-view-desktop',
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=False,
+    icon=ICON,
+)
+
+coll = COLLECT(
+    exe_terminal,
+    exe_desktop,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='cursor-view',
+)
+
 if sys.platform == 'darwin':
-    # The .app bundle is purely cosmetic packaging around the same
-    # terminal-first ``cursor-view`` binary. Double-clicking the .app starts
-    # the Flask server and opens the browser, mirroring how the Windows
-    # .exe behaves. The experimental webview UI requires --desktop, e.g.:
+    # The macOS .app wraps the *windowless* cursor-view-desktop binary
+    # (CFBundleExecutable below) so the bundle aligns with the binary that
+    # is intended for double-click launches. Until Improvement 21 flips the
+    # CLI default, cursor_view/__main__.py still defaults to terminal mode
+    # on either binary, so double-clicking the .app today starts the Flask
+    # server and opens the browser, exactly as before. The experimental
+    # webview UI still requires --desktop, e.g.:
     #     open -a "Cursor View" --args --desktop
+    # After Improvement 21, the same .app will default to the webview UI
+    # without any spec change, because the bundled binary is already the
+    # windowless variant.
     app = BUNDLE(
-        exe,
+        coll,
         name='Cursor View.app',
         icon=ICON,
         bundle_identifier='dev.cursor-view.app',
         info_plist={
-            'CFBundleExecutable': 'cursor-view',
+            'CFBundleExecutable': 'cursor-view-desktop',
             'CFBundleName': 'Cursor View',
             'CFBundleDisplayName': 'Cursor View',
             'CFBundleShortVersionString': '0.1.0',

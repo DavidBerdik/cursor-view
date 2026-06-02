@@ -655,8 +655,12 @@ raises `ProgrammingError`).
 ## Assets and configuration
 
 - `cursor-view.spec` &mdash; PyInstaller spec that bundles
-  `cursor_view_main.py` and `frontend/build/` into the standalone
-  binary.
+  `cursor_view_main.py` and `frontend/build/` into two side-by-side
+  binaries (`cursor-view`, `console=True`; `cursor-view-desktop`,
+  `console=False`) sharing one `Analysis` / `PYZ` / `COLLECT` runtime
+  tree. The split exists so Windows desktop-mode launches do not pop
+  a console window for stdout; on macOS and Linux the `console`
+  setting has no user-visible effect.
 - `assets/icons/` &mdash; multi-platform app icons plus the
   `_generate_icons.py` regeneration script.
 - `.github/workflows/desktop-build.yml` &mdash; CI that builds the
@@ -679,11 +683,31 @@ Then build with PyInstaller using the included spec:
 pyinstaller cursor-view.spec
 ```
 
-This produces a console binary in `dist/`:
+This produces a single `dist/cursor-view/` tree containing two
+side-by-side binaries that share one bundled Python runtime:
 
-- Windows: `dist/cursor-view/cursor-view.exe`
-- macOS:   `dist/cursor-view/cursor-view` (plus `dist/Cursor View.app` wrapping the same binary)
-- Linux:   `dist/cursor-view/cursor-view`
+- `cursor-view` &mdash; original console-bearing binary (`console=True`
+  in the spec). On Windows, launching it always shows a console window
+  for stdout, even with `--desktop`.
+- `cursor-view-desktop` &mdash; windowless variant (`console=False`).
+  On Windows this is the binary desktop-mode users should launch
+  because it never pops a console window. On macOS and Linux the
+  `console` setting has no user-visible effect, so the two binaries
+  are functionally identical there.
+
+The macOS `BUNDLE` block wraps `cursor-view-desktop`
+(`CFBundleExecutable: 'cursor-view-desktop'` in the spec's
+`info_plist`), so the `.app` ships the windowless variant by default.
+
+Per-OS output:
+
+- Windows: `dist/cursor-view/cursor-view.exe`,
+  `dist/cursor-view/cursor-view-desktop.exe`
+- macOS:   `dist/cursor-view/cursor-view`,
+  `dist/cursor-view/cursor-view-desktop`,
+  plus `dist/Cursor View.app` wrapping `cursor-view-desktop`
+- Linux:   `dist/cursor-view/cursor-view`,
+  `dist/cursor-view/cursor-view-desktop`
 
 On macOS, unsigned local builds may be quarantined by Gatekeeper. To run
 without code signing:
