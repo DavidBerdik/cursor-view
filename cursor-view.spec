@@ -94,13 +94,13 @@ coll = COLLECT(
 if sys.platform == 'darwin':
     # The macOS .app wraps the *windowless* cursor-view-desktop binary
     # (CFBundleExecutable below) so the bundle aligns with the binary that
-    # is intended for double-click launches. Until Improvement 21 flips the
+    # is intended for double-click launches. Until Improvement 20 flips the
     # CLI default, cursor_view/__main__.py still defaults to terminal mode
     # on either binary, so double-clicking the .app today starts the Flask
     # server and opens the browser, exactly as before. The experimental
     # webview UI still requires --desktop, e.g.:
     #     open -a "Cursor View" --args --desktop
-    # After Improvement 21, the same .app will default to the webview UI
+    # After Improvement 20, the same .app will default to the webview UI
     # without any spec change, because the bundled binary is already the
     # windowless variant.
     app = BUNDLE(

@@ -77,7 +77,7 @@ jobs:
 
       # --help only parses args (the desktop launcher imports pywebview
       # lazily), so this catches import-time regressions in either binary
-      # without needing a display server. Once Improvement 21 lands, also
+      # without needing a display server. Once Improvement 20 lands, also
       # run `--terminal --no-browser` here.
       - name: Smoke-test binaries (Unix)
         if: runner.os != 'Windows'
