@@ -1,0 +1,123 @@
+# Builds the standalone Cursor View binaries on all three desktop OSes.
+#
+# A single `pyinstaller cursor-view.spec` run produces one COLLECT'd
+# dist/cursor-view/ tree holding BOTH side-by-side launchers from the
+# Improvement 07 spec split:
+#   - cursor-view          (console=True, terminal-mode default)
+#   - cursor-view-desktop  (console=False, windowless desktop launcher)
+# so each per-OS artifact uploads the whole tree and the smoke step
+# exercises both launchers. A regression that only breaks the
+# desktop-only import path would slip past a lone `cursor-view --help`,
+# which is why both binaries are probed below.
+name: desktop-build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  # Allow manual runs from the Actions tab without waiting for a push.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The Qt webview backend (pywebview[qt]) pulls in libEGL / libGL /
+      # xcb plugins at import time; install them so PyInstaller can analyze
+      # the webview platform modules during the build on the headless
+      # ubuntu-latest runner.
+      - name: Install Linux webview system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 \
+            libegl1 \
+            libxcb-cursor0 \
+            libxkbcommon-x11-0 \
+            libwebkit2gtk-4.1-0
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build standalone binaries
+        run: pyinstaller cursor-view.spec
+
+      # --help only parses args (the desktop launcher imports pywebview
+      # lazily), so this catches import-time regressions in either binary
+      # without needing a display server. Once Improvement 21 lands, also
+      # run `--terminal --no-browser` here.
+      - name: Smoke-test binaries (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          ./dist/cursor-view/cursor-view --help
+          ./dist/cursor-view/cursor-view-desktop --help
+
+      - name: Smoke-test binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\dist\cursor-view\cursor-view.exe --help
+          .\dist\cursor-view\cursor-view-desktop.exe --help
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cursor-view-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: error
+
+      # Pack the whole dist tree into a single per-OS archive so the
+      # release assets stay collision-free (every OS produces a
+      # `cursor-view` launcher) and a user downloads one file per platform.
+      - name: Package release archive (Unix)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os != 'Windows'
+        run: |
+          cd dist
+          zip -ry "../cursor-view-${{ matrix.os }}.zip" .
+
+      - name: Package release archive (Windows)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist/* -DestinationPath "cursor-view-${{ matrix.os }}.zip"
+
+      # Tag pushes (v*) additionally attach the per-OS archive to a draft
+      # GitHub release so a maintainer can review before publishing.
+      - name: Attach to draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: cursor-view-${{ matrix.os }}.zip

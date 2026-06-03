@@ -142,13 +142,13 @@ todos:
     status: completed
   - id: 14a-workflow-file
     content: "Author .github/workflows/desktop-build.yml with a 3-OS PyInstaller matrix building per-OS artifacts on push to main and on v* tag pushes; per Improvement 07's spec split, each per-OS upload must include both binaries (cursor-view and cursor-view-desktop) from the single COLLECT'd dist/cursor-view/ tree"
-    status: pending
+    status: completed
   - id: 14b-smoke-test
     content: "Add a per-OS smoke step that runs dist/cursor-view/cursor-view --help AND dist/cursor-view/cursor-view-desktop --help (the two-EXE split from Improvement 07; once Improvement 21 lands also run --terminal --no-browser) to catch import-time regressions in either binary"
-    status: pending
+    status: completed
   - id: 14c-rules-and-docs-ci
     content: "Re-read project-layout.mdc Files with no caller clause; if Improvement 23's bug-sweep added a temporary # TODO(bug): marker for the missing workflow, retire it here per known-bugs.mdc and cite the closure in the rule"
-    status: pending
+    status: completed
   - id: 15a-desktop-template
     content: Add assets/linux/cursor-view.desktop template + assets/linux/install-linux.sh helper that copies the file/icon and runs update-desktop-database
     status: pending
