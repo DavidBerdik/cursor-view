@@ -167,14 +167,14 @@ todos:
   - id: 16d-rules-and-docs-uti
     content: Update .cursor/rules/project-layout.mdc frontend structure if a new top-level component dir lands; update README Standalone binary
     status: completed
-  - id: 17a-comment-block
-    content: Add a header comment block to cursor-view.spec recording the onefile vs onedir decision and pointing to the CI workflow if both ship
+  - id: 17a-onefile-spec
+    content: Convert cursor-view.spec to platform-branched onefile EXEs for Windows/Linux (exclude_binaries=False, fold a.binaries + a.datas into each EXE, no COLLECT) while keeping the macOS COLLECT + BUNDLE so the .app stays the self-contained Mac artifact; add a header comment recording the onefile decision and its size/cold-start tradeoffs
     status: pending
-  - id: 17b-optional-onefile
-    content: Optionally add a second EXE block with onefile=True and update the CI matrix to upload the second artifact
+  - id: 17b-ci-paths
+    content: Update .github/workflows/desktop-build.yml smoke-test and artifact paths for the onefile outputs on Windows/Linux (dist/cursor-view, dist/cursor-view-desktop with no cursor-view/ subdir) while leaving the macOS dist/cursor-view/ tree paths intact
     status: pending
   - id: 17c-rules-and-docs-pyinstaller
-    content: Update README Standalone binary section to enumerate onefile vs onedir distribution if both ship
+    content: Update README Standalone binary and CONTRIBUTING.md to describe the per-OS distribution shape (single-file self-contained binaries on Windows/Linux; the .app bundle on macOS)
     status: pending
   - id: 18a-navigation-guard
     content: Implement cursor_view/desktop/navigation.py installing a before_navigate handler that cancels non-loopback URLs and calls webbrowser.open instead; wire from run_desktop
@@ -553,20 +553,24 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 ---
 
-## Improvement 17 - PyInstaller `--onefile` vs `--onedir` decision recorded in spec
+## Improvement 17 - PyInstaller `--onefile` self-contained binaries
 
-**What it is.** The current spec is `--onedir` shape (multiple files in `dist/cursor-view/`). On Windows distribution this complicates "just download the .exe" UX; a `--onefile` build produces a single self-extracting binary at the cost of a slower cold start.
+**What it is.** The current spec (Improvement 07) is `--onedir` shape: two `EXE(exclude_binaries=True)` blocks share one `COLLECT()` that emits the `dist/cursor-view/` runtime tree, and the macOS `BUNDLE` wraps that tree. On Windows and Linux this means the distributable is a folder of files rather than a single download, which complicates the "just grab the binary" UX.
 
-**What it does.** Documents the decision in a header comment in the spec and (optionally) ships both shapes side-by-side from the CI workflow.
+**What it does.** Builds Cursor View as **self-contained single-file binaries** via `--onefile` on Windows and Linux, so each of the two launchers (`cursor-view`, `cursor-view-desktop`) is one portable executable with no sibling runtime tree. macOS is intentionally left unchanged: the `.app` bundle is already a self-contained distributable, and a `--onefile` binary inside a `.app` would re-extract to a temp dir on every launch (slower cold start), so the macOS build keeps the existing `COLLECT()` + `BUNDLE` (onedir) shape.
 
 **How it will be implemented.**
-- Header comment block at the top of [`cursor-view.spec`](cursor-view.spec) explaining: chosen shape, reason (cold-start vs UX), and a pointer to the Improvement 14 CI workflow if it produces both.
-- If shipping both: add a second `EXE` block in the spec with `onefile=True` (PyInstaller 6 syntax) and update CI matrix to upload both.
+- Restructure [`cursor-view.spec`](cursor-view.spec) so the `EXE` / `COLLECT` shape is branched off `sys.platform`:
+  - **Windows / Linux:** two `onefile` `EXE` blocks (`exclude_binaries=False`, each folding in `a.binaries` + `a.datas` so the Python runtime, `frontend/build`, and the vendored `mermaid.min.js` ship inside the single file). No `COLLECT()`. Output: `dist/cursor-view[.exe]` and `dist/cursor-view-desktop[.exe]`.
+  - **macOS:** keep the current two `EXE(exclude_binaries=True)` + single `COLLECT()` + `BUNDLE`, so the `.app` (which already wraps `cursor-view-desktop`) stays the self-contained Mac artifact.
+- Record the tradeoffs in the spec header comment: onefile duplicates the bundled runtime across the two binaries (roughly 2x total size vs the shared `COLLECT`) and adds a one-time temp-extraction cold start; this is the accepted cost of single-file distribution on Windows/Linux.
+- Update the Improvement 14 CI workflow ([`.github/workflows/desktop-build.yml`](.github/workflows/desktop-build.yml)): on Windows/Linux the smoke step runs `dist/cursor-view --help` and `dist/cursor-view-desktop --help` (single files, no `cursor-view/` subdir); macOS keeps the `dist/cursor-view/...` paths. The `dist/` artifact upload still captures whichever shape each OS produced.
+- Update README "Standalone binary" and CONTRIBUTING "Build a standalone binary" / "Assets and configuration" to describe the per-OS output: single-file binaries on Windows/Linux, the `.app` (plus its `COLLECT` tree) on macOS.
 
 **Todos**
-- `17a-comment-block`: Add the decision-record comment to `cursor-view.spec`.
-- `17b-optional-onefile`: Optionally add the second EXE block + CI artifact.
-- `17c-rules-and-docs`: No rule update expected. Update README "Standalone binary" to mention onefile vs onedir if both ship.
+- `17a-onefile-spec`: Convert `cursor-view.spec` to platform-branched onefile EXEs for Windows/Linux (no `COLLECT()`), keeping the macOS `COLLECT()` + `BUNDLE`; add the decision/tradeoff header comment.
+- `17b-ci-paths`: Update `.github/workflows/desktop-build.yml` smoke-test and artifact paths for the onefile outputs on Windows/Linux while leaving the macOS `dist/cursor-view/` tree paths intact.
+- `17c-rules-and-docs-pyinstaller`: Update README "Standalone binary" and CONTRIBUTING.md to describe the per-OS distribution shape (single-file Windows/Linux binaries; macOS `.app`).
 
 ---
 
