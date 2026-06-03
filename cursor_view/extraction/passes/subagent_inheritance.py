@@ -22,9 +22,16 @@ def _apply_subagent_inheritance(
 
     Subagent composers (e.g. ``explore`` tasks) are spawned with no
     ``workspaceIdentifier``, no attached-file URIs, and no URIs in their
-    bubbles, so they need a parent's workspace to fall back on. By the
-    time this pass runs, ``subagent_parent`` has been populated from two
-    sources:
+    bubbles, so they need a parent's workspace to fall back on. This pass
+    only fills in subagents that are still unresolved: a subagent whose own
+    tool calls touched the filesystem already picked up an
+    ``_inferred_project`` from its working directories in Pass 4 (folder
+    URIs include tool-call ``cwd`` / ``targetDirectory``), and that own
+    signal is kept rather than overwritten -- the ``_inferred_project``
+    short-circuit below skips it. Parent inheritance is therefore the
+    fallback for the no-signal case, not an override of a subagent's own
+    resolved project. By the time this pass runs, ``subagent_parent`` has
+    been populated from two sources:
 
     - (a) Authentic ``subagentInfo.parentComposerId`` entries recorded
       by ``_collect_global_composers`` (Pass 3).

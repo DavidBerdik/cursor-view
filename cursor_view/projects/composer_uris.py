@@ -61,13 +61,20 @@ def _project_from_folder_uri_list(uris: Iterable[str]) -> dict[str, Any] | None:
     Folder URIs are candidate project roots as-is. If multiple distinct
     folders are present, fall back to their longest common ancestor without
     stripping a trailing filename (since these are already directories).
+
+    Cursor-internal ``.cursor/`` directories (plan/tool scratch dirs such as
+    ``~/.cursor/projects/<mangled-repo>``) are never project roots, so they're
+    dropped before any common-prefix logic runs. Unlike
+    ``_project_root_from_history`` we do NOT resurrect them when filtering
+    empties the list -- a ``.cursor`` dir as the sole candidate yields no
+    project rather than a bogus one.
     """
     if not uris:
         return None
     paths: list[str] = []
     for u in uris:
         p = _normalize_uri_to_path(u)
-        if p:
+        if p and "/.cursor/" not in p.replace("\\", "/").lower():
             paths.append(p.rstrip("/\\"))
     if not paths:
         return None

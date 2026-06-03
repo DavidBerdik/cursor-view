@@ -85,6 +85,64 @@ def _extract_uris_from_bubble(b: dict) -> tuple[list[str], list[str]]:
     return file_uris, folder_uris
 
 
+# Tool-call ``params`` / ``rawArgs`` keys whose value is an absolute working
+# directory the agent operated in. These are high-confidence project-root
+# signals: a terminal ``cwd`` or a search/glob ``targetDirectory`` is the
+# directory the user's chat was actually working against, even when the chat
+# carries no attached-file URIs (e.g. a remote-PR review whose tool calls all
+# ran against a local checkout). File-path args (``targetFile``, ``path``) are
+# deliberately NOT mined here: when a chat touches sibling repos their
+# common-prefix collapses to the shared parent (``c:/repos``) and yields a
+# container name rather than the real project.
+_TOOL_CALL_DIR_KEYS = ("cwd", "targetDirectory", "directoryPath")
+
+# Cap on a serialized arg blob we will JSON-decode. Most tool ``params`` are a
+# small args object, but ``create_plan`` stores the whole plan markdown and
+# ``read_file`` can echo large arg payloads; decoding those just to look for a
+# directory key wastes CPU on every bubble. The directory keys we want always
+# live in small arg objects well under this bound.
+_MAX_TOOL_ARG_BLOB_CHARS = 200_000
+
+
+def _tool_call_folder_uris(b: dict) -> list[str]:
+    """Collect absolute working directories from a bubble's tool-call args.
+
+    Reads ``toolFormerData.params`` / ``toolFormerData.rawArgs`` (each either
+    a dict or a JSON string) and returns the values of the directory keys in
+    :data:`_TOOL_CALL_DIR_KEYS`. These feed project inference as folder URIs
+    alongside the bubble's attached-folder URIs, so a workspace-less chat can
+    still be tied to the local checkout its tool calls ran against.
+
+    The ``result`` field is intentionally not parsed: read-file results can be
+    ~1 MB and the directory we need is already present in the small ``params``
+    object.
+    """
+    tf = b.get("toolFormerData")
+    if not isinstance(tf, dict):
+        return []
+    dirs: list[str] = []
+    for field in ("params", "rawArgs"):
+        raw = tf.get(field)
+        if isinstance(raw, str):
+            if not raw or len(raw) > _MAX_TOOL_ARG_BLOB_CHARS:
+                continue
+            try:
+                args = json.loads(raw)
+            except Exception:
+                continue
+        elif isinstance(raw, dict):
+            args = raw
+        else:
+            continue
+        if not isinstance(args, dict):
+            continue
+        for key in _TOOL_CALL_DIR_KEYS:
+            val = args.get(key)
+            if isinstance(val, str) and val:
+                dirs.append(val)
+    return dirs
+
+
 def _tool_call_from_bubble(b: dict) -> tuple[str, str] | None:
     """Return ``(toolCallId, tool_name)`` for bubbles that recorded a tool invocation.
 
@@ -139,6 +197,10 @@ def _parse_bubble_row(
         return None
     if isinstance(b, dict):
         file_uris, folder_uris = _extract_uris_from_bubble(b)
+        # Working directories from tool-call args are candidate project roots
+        # as-is, so they ride the folder-URI bucket (folders are preferred over
+        # files in project inference).
+        folder_uris.extend(_tool_call_folder_uris(b))
         tool_call = _tool_call_from_bubble(b)
         image_refs = parse_bubble_images(b)
         # ``text`` / ``richText`` live on the bubble dict so this
@@ -206,6 +268,10 @@ def iter_bubbles_from_disk_kv(
 
     ``file_uris`` and ``folder_uris`` are kept separate so project inference
     can trim filenames from files while treating folders as candidate roots.
+    ``folder_uris`` also includes absolute working directories pulled from the
+    bubble's tool-call args (terminal ``cwd``, search/glob ``targetDirectory``;
+    see :func:`_tool_call_folder_uris`), so a workspace-less chat is still tied
+    to the local checkout its tool calls ran against.
     ``tool_call`` is ``(toolCallId, tool_name)`` when the bubble recorded a
     tool invocation (``toolFormerData``) and ``None`` otherwise; callers
     use this to reconstruct subagent parent links that Cursor no longer

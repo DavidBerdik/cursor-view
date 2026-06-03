@@ -20,7 +20,18 @@ def _apply_uri_fallbacks(
 
     Folder URIs are preferred since they are candidate project roots
     as-is; file URIs require common-prefix + filename-trim logic and are
-    noisier.
+    noisier. The folder bucket includes working directories mined from
+    tool-call args (terminal ``cwd``, glob ``targetDirectory``; see
+    ``cursor_view.sources.bubbles._tool_call_folder_uris``), so a
+    workspace-less chat whose only signal is the local checkout its tool
+    calls ran against resolves here.
+
+    Because this runs before Pass 6, a subagent that itself touched the
+    filesystem gets its own ``_inferred_project`` from its tool-call dirs
+    and therefore keeps it rather than inheriting the parent's project --
+    deliberate: the subagent is categorized by what it actually worked on,
+    and parent inheritance (Pass 6) remains the fallback only for subagents
+    with no signal of their own.
     """
     fallback_cids = set(bubble_folder_uris_by_cid) | set(bubble_file_uris_by_cid)
     for cid in fallback_cids:

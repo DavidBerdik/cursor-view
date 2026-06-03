@@ -232,3 +232,53 @@ bubble is orphan-filtered), and
 `::test_legacy_composer_still_includes_all_bubbles` (locks down
 the legacy encounter-order fallback so future edits to the orphan
 filter can't accidentally drop legacy composers' bubbles).
+
+# Tool-call working directories are a project-inference signal
+
+A bubble's `toolFormerData.params` (or `rawArgs`) carries the
+absolute directory the tool ran in — terminal `cwd`, glob /
+directory-search `targetDirectory`, etc. For a workspace-less
+global chat with no `workspaceIdentifier` and no attached-file
+URIs (the canonical case is a remote-PR-review chat whose tool
+calls all ran against a local checkout), this working directory
+is the only thing that ties the chat to a real local project, so
+`cursor_view/sources/bubbles.py::_tool_call_folder_uris` mines the
+keys in `_TOOL_CALL_DIR_KEYS` (`cwd`, `targetDirectory`,
+`directoryPath`) and appends them to the bubble's `folder_uris`.
+They then ride the normal folder-URI path: Pass 2
+(`_collect_global_bubbles`) → `bubble_folder_uris_by_cid` → Pass 4
+(`_apply_uri_fallbacks`) → `project_from_folder_uri_list` →
+`_inferred_project` → Pass 8 finalize.
+
+Load-bearing details, do not regress:
+
+- **Only directory keys, never file-path args.** `targetFile` /
+  `path` are deliberately excluded: when a chat touches sibling
+  repos (`c:/repos/acme` and `c:/repos/acme-web`) the file-path
+  common-prefix collapses to the shared parent (`c:/repos`) and
+  yields a container name. Directory args are the authoritative
+  "where am I working" signal.
+- **`result` is never parsed.** `read_file` results can be ~1 MB;
+  the directory we need is already in the small `params` object.
+  A `_MAX_TOOL_ARG_BLOB_CHARS` (200 KB) guard skips pathological
+  arg blobs (e.g. a `create_plan` markdown payload).
+- **`.cursor/` filtering lives in
+  `cursor_view/projects/composer_uris.py::_project_from_folder_uri_list`.**
+  Tool calls also touch `~/.cursor/projects/<mangled-repo>` scratch
+  dirs; without dropping `/.cursor/` paths the two distinct dirs
+  collapse `commonprefix` to a bare drive letter and inference
+  returns nothing. Unlike `_project_root_from_history`, this
+  filter does NOT resurrect the unfiltered list when it empties —
+  a `.cursor` dir is never a project root.
+- **Subagents prefer their own tool dirs over parent inheritance.**
+  Pass 4 runs before Pass 6, so a subagent that itself touched the
+  filesystem gets its own `_inferred_project` and the Pass 6
+  inheritance walk skips it (the `_inferred_project` short-circuit).
+  This is deliberate: the subagent is categorized by what it
+  worked on; parent inheritance remains the fallback for the
+  no-signal case.
+
+Regression guards:
+`tests/test_chat_index_incremental.py::test_tool_call_cwd_infers_project`,
+`::test_tool_call_cursor_dir_stays_unknown` (the `.cursor` filter),
+and `::test_subagent_uses_own_tool_call_cwd_over_parent`.

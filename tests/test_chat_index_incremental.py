@@ -86,11 +86,29 @@ def _put_kv(db_path: pathlib.Path, key: str, value: Any) -> None:
         con.close()
 
 
-def _bubble(text: str, role_type: int = 1, tool_call_id: str | None = None) -> dict:
-    """Build a bubble value. ``role_type`` is ``1`` for user, ``2`` for assistant."""
+def _bubble(
+    text: str,
+    role_type: int = 1,
+    tool_call_id: str | None = None,
+    tool_name: str = "task_v2",
+    tool_params: dict | None = None,
+) -> dict:
+    """Build a bubble value. ``role_type`` is ``1`` for user, ``2`` for assistant.
+
+    When ``tool_params`` is given it is JSON-encoded onto
+    ``toolFormerData.params`` exactly as Cursor stores tool-call args, so a
+    test can exercise the working-directory project signal (``cwd`` /
+    ``targetDirectory``) mined by
+    ``cursor_view.sources.bubbles._tool_call_folder_uris``.
+    """
     v: dict = {"type": role_type, "text": text}
-    if tool_call_id is not None:
-        v["toolFormerData"] = {"toolCallId": tool_call_id, "name": "task_v2"}
+    if tool_call_id is not None or tool_params is not None:
+        tf: dict = {"name": tool_name}
+        if tool_call_id is not None:
+            tf["toolCallId"] = tool_call_id
+        if tool_params is not None:
+            tf["params"] = json.dumps(tool_params)
+        v["toolFormerData"] = tf
     return v
 
 
@@ -763,6 +781,137 @@ class IncrementalRefreshTest(unittest.TestCase):
             "Subagent must inherit the parent's workspace via the cached "
             "tool_call_parent edge even when the parent's tool-call bubble "
             "is orphan-filtered out of the canonical transcript",
+        )
+
+    # ---------------------------------------------------------------
+    # Tool-call working-directory project inference
+    # ---------------------------------------------------------------
+    def test_tool_call_cwd_infers_project(self) -> None:
+        """A workspace-less global chat is categorized by its tool-call cwd.
+
+        Reproduces the remote-PR-review case (composer 581811a1 on the
+        authoring install): no ``workspaceIdentifier``, no attached-file
+        URIs, but a ``run_terminal_command_v2`` tool call whose ``cwd`` is
+        the local checkout the chat worked against. Before the fix the
+        chat fell through to ``(unknown)``; now the working directory is
+        mined as a folder URI and resolves a real local project root.
+        """
+        cid = "cccccccc-7777-7777-7777-777777777777"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Remote PR review"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("review the PR"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b2",
+            _bubble(
+                "running git log",
+                role_type=2,
+                tool_call_id="toolu_cwd_signal",
+                tool_name="run_terminal_command_v2",
+                tool_params={"cwd": "c:/repos/myrepo", "command": "git log"},
+            ),
+        )
+
+        self._build_index()
+
+        summary = self._summary(cid)
+        self.assertIsNotNone(summary)
+        self.assertEqual(
+            summary[0],
+            "myrepo",
+            "Project name should come from the tool-call working directory",
+        )
+        self.assertEqual(
+            summary[1],
+            "/c:/repos/myrepo",
+            "Project root should be the tool-call working directory",
+        )
+        # The chat itself is still workspace-less; only its project was inferred.
+        self.assertEqual(summary[2], "(global)")
+
+    def test_tool_call_cursor_dir_stays_unknown(self) -> None:
+        """A tool-call dir under ``.cursor/`` must not manufacture a bogus project.
+
+        Cursor-internal scratch directories (``~/.cursor/projects/<mangled>``)
+        show up in tool-call args alongside the real checkout; on their own
+        they are never a project root. Filtering them out is what keeps the
+        real-checkout common-prefix from collapsing, so a chat whose ONLY
+        tool dir is a ``.cursor`` path must stay ``(unknown)`` rather than be
+        categorized under ``.cursor`` / a drive letter.
+        """
+        cid = "dddddddd-7777-7777-7777-777777777777"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Cursor-internal only"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("do something"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{cid}:b2",
+            _bubble(
+                "globbing transcripts",
+                role_type=2,
+                tool_call_id="toolu_cursor_dir",
+                tool_name="glob_file_search",
+                tool_params={"targetDirectory": "c:/Users/me/.cursor/projects/c-repos-myrepo"},
+            ),
+        )
+
+        self._build_index()
+
+        summary = self._summary(cid)
+        self.assertIsNotNone(summary)
+        self.assertEqual(
+            summary[0],
+            "(unknown)",
+            "A .cursor-only tool dir must not be promoted to a project",
+        )
+        self.assertEqual(summary[2], "(global)")
+
+    def test_subagent_uses_own_tool_call_cwd_over_parent(self) -> None:
+        """A subagent that touched the filesystem keeps its own inferred project.
+
+        Mirrors the live case where an ``explore`` subagent searched a
+        sibling repo while its parent reviewed a different one: the
+        subagent resolves from its own tool-call cwd via Pass 4 and is
+        NOT overwritten by Pass 6 parent inheritance.
+        """
+        parent_cid = "eeeeeeee-7777-7777-7777-777777777777"
+        child_cid = "ffffffff-7777-7777-7777-777777777777"
+        _put_kv(self.global_db, f"composerData:{parent_cid}", _composer("Parent review"))
+        _put_kv(self.global_db, f"bubbleId:{parent_cid}:b1", _bubble("review"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{parent_cid}:b2",
+            _bubble(
+                "in connect repo",
+                role_type=2,
+                tool_call_id="toolu_parent_cwd",
+                tool_name="run_terminal_command_v2",
+                tool_params={"cwd": "c:/repos/connectrepo"},
+            ),
+        )
+        # Child carries an authentic subagentInfo.parentComposerId link.
+        child = _composer("Explore child")
+        child["subagentInfo"] = {"parentComposerId": parent_cid}
+        _put_kv(self.global_db, f"composerData:{child_cid}", child)
+        _put_kv(self.global_db, f"bubbleId:{child_cid}:b1", _bubble("searching"))
+        _put_kv(
+            self.global_db,
+            f"bubbleId:{child_cid}:b2",
+            _bubble(
+                "in sibling repo",
+                role_type=2,
+                tool_call_id="toolu_child_cwd",
+                tool_name="glob_file_search",
+                tool_params={"targetDirectory": "c:/repos/siblingrepo"},
+            ),
+        )
+
+        self._build_index()
+
+        self.assertEqual(self._summary(parent_cid)[0], "connectrepo")
+        self.assertEqual(
+            self._summary(child_cid)[0],
+            "siblingrepo",
+            "Subagent must keep the project inferred from its own tool-call "
+            "dirs rather than inherit the parent's",
         )
 
     # ---------------------------------------------------------------

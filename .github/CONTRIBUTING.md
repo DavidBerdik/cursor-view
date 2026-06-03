@@ -150,7 +150,12 @@ Subpackages:
   `_connect_cursor_disk_kv` open-and-probe helper. `bubbles.py` owns
   `iter_bubbles_from_disk_kv` and the cid-scoped
   `iter_bubbles_for_cids` (range-scans a single composer's rows
-  without touching the rest of the corpus). `composer_data.py` owns
+  without touching the rest of the corpus); it also mines absolute
+  working directories from each bubble's tool-call args
+  (`toolFormerData.params` `cwd` / `targetDirectory`, via
+  `_tool_call_folder_uris`) and feeds them into project inference as
+  folder URIs, so a workspace-less chat is still tied to the local
+  checkout its tool calls ran against. `composer_data.py` owns
   `iter_composer_data`, `iter_composer_data_for_cids`, and
   `build_bubble_order_map` (reads each composer's
   `fullConversationHeadersOnly` so extraction can sort bubbles into
