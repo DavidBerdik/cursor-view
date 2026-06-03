@@ -33,6 +33,7 @@ from cursor_view.desktop.single_instance import (
     release_lock,
 )
 from cursor_view.desktop.splash import splash_html
+from cursor_view.desktop.viewer import load_export_file, register_viewer_route
 from cursor_view.desktop.window_state import (
     DEFAULT_HEIGHT,
     DEFAULT_WIDTH,
@@ -72,8 +73,16 @@ def _register_focus_route(app) -> None:
     app.add_url_rule(FOCUS_ROUTE, "desktop_focus", _focus, methods=["POST"])
 
 
-def run_desktop() -> None:
-    """Launch the Cursor View UI inside a native pywebview window."""
+def run_desktop(open_file: str | None = None) -> None:
+    """Launch the Cursor View UI inside a native pywebview window.
+
+    When ``open_file`` is given (a file passed on the command line or via
+    the macOS file-type association), the launcher reads that single
+    exported-chat JSON file at startup, serves it on the desktop-only
+    ``/api/viewer/opened`` route, and opens the window on the React
+    ``/viewer`` route instead of the home page -- displaying that one
+    chat without touching the chat-index cache.
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -103,6 +112,13 @@ def run_desktop() -> None:
         # app's axios header and bootstrapped as a cookie for <img> URLs.
         auth_token = generate_token()
         install_auth(app, auth_token)
+        # Read the opened export file (if any) before binding the socket
+        # so a malformed file is logged here and the viewer route can be
+        # registered regardless. load_export_file never raises, so a bad
+        # file simply yields None and the route 404s -- the React viewer
+        # surfaces that as an empty state rather than crashing startup.
+        opened_chat = load_export_file(open_file) if open_file else None
+        register_viewer_route(app, opened_chat)
         port = free_port()
         server = make_server("127.0.0.1", port, app, threaded=True)
     except Exception as exc:
@@ -154,7 +170,13 @@ def run_desktop() -> None:
     # server answers. The splash is passed as html= (not a data: URL):
     # Chromium-based backends block top-level data: navigation, which
     # resolves as a relative path against the loopback origin and 404s.
-    target_url = f"http://127.0.0.1:{port}/"
+    # Open on the single-chat viewer route when a file was passed, else
+    # the normal home page. Gated on open_file (not on a successful
+    # parse) so a malformed file still lands on /viewer, where the React
+    # viewer shows its "could not open" state instead of stranding the
+    # user on the cache-backed home grid.
+    landing_path = "viewer" if open_file else ""
+    target_url = f"http://127.0.0.1:{port}/{landing_path}"
     api = DesktopApi(port, token=auth_token, log_path=log_path)
     window = webview.create_window(
         title="Cursor View",

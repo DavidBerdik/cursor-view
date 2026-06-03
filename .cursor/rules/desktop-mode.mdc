@@ -320,3 +320,45 @@ launch (Improvement 11). On the frontend, the post-export
 `ExportRevealSnackbar` (state owned by `useExportFlow`) is the only
 Reveal entry point; it appears only after a desktop save because the
 browser export path returns no file path.
+
+## Opened-file viewer reads from the file, not the cache
+
+Double-clicking an exported chat (or `cursor-view-desktop <file>`)
+opens a single chat **from the file on disk**, never from the
+chat-index cache — the cache need not even contain that chat anymore.
+[`cursor_view/desktop/viewer.py`](../../cursor_view/desktop/viewer.py)
+owns the contract:
+
+- `load_export_file(path)` reads the file once at launch and **never
+  raises** (a missing / unreadable / non-object-JSON file yields
+  `None`, logged with lazy `%s`), so a bad file degrades to an empty
+  viewer rather than crashing startup before any window exists. The
+  expected format is the JSON `GET /api/chat/<id>/export?format=json`
+  produces — a `format_chat_for_frontend`-shaped dict with image bytes
+  inlined as `data:` URIs.
+- `register_viewer_route(app, opened)` registers the desktop-only
+  `GET /api/viewer/opened` route (404 when no file was opened),
+  registered from `run_desktop` like the focus route so
+  `cursor_view/routes.py` stays free of desktop concerns. The route
+  lives under `/api/`, so the loopback-token gate covers it for free.
+- `run_desktop(open_file=...)` parses the file inside the pre-window
+  startup `try`, registers the route, and navigates the window to
+  `/viewer` (not `/`) whenever `open_file` is set — gated on the path
+  being passed, not on a successful parse, so a malformed file still
+  lands on `/viewer` where the React viewer shows its empty state.
+- `cursor_view/__main__.py` treats a positional file argument as
+  implying desktop mode (the viewer route exists only there, and the
+  macOS file-type association in `cursor-view.spec` launches via `open`
+  without `--desktop`).
+
+Frontend: [`ChatViewer`](../../frontend/src/components/viewer/ChatViewer.js)
+fetches `/api/viewer/opened` and reuses the chat-detail
+`MessageList` / `MessageBubble` tree plus the shared
+[`prepareChatMessages`](../../frontend/src/utils/prepareChatMessages.js)
+pipeline. Images render from the inlined `data:` URIs through
+[`imageSrc`](../../frontend/src/utils/imageSrc.js), which prefers
+`img.data_uri` and falls back to the cache-backed
+`/api/chat/:id/image/:uuid` route — so the same `MessageImageGallery` /
+`ImageLightboxModal` serve both the cache-backed chat detail and the
+file-backed viewer unchanged. The viewer has no export button (the
+export route is cache-backed) and no scroll-anchor persistence.

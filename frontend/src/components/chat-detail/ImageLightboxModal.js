@@ -3,6 +3,7 @@ import { Box, Dialog, IconButton, Typography } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import { imageSrc } from '../../utils/imageSrc';
 
 // Per-message image lightbox. The parent `MessageImageGallery`
 // holds `openIndex` state and hands this modal a pre-filtered
@@ -50,9 +51,8 @@ export default function ImageLightboxModal({
   if (!isOpen) {
     return null;
   }
-  const encodedSessionId = encodeURIComponent(sessionId);
   const current = images[openIndex];
-  const src = `/api/chat/${encodedSessionId}/image/${encodeURIComponent(current.uuid)}`;
+  const src = imageSrc(sessionId, current);
 
   return (
     <Dialog
@@ -191,7 +191,7 @@ export default function ImageLightboxModal({
               }}
             >
               {images.map((img, i) => {
-                const thumbSrc = `/api/chat/${encodedSessionId}/image/${encodeURIComponent(img.uuid)}`;
+                const thumbSrc = imageSrc(sessionId, img);
                 const isActive = i === openIndex;
                 return (
                   <Box

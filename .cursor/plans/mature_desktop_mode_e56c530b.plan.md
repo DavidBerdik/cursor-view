@@ -157,16 +157,16 @@ todos:
     status: completed
   - id: 16a-info-plist-uti
     content: Add CFBundleDocumentTypes and UTExportedTypeDeclarations entries to the spec's info_plist for the chosen export file type
-    status: pending
+    status: completed
   - id: 16b-launch-args
     content: Parse positional file argument(s) in cursor_view/__main__.py and route to the desktop viewer when running in --desktop mode
-    status: pending
+    status: completed
   - id: 16c-viewer-route
     content: Add a viewer-only React route for displaying a single exported chat without going through the chat-index cache
-    status: pending
+    status: completed
   - id: 16d-rules-and-docs-uti
     content: Update .cursor/rules/project-layout.mdc frontend structure if a new top-level component dir lands; update README Standalone binary
-    status: pending
+    status: completed
   - id: 17a-decision-and-skeleton
     content: Decide between docs/SIGNING.md vs a new CONTRIBUTING.md section; author the macOS codesign + notarytool + stapler section with env vars listed
     status: pending

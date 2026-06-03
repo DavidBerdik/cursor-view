@@ -138,6 +138,25 @@ assets/linux/install-linux.sh /path/to/cursor-view-desktop
 The launcher opens the desktop (webview) UI by passing `--desktop`. Log
 out and back in if the entry doesn't appear in your menu immediately.
 
+### Opening an exported chat
+
+The desktop binary can open a single exported chat directly from a JSON
+export file, rendering it in a viewer that reads the file rather than
+your local chat-index cache (so it works even for a chat your Cursor
+databases no longer contain). Pass the file on the command line &mdash;
+a file argument implies desktop mode:
+
+```
+cursor-view-desktop path/to/cursor-chat-1a2b3c4d.json
+```
+
+On macOS the `.app` also registers as a viewer for exports saved with
+the `.cursorchat` extension, so double-clicking such a file in Finder
+opens it in the viewer. (Exports are written as `.json` by default;
+rename or save one as `.cursorchat` to opt into the double-click
+association. The command-line form above works for any JSON chat export
+regardless of extension.)
+
 ### User preferences / webview profile
 
 When using `--desktop`, the app persists UI preferences (theme, export

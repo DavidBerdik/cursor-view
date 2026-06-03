@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Box } from '@mui/material';
 import { PALETTE_TRANSITION } from '../../theme/transitions';
+import { imageSrc } from '../../utils/imageSrc';
 import ImageLightboxModal from './ImageLightboxModal';
 
 // Renders a row of clickable image-attachment thumbnails for one
@@ -55,7 +56,6 @@ export default function MessageImageGallery({ sessionId, images, role }) {
     return null;
   }
   const alt = `Image attached by ${role === 'user' ? 'user' : 'Cursor'}`;
-  const encodedSessionId = encodeURIComponent(sessionId);
 
   return (
     <>
@@ -68,7 +68,7 @@ export default function MessageImageGallery({ sessionId, images, role }) {
         }}
       >
         {safeImages.map((img, i) => {
-          const src = `/api/chat/${encodedSessionId}/image/${encodeURIComponent(img.uuid)}`;
+          const src = imageSrc(sessionId, img);
           return (
             <Box
               key={img.uuid}

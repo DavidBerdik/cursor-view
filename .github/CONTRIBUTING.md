@@ -205,8 +205,19 @@ Subpackages:
   instance over a loopback `POST /__desktop_focus__` (registered only in
   desktop mode) and exits. Its PID-liveness probe is platform-split
   (`os.kill(pid, 0)` on POSIX, a read-only `ctypes` `OpenProcess` check
-  on Windows, since `os.kill` on Windows routes through
+  on Windows, since   `os.kill` on Windows routes through
   `TerminateProcess`).
+  `viewer.py` backs the open-an-exported-chat feature (Improvement 16):
+  `load_export_file(path)` reads a single exported-chat JSON file at
+  launch (never raising &mdash; a bad file yields `None`) and
+  `register_viewer_route(app, opened)` registers the desktop-only
+  `GET /api/viewer/opened` route that serves it, so the React `/viewer`
+  route can display one exported chat without touching the chat-index
+  cache. `run_desktop(open_file=...)` wires it up and opens the window on
+  `/viewer` instead of the home page when a file was passed; the
+  positional file argument is parsed in `cursor_view/__main__.py` (a file
+  implies desktop mode, matching the macOS file-type association declared
+  in `cursor-view.spec`).
   `run_desktop` opens the window on the splash and only navigates to the
   loopback URL once `wait_for_server` succeeds, so cold launches never
   flash the webview's native "site can't be reached" frame (see the
@@ -553,7 +564,18 @@ raises `ProgrammingError`).
   component stays focused on the fetch-and-prepare pipeline and
   the layout JSX).
 - `utils/` &mdash; pure helpers: `formatDate`, `dbPath`, `cookies`,
-  `exportChat`, `dom` (`isEditableElement` / `findSelectionContainer`,
+  `exportChat`, `imageSrc` (`imageSrc(sessionId, img)` &mdash; resolves an
+  attached image's `<img src>` to the inlined `data:` URI when present
+  (the desktop opened-file viewer) and otherwise to the cache-backed
+  `GET /api/chat/:id/image/:uuid` route; shared by `MessageImageGallery`
+  and `ImageLightboxModal`), `prepareChatMessages`
+  (async `prepareChatMessages(rawMessages, darkMode)` &mdash; the
+  shared markdown-prep + dual-theme mermaid-prerender pipeline consumed
+  by both `ChatDetail` and `ChatViewer`; centralized so the
+  three-phase mermaid-singleton ordering lives in one place rather than
+  being duplicated across the two pages, which would reintroduce the
+  cross-message singleton race retired in `known-bugs.mdc`),
+  `dom` (`isEditableElement` / `findSelectionContainer`,
   consumed by `AppContextMenu`),   `mode` (`isDesktopMode()` &mdash;
   shared pywebview-runtime detection consumed by both `exportChat.js`
   and `AppContextMenu.js`),   `desktopEvents` (the `CustomEvent` name
@@ -690,6 +712,14 @@ raises `ProgrammingError`).
     toast whose "Reveal" action calls the desktop bridge's
     `reveal_export`; state owned by `useExportFlow`, shown only after a
     desktop-mode save) used by both pages.
+  - `viewer/` &mdash; `ChatViewer`, the desktop `/viewer` route that
+    renders a single exported chat opened from disk
+    (`GET /api/viewer/opened`) without going through the chat-index
+    cache. It reuses the chat-detail `ChatMetaPanel` / `MessageList`
+    tree and the shared `prepareChatMessages` pipeline; it has no export
+    button (the export route is cache-backed) and no scroll-anchor
+    persistence (single transient page), and renders images from the
+    export's inlined `data:` URIs via `imageSrc`.
 
 ## Assets and configuration
 
@@ -699,7 +729,12 @@ raises `ProgrammingError`).
   `console=False`) sharing one `Analysis` / `PYZ` / `COLLECT` runtime
   tree. The split exists so Windows desktop-mode launches do not pop
   a console window for stdout; on macOS and Linux the `console`
-  setting has no user-visible effect.
+  setting has no user-visible effect. The macOS `BUNDLE` `info_plist`
+  also declares a Cursor-View-owned UTI (`dev.cursor-view.chat-export`,
+  `UTExportedTypeDeclarations`) and registers the app as its viewer
+  (`CFBundleDocumentTypes`), so double-clicking an exported chat saved
+  with the `.cursorchat` extension opens it in the single-chat desktop
+  viewer (Improvement 16).
 - `assets/icons/` &mdash; multi-platform app icons plus the
   `_generate_icons.py` regeneration script.
 - `assets/linux/` &mdash; Linux app-menu integration: the

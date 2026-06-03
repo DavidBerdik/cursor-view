@@ -1,5 +1,5 @@
 import React, { startTransition, useContext, useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import {
   Box,
@@ -9,67 +9,54 @@ import {
   Typography,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import { prepareChatMessages } from '../../utils/prepareChatMessages';
 import { ThemeModeContext } from '../../contexts/ThemeModeContext';
-import { useChatScrollAnchor } from '../../hooks/useChatScrollAnchor';
-import { useExportFlow } from '../../hooks/useExportFlow';
-import ExportFormatDialog from '../export/ExportFormatDialog';
-import ExportWarningDialog from '../export/ExportWarningDialog';
-import ExportRevealSnackbar from '../export/ExportRevealSnackbar';
-import ChatMetaPanel from './ChatMetaPanel';
-import MessageList from './MessageList';
+import ChatMetaPanel from '../chat-detail/ChatMetaPanel';
+import MessageList from '../chat-detail/MessageList';
 
-const ChatDetail = () => {
+// Single-chat viewer for a file opened from disk (the macOS file-type
+// association or `cursor-view-desktop <file>`). Unlike ChatDetail it
+// fetches the desktop-only `/api/viewer/opened` route -- the chat is the
+// exported JSON file the launcher read at startup, NOT a row in the
+// chat-index cache -- so there is no sessionId, no export button (the
+// export route hits the cache, which need not contain this chat), and no
+// scroll-anchor persistence (single, transient page). Rendering reuses
+// the chat-detail MessageList/MessageBubble tree; images render from the
+// inlined `data:` URIs in the export via the shared `imageSrc` helper.
+const ChatViewer = () => {
   const { darkMode } = useContext(ThemeModeContext);
-  const { sessionId } = useParams();
   const [chat, setChat] = useState(null);
   const [loading, setLoading] = useState(true);
+  // `notFound` is the expected empty state (no file opened, or a file
+  // that failed to parse -> the route 404s); `error` is an unexpected
+  // transport failure. They render differently so a launched-without-a-
+  // file window does not look broken.
+  const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(null);
-  const {
-    format,
-    setFormat,
-    dontShow,
-    setDontShow,
-    formatDialogOpen,
-    warningDialogOpen,
-    requestExport,
-    handleFormatConfirm,
-    handleWarningConfirm,
-    snackbarOpen,
-    closeSnackbar,
-    revealSavedFile,
-  } = useExportFlow({ darkMode });
 
   useEffect(() => {
     let cancelled = false;
 
     setLoading(true);
+    setNotFound(false);
     setError(null);
 
     axios
-      .get(`/api/chat/${sessionId}`)
+      .get('/api/viewer/opened')
       .then(async (response) => {
         if (cancelled) {
           return;
         }
         const fetchedChat = response.data;
-        // Markdown + dual-theme mermaid prerender pipeline shared with
-        // ChatViewer; see prepareChatMessages for the mermaid-singleton
-        // ordering invariant.
         const preparedMessages = await prepareChatMessages(
           fetchedChat.messages,
           darkMode,
         );
-
         if (cancelled) {
           return;
         }
         startTransition(() => {
-          setChat({
-            ...fetchedChat,
-            messages: preparedMessages,
-          });
+          setChat({ ...fetchedChat, messages: preparedMessages });
           setLoading(false);
         });
       })
@@ -77,21 +64,24 @@ const ChatDetail = () => {
         if (cancelled) {
           return;
         }
-        setError(err.message);
+        if (err.response && err.response.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(err.message);
+        }
         setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-    // Re-fetch only when the chat changes, not on theme toggle:
-    // `darkMode` feeds the initial dual-theme mermaid prewarm in
-    // prepareChatMessages, and a later toggle is served from
-    // `mermaidRenderCache` by each block's own render effect.
+    // Fetch once on mount. `darkMode` is read for the initial dual-theme
+    // mermaid prewarm only; a later toggle is served from
+    // `mermaidRenderCache` by each block's own render effect, so we must
+    // not re-fetch (which would flash the spinner) on theme change --
+    // mirroring ChatDetail's `[sessionId]`-only dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  useChatScrollAnchor(sessionId, !loading);
+  }, []);
 
   const messages = useMemo(
     () => (Array.isArray(chat?.messages) ? chat.messages : []),
@@ -116,38 +106,32 @@ const ChatDetail = () => {
     );
   }
 
-  if (!chat) {
+  if (notFound || !chat) {
     return (
-      <Container>
-        <Typography variant="h5">
-          Chat not found
+      <Container sx={{ mt: 4 }}>
+        <Typography variant="h5" gutterBottom>
+          No chat to display
         </Typography>
+        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+          Open an exported chat JSON file to view it here, or go back to
+          browse your indexed chats.
+        </Typography>
+        <Button
+          component={Link}
+          to="/"
+          startIcon={<ArrowBackIcon />}
+          variant="contained"
+          color="highlight"
+          sx={{ borderRadius: 2, color: 'white' }}
+        >
+          Back to all chats
+        </Button>
       </Container>
     );
   }
 
   return (
     <Container sx={{ mb: 6 }}>
-      <ExportFormatDialog
-        open={formatDialogOpen}
-        format={format}
-        onFormatChange={setFormat}
-        onClose={handleFormatConfirm}
-      />
-
-      <ExportWarningDialog
-        open={warningDialogOpen}
-        dontShow={dontShow}
-        onDontShowChange={setDontShow}
-        onClose={handleWarningConfirm}
-      />
-
-      <ExportRevealSnackbar
-        open={snackbarOpen}
-        onReveal={revealSavedFile}
-        onClose={closeSnackbar}
-      />
-
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, mt: 2, gap: 2 }}>
         <Button
           component={Link}
@@ -165,22 +149,6 @@ const ChatDetail = () => {
         >
           Back to all chats
         </Button>
-
-        <Button
-          onClick={() => requestExport(sessionId)}
-          startIcon={<FileDownloadIcon />}
-          variant="contained"
-          color="highlight"
-          sx={{
-            borderRadius: 2,
-            color: 'white',
-            '&:hover': {
-              backgroundColor: 'rgba(var(--mui-palette-highlight-mainChannel) / 0.8)',
-            },
-          }}
-        >
-          Export
-        </Button>
       </Box>
 
       {chat.title && (
@@ -195,9 +163,9 @@ const ChatDetail = () => {
         Conversation History
       </Typography>
 
-      <MessageList sessionId={sessionId} messages={messages} />
+      <MessageList sessionId={chat.session_id || 'opened'} messages={messages} />
     </Container>
   );
 };
 
-export default ChatDetail;
+export default ChatViewer;

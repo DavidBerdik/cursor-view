@@ -6,6 +6,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 
 import ChatList from './components/chat-list/ChatList';
 import ChatDetail from './components/chat-detail/ChatDetail';
+import ChatViewer from './components/viewer/ChatViewer';
 import Header from './components/Header';
 import AppContextMenu from './components/AppContextMenu';
 import AboutDialog from './components/AboutDialog';
@@ -194,6 +195,7 @@ function App() {
           <Routes>
             <Route path="/" element={<ChatList />} />
             <Route path="/chat/:sessionId" element={<ChatDetail />} />
+            <Route path="/viewer" element={<ChatViewer />} />
           </Routes>
         </Router>
       </ThemeModeBridge>

@@ -50,13 +50,30 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not open the browser automatically (terminal mode only).",
     )
+    parser.add_argument(
+        "file",
+        nargs="?",
+        default=None,
+        help=(
+            "Path to an exported chat JSON file to open in the single-chat "
+            "desktop viewer. Implies --desktop (the viewer route lives only "
+            "in desktop mode); used by the macOS file-type association."
+        ),
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
 
-    if args.desktop:
+    # A file argument implies desktop mode: the single-chat viewer route
+    # only exists there (run_desktop reads the file and serves it), and
+    # the macOS file-type association launches via `open` without passing
+    # --desktop. Treating a bare file path as a desktop-viewer request is
+    # what makes double-clicking an export functional.
+    desktop_mode = args.desktop or args.file is not None
+
+    if desktop_mode:
         # Terminal-only flags are silently ignored in desktop mode; warn the
         # user so a misplaced --port doesn't appear to take effect.
         for flag_name, flag_value, default in (
@@ -70,9 +87,16 @@ def main(argv: list[str] | None = None) -> None:
                     flag_name,
                 )
 
+        if args.file is not None and not args.desktop:
+            logger.info(
+                "Opening %s in the desktop viewer (a file argument implies "
+                "--desktop).",
+                args.file,
+            )
+
         from cursor_view.desktop import run_desktop
 
-        run_desktop()
+        run_desktop(open_file=args.file)
         return
 
     from cursor_view.terminal import run_server

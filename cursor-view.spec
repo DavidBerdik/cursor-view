@@ -136,5 +136,38 @@ if sys.platform == 'darwin':
             # the desktop window from the Dock, which is worse.
             'LSUIElement': False,
             'NSHighResolutionCapable': True,
+            # File-type association for exported chats (Improvement 16).
+            # UTExportedTypeDeclarations declares a Cursor-View-owned UTI
+            # for the JSON export format; CFBundleDocumentTypes then
+            # registers the .app as a viewer for it, so double-clicking a
+            # matching file in Finder launches the app with the file path
+            # as argv (cursor_view/__main__.py routes it to the desktop
+            # single-chat viewer). The export pipeline writes the same
+            # structured JSON `get_chat(..., include_image_bytes=True)`
+            # produces; saving an export with the `.cursorchat` extension
+            # opts a file into the double-click association (any JSON chat
+            # export still opens via `cursor-view-desktop <file>` on the
+            # command line regardless of extension). A dedicated UTI is
+            # used rather than claiming `public.json` so the app never
+            # hijacks the system default handler for all .json files.
+            'UTExportedTypeDeclarations': [
+                {
+                    'UTTypeIdentifier': 'dev.cursor-view.chat-export',
+                    'UTTypeDescription': 'Cursor View chat export',
+                    'UTTypeConformsTo': ['public.json', 'public.content'],
+                    'UTTypeTagSpecification': {
+                        'public.filename-extension': ['cursorchat'],
+                        'public.mime-type': ['application/json'],
+                    },
+                },
+            ],
+            'CFBundleDocumentTypes': [
+                {
+                    'CFBundleTypeName': 'Cursor View chat export',
+                    'CFBundleTypeRole': 'Viewer',
+                    'LSHandlerRank': 'Owner',
+                    'LSItemContentTypes': ['dev.cursor-view.chat-export'],
+                },
+            ],
         },
     )
