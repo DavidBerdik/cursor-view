@@ -29,6 +29,14 @@ alwaysApply: true
 - Frontend source lives under `frontend/src/` with this fixed structure:
   `theme/`, `contexts/`, `hooks/`, `utils/`, `markdown/`,
   `components/<feature>/`.
+- Non-Python assets live under `assets/`, organized by concern (extend,
+  don't replace): `assets/icons/` (multi-platform app icons plus the
+  `_generate_icons.py` regeneration script) and `assets/linux/` (the
+  `cursor-view.desktop` launcher template and the `install-linux.sh`
+  per-user installer that copies the template + icon into the XDG data
+  dir and runs `update-desktop-database`). New platform-integration
+  assets get their own `assets/<platform>/` subdir rather than landing
+  loose at the `assets/` root.
 - Tests live under `tests/` at the repo root and use stdlib
   `unittest`. Any new behavior that touches the chat-index refresh
   path must land with a synthetic-Cursor-DB regression test in

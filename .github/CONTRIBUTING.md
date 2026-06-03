@@ -702,6 +702,13 @@ raises `ProgrammingError`).
   setting has no user-visible effect.
 - `assets/icons/` &mdash; multi-platform app icons plus the
   `_generate_icons.py` regeneration script.
+- `assets/linux/` &mdash; Linux app-menu integration: the
+  `cursor-view.desktop` launcher template (with an `@EXEC@` placeholder
+  for the binary path and `Exec=... --desktop`) and `install-linux.sh`,
+  a per-user installer that substitutes the built
+  `dist/cursor-view/cursor-view-desktop` path into the template, copies
+  it plus the icon under `$XDG_DATA_HOME` (default `~/.local/share`),
+  and refreshes the desktop / icon caches.
 - `.github/workflows/desktop-build.yml` &mdash; CI that builds the
   standalone binary on Windows, macOS, and Linux.
 - `requirements.txt`, `frontend/package.json` &mdash; Python and JS

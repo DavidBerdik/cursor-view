@@ -112,6 +112,32 @@ desktop mode from Finder, pass the flag explicitly:
 open -a "Cursor View" --args --desktop
 ```
 
+### Linux desktop integration
+
+On Linux the binary runs from a terminal out of the box, but it won't
+appear in your application menu until you install a `.desktop` launcher.
+A template and a per-user installer ship under `assets/linux/`. After
+building (`pyinstaller cursor-view.spec`), run:
+
+```
+assets/linux/install-linux.sh
+```
+
+This copies `cursor-view.desktop` into `~/.local/share/applications/`
+(with the absolute path to the built `cursor-view-desktop` binary filled
+in) and the icon into `~/.local/share/icons/hicolor/512x512/apps/`, then
+refreshes the menu and icon caches. No root is required &mdash; it writes
+only under `$XDG_DATA_HOME` (default `~/.local/share`). If your binary
+lives somewhere other than `dist/cursor-view/cursor-view-desktop`, pass
+its path explicitly:
+
+```
+assets/linux/install-linux.sh /path/to/cursor-view-desktop
+```
+
+The launcher opens the desktop (webview) UI by passing `--desktop`. Log
+out and back in if the entry doesn't appear in your menu immediately.
+
 ### User preferences / webview profile
 
 When using `--desktop`, the app persists UI preferences (theme, export

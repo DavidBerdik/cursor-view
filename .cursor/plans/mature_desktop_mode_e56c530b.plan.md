@@ -151,10 +151,10 @@ todos:
     status: completed
   - id: 15a-desktop-template
     content: Add assets/linux/cursor-view.desktop template + assets/linux/install-linux.sh helper that copies the file/icon and runs update-desktop-database
-    status: pending
+    status: completed
   - id: 15b-rules-and-docs-linux
     content: Update .cursor/rules/project-layout.mdc assets/ enumeration to include assets/linux/; update README and CONTRIBUTING.md Assets and configuration
-    status: pending
+    status: completed
   - id: 16a-info-plist-uti
     content: Add CFBundleDocumentTypes and UTExportedTypeDeclarations entries to the spec's info_plist for the chosen export file type
     status: pending
