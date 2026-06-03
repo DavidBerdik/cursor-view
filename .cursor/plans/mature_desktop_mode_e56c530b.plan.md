@@ -144,10 +144,10 @@ todos:
     content: "Author .github/workflows/desktop-build.yml with a 3-OS PyInstaller matrix building per-OS artifacts on push to main and on v* tag pushes; per Improvement 07's spec split, each per-OS upload must include both binaries (cursor-view and cursor-view-desktop) from the single COLLECT'd dist/cursor-view/ tree"
     status: completed
   - id: 14b-smoke-test
-    content: "Add a per-OS smoke step that runs dist/cursor-view/cursor-view --help AND dist/cursor-view/cursor-view-desktop --help (the two-EXE split from Improvement 07; once Improvement 21 lands also run --terminal --no-browser) to catch import-time regressions in either binary"
+    content: "Add a per-OS smoke step that runs dist/cursor-view/cursor-view --help AND dist/cursor-view/cursor-view-desktop --help (the two-EXE split from Improvement 07; once Improvement 20 lands also run --terminal --no-browser) to catch import-time regressions in either binary"
     status: completed
   - id: 14c-rules-and-docs-ci
-    content: "Re-read project-layout.mdc Files with no caller clause; if Improvement 23's bug-sweep added a temporary # TODO(bug): marker for the missing workflow, retire it here per known-bugs.mdc and cite the closure in the rule"
+    content: "Re-read project-layout.mdc Files with no caller clause; if Improvement 22's bug-sweep added a temporary # TODO(bug): marker for the missing workflow, retire it here per known-bugs.mdc and cite the closure in the rule"
     status: completed
   - id: 15a-desktop-template
     content: Add assets/linux/cursor-view.desktop template + assets/linux/install-linux.sh helper that copies the file/icon and runs update-desktop-database
@@ -167,64 +167,52 @@ todos:
   - id: 16d-rules-and-docs-uti
     content: Update .cursor/rules/project-layout.mdc frontend structure if a new top-level component dir lands; update README Standalone binary
     status: completed
-  - id: 17a-decision-and-skeleton
-    content: Decide between docs/SIGNING.md vs a new CONTRIBUTING.md section; author the macOS codesign + notarytool + stapler section with env vars listed
-    status: pending
-  - id: 17b-windows-section
-    content: Author the Windows signtool section with the timestamp URL and SHA256 args
-    status: pending
-  - id: 17c-linux-section
-    content: Author the GPG-detached-signature + AppImage --sign section
-    status: pending
-  - id: 17d-rules-and-docs-signing
-    content: Update .cursor/rules/project-layout.mdc if a new top-level dir (docs/ or scripts/) is introduced
-    status: pending
-  - id: 18a-comment-block
+  - id: 17a-comment-block
     content: Add a header comment block to cursor-view.spec recording the onefile vs onedir decision and pointing to the CI workflow if both ship
     status: pending
-  - id: 18b-optional-onefile
+  - id: 17b-optional-onefile
     content: Optionally add a second EXE block with onefile=True and update the CI matrix to upload the second artifact
     status: pending
-  - id: 18c-rules-and-docs-pyinstaller
+  - id: 17c-rules-and-docs-pyinstaller
     content: Update README Standalone binary section to enumerate onefile vs onedir distribution if both ship
     status: pending
-  - id: 19a-navigation-guard
+  - id: 18a-navigation-guard
     content: Implement cursor_view/desktop/navigation.py installing a before_navigate handler that cancels non-loopback URLs and calls webbrowser.open instead; wire from run_desktop
     status: pending
-  - id: 19b-backend-coverage
+  - id: 18b-backend-coverage
     content: Document per-backend before_navigate support (WebView2/WKWebView/WebKitGTK/Qt) and the no-event fallback path
     status: pending
-  - id: 19c-rules-and-docs-nav
+  - id: 18c-rules-and-docs-nav
     content: Add the Same-origin navigation lock invariant to .cursor/rules/desktop-mode.mdc alongside the link-routing invariant
     status: pending
-  - id: 20a-audit-and-list
+  - id: 19a-audit-and-list
     content: Inventory every chrome element that becomes redundant once the menu + external-link routing land (Header GitHub button at minimum)
     status: pending
-  - id: 20b-conditional-hides
+  - id: 19b-conditional-hides
     content: Add isDesktopMode() gates to the chosen elements; never style differently across modes per react-components.mdc Theme ownership
     status: pending
-  - id: 20c-rules-and-docs-affordances
+  - id: 19c-rules-and-docs-affordances
     content: Document the no-duplicate-chrome-vs-menu policy in .cursor/rules/desktop-mode.mdc
     status: pending
-  - id: 21a-cli-default-flip
+  - id: 20a-cli-default-flip
     content: Invert cursor_view/__main__.py default to run_desktop(); add --terminal flag; keep --desktop accepted as a deprecation no-op for one release with a lazy %s info log
     status: pending
-  - id: 21b-spec-update-flip
+  - id: 20b-spec-update-flip
     content: Update cursor-view.spec BUNDLE comment + console default + the macOS .app Info.plist comment to reflect the new default
     status: pending
-  - id: 21c-readme-flip
+  - id: 20c-readme-flip
     content: Flip every README example that assumes terminal-default behavior; add a brief migration note for users coming from previous releases
     status: pending
-  - id: 21d-contributing-flip
+  - id: 20d-contributing-flip
     content: Flip .github/CONTRIBUTING.md Entry points section to describe the new default
     status: pending
-  - id: 21e-rules-and-docs-flip
+  - id: 20e-rules-and-docs-flip
     content: Update .cursor/rules/project-layout.mdc if any wording about terminal-being-default needs to change; add a Default mode note to .cursor/rules/desktop-mode.mdc
     status: pending
-  - id: 22-impl-bug-sweep
-    content: "Re-read every file touched by Improvements 01-21 looking for # TODO(bug): candidates per known-bugs.mdc (three-part marker: prefix, symptom, suspected cause); never silently delete code that looks dead or wrong; update known-bugs.mdc with each new marker citing the file"
+  - id: 21-impl-bug-sweep
+    content: "Re-read every file touched by Improvements 01-20 looking for # TODO(bug): candidates per known-bugs.mdc (three-part marker: prefix, symptom, suspected cause); never silently delete code that looks dead or wrong; update known-bugs.mdc with each new marker citing the file"
     status: pending
-  - id: 23-project-bug-sweep
+  - id: 22-project-bug-sweep
     content: "Sweep the entire repo independently of the desktop work for hardcoded user-specific values, swallow-and-stub exception handlers, connection leaks, scroll/render races, and other patterns matching the retired examples in known-bugs.mdc; the .github/workflows/desktop-build.yml documentation drift is the canonical example this sweep should catch (closed by Improvement 14); add # TODO(bug): markers or fix-in-place per the rule"
     status: pending
 isProject: false
@@ -232,7 +220,7 @@ isProject: false
 
 # Maturing the experimental desktop mode
 
-This plan organizes the work into **21 self-contained improvements** plus **2 final bug-sweep todos**. Each improvement carries its own rule-review and doc-sync subtasks per [`comments-style.mdc`](.cursor/rules/comments-style.mdc) "Rule drift" and [`project-layout.mdc`](.cursor/rules/project-layout.mdc) "Documentation sync", so any subset can be implemented independently.
+This plan organizes the work into **20 self-contained improvements** plus **2 final bug-sweep todos**. Each improvement carries its own rule-review and doc-sync subtasks per [`comments-style.mdc`](.cursor/rules/comments-style.mdc) "Rule drift" and [`project-layout.mdc`](.cursor/rules/project-layout.mdc) "Documentation sync", so any subset can be implemented independently.
 
 ## Current architecture (baseline)
 
@@ -378,7 +366,7 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 **What it is.** [`cursor-view.spec`](cursor-view.spec) builds with `console=True`, so on Windows the `cursor-view.exe` always pops a console window even when `--desktop` is passed. This is the single biggest "this feels unprofessional" issue for Windows users.
 
-**What it does.** Splits the spec into two binaries: the existing console-bearing `cursor-view.exe` (terminal mode default) and a new windowless `cursor-view-desktop.exe` (or after Improvement 21's flip, the other way around). On macOS and Linux the `console` setting has no effect, so the .app bundle and Linux binary are unchanged.
+**What it does.** Splits the spec into two binaries: the existing console-bearing `cursor-view.exe` (terminal mode default) and a new windowless `cursor-view-desktop.exe` (or after Improvement 20's flip, the other way around). On macOS and Linux the `console` setting has no effect, so the .app bundle and Linux binary are unchanged.
 
 **How it will be implemented.**
 - Refactor [`cursor-view.spec`](cursor-view.spec) into a multi-binary spec: two `EXE(...)` blocks sharing the same `Analysis(a)` and `PYZ(pyz)`, differing only in `name` and `console`. The macOS `BUNDLE` wraps the windowless binary. Reference: PyInstaller multi-target spec docs.
@@ -517,7 +505,7 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 **How it will be implemented.**
 - New [`.github/workflows/desktop-build.yml`](.github/workflows/desktop-build.yml) using a 3-OS `matrix.os: [ubuntu-latest, windows-latest, macos-latest]`.
-- Per-OS steps: checkout, setup Python 3.11, setup Node 20, `pip install -r requirements.txt`, `npm ci && npm run build` in `frontend/`, `pyinstaller cursor-view.spec`, smoke-test BOTH `dist/cursor-view/cursor-view --help` AND `dist/cursor-view/cursor-view-desktop --help` (the two-EXE split landed in Improvement 07 — a single `cursor-view --help` would not catch an import-time regression in the desktop-only path; once Improvement 21 lands also run `--terminal --no-browser`), `actions/upload-artifact@v4` for the per-OS dist folder (which contains both binaries from a single `COLLECT()`).
+- Per-OS steps: checkout, setup Python 3.11, setup Node 20, `pip install -r requirements.txt`, `npm ci && npm run build` in `frontend/`, `pyinstaller cursor-view.spec`, smoke-test BOTH `dist/cursor-view/cursor-view --help` AND `dist/cursor-view/cursor-view-desktop --help` (the two-EXE split landed in Improvement 07 — a single `cursor-view --help` would not catch an import-time regression in the desktop-only path; once Improvement 20 lands also run `--terminal --no-browser`), `actions/upload-artifact@v4` for the per-OS dist folder (which contains both binaries from a single `COLLECT()`).
 - Trigger on `push` to `main` AND on `push` of tags matching `v*`. Tag pushes additionally upload to a draft release via `softprops/action-gh-release`.
 - Decide if Linux build also produces an AppImage now or later (defer to follow-up).
 
@@ -565,30 +553,7 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 ---
 
-## Improvement 17 - Code-signing / notarization documentation
-
-**What it is.** Distributable binaries on macOS need codesign + notarization to avoid Gatekeeper rejection beyond the existing `xattr -dr com.apple.quarantine` workaround documented in README. Windows users hit SmartScreen on unsigned `.exe` files. Linux is mostly fine without signing.
-
-**What it does.** Adds a new top-level documentation file (`docs/SIGNING.md`) — or a new "Code signing" section in CONTRIBUTING.md — covering:
-- macOS: `codesign --deep --options runtime --sign <ID>`, `xcrun notarytool submit`, `xcrun stapler staple`, env vars (`APPLE_ID`, `APPLE_TEAM_ID`, `APPLE_APP_PASSWORD`).
-- Windows: `signtool sign /fd SHA256 /a /tr <timestamp_url> /td SHA256 cursor-view.exe`, env vars for cert thumbprint.
-- Linux: GPG-detached-signature flow for downloads + AppImage `--sign` notes.
-
-The doc explicitly does NOT procure or store certificates; it documents the procedure for someone (the maintainer or a contributor with their own cert) to follow.
-
-**How it will be implemented.**
-- Decision needed (in 17a): standalone `docs/SIGNING.md` versus a new section in CONTRIBUTING.md. The `docs/` directory does not currently exist; per [`project-layout.mdc`](.cursor/rules/project-layout.mdc) "Do not create a new top-level Python file unless it is a shim" the rule applies to Python only — top-level non-Python directories are allowed but should still be enumerated in the rule's expectations.
-- Optional helper scripts under `scripts/` (also new) gated on env-var presence.
-
-**Todos**
-- `17a-decision-and-skeleton`: Decide doc location + author the macOS section.
-- `17b-windows-section`: Author the Windows signtool section.
-- `17c-linux-section`: Author the GPG / AppImage section.
-- `17d-rules-and-docs`: Update [`project-layout.mdc`](.cursor/rules/project-layout.mdc) if a new top-level dir (`docs/` or `scripts/`) is introduced.
-
----
-
-## Improvement 18 - PyInstaller `--onefile` vs `--onedir` decision recorded in spec
+## Improvement 17 - PyInstaller `--onefile` vs `--onedir` decision recorded in spec
 
 **What it is.** The current spec is `--onedir` shape (multiple files in `dist/cursor-view/`). On Windows distribution this complicates "just download the .exe" UX; a `--onefile` build produces a single self-extracting binary at the cost of a slower cold start.
 
@@ -599,13 +564,13 @@ The doc explicitly does NOT procure or store certificates; it documents the proc
 - If shipping both: add a second `EXE` block in the spec with `onefile=True` (PyInstaller 6 syntax) and update CI matrix to upload both.
 
 **Todos**
-- `18a-comment-block`: Add the decision-record comment to `cursor-view.spec`.
-- `18b-optional-onefile`: Optionally add the second EXE block + CI artifact.
-- `18c-rules-and-docs`: No rule update expected. Update README "Standalone binary" to mention onefile vs onedir if both ship.
+- `17a-comment-block`: Add the decision-record comment to `cursor-view.spec`.
+- `17b-optional-onefile`: Optionally add the second EXE block + CI artifact.
+- `17c-rules-and-docs`: No rule update expected. Update README "Standalone binary" to mention onefile vs onedir if both ship.
 
 ---
 
-## Improvement 19 - Same-origin navigation lock
+## Improvement 18 - Same-origin navigation lock
 
 **What it is.** Even after Improvement 09 routes anchor clicks externally, raw `window.location = "https://..."` (or a navigation triggered by some library code) still navigates the embedded webview away from the loopback origin. This is both a security concern (the webview becomes a general-purpose browser an attacker can pivot through) and a UX concern (the user has no back button).
 
@@ -617,13 +582,13 @@ The doc explicitly does NOT procure or store certificates; it documents the proc
 - Per [`python-standards.mdc`](.cursor/rules/python-standards.mdc) "Module and function size", the navigation guard lives in a new sibling [`cursor_view/desktop/navigation.py`](cursor_view/desktop/navigation.py) so `__init__.py` stays small.
 
 **Todos**
-- `19a-navigation-guard`: Implement `cursor_view/desktop/navigation.py` and wire from `run_desktop`.
-- `19b-backend-coverage`: Document per-backend support in the new desktop-mode rule.
-- `19c-rules-and-docs`: Add the "Same-origin navigation lock" invariant to `.cursor/rules/desktop-mode.mdc` alongside the link-routing invariant from Improvement 09.
+- `18a-navigation-guard`: Implement `cursor_view/desktop/navigation.py` and wire from `run_desktop`.
+- `18b-backend-coverage`: Document per-backend support in the new desktop-mode rule.
+- `18c-rules-and-docs`: Add the "Same-origin navigation lock" invariant to `.cursor/rules/desktop-mode.mdc` alongside the link-routing invariant from Improvement 09.
 
 ---
 
-## Improvement 20 - Desktop-mode UI affordances
+## Improvement 19 - Desktop-mode UI affordances
 
 **What it is.** A few small UI elements in the React app are oddly redundant once a native menu and external-link routing are in place. The Header GitHub button (terminal-mode browser-tab affordance) is a duplicate of the Help → GitHub menu item. Some chat-detail toolbar buttons may also have natural menu equivalents.
 
@@ -631,19 +596,19 @@ The doc explicitly does NOT procure or store certificates; it documents the proc
 
 **How it will be implemented.**
 - [`Header.js`](frontend/src/components/Header.js) GitHub button wraps in `{!isDesktopMode() && (...)}` (per-call gate, no provider needed; `isDesktopMode()` is cheap).
-- Other affordances are inventoried in 20a; the change list emerges from that audit.
+- Other affordances are inventoried in 19a; the change list emerges from that audit.
 - Per [`react-components.mdc`](.cursor/rules/react-components.mdc) "Theme ownership", no styling difference between modes — only show/hide.
 
 **Todos**
-- `20a-audit-and-list`: Inventory UI elements that become redundant in desktop mode.
-- `20b-conditional-hides`: Add `isDesktopMode()` gates in chosen places (Header GitHub button at minimum).
-- `20c-rules-and-docs`: No rule update expected. Document the policy in `.cursor/rules/desktop-mode.mdc` ("Use `isDesktopMode()` gates for redundant-in-desktop UI; never duplicate the menu in chrome").
+- `19a-audit-and-list`: Inventory UI elements that become redundant in desktop mode.
+- `19b-conditional-hides`: Add `isDesktopMode()` gates in chosen places (Header GitHub button at minimum).
+- `19c-rules-and-docs`: No rule update expected. Document the policy in `.cursor/rules/desktop-mode.mdc` ("Use `isDesktopMode()` gates for redundant-in-desktop UI; never duplicate the menu in chrome").
 
 ---
 
-## Improvement 21 - GATED: Default-mode flip
+## Improvement 20 - GATED: Default-mode flip
 
-**What it is.** Once Improvements 01-20 (or a chosen subset) have landed, `cursor_view/__main__.py` should default to `--desktop` and require `--terminal` to opt back into the Flask + browser flow. This is the last functional change before the bug sweeps.
+**What it is.** Once Improvements 01-19 (or a chosen subset) have landed, `cursor_view/__main__.py` should default to `--desktop` and require `--terminal` to opt back into the Flask + browser flow. This is the last functional change before the bug sweeps.
 
 **What it does.** Inverts the default in `__main__.py`, renames the existing `--desktop` flag to a no-op alias (kept for one release), introduces `--terminal`, updates the `.app` Info.plist comment, updates the spec console=False default (couples with Improvement 07), and updates README + CONTRIBUTING + project-layout.mdc to reflect the new default.
 
@@ -654,21 +619,21 @@ The doc explicitly does NOT procure or store certificates; it documents the proc
 - macOS `.app` Info.plist comment in [`cursor-view.spec`](cursor-view.spec) flipped.
 
 **Todos**
-- `21a-cli-default-flip`: Invert `__main__.py` default + add `--terminal` + deprecate `--desktop`.
-- `21b-spec-update`: Update the spec's `BUNDLE` comment + Linux/Windows behavior comment.
-- `21c-readme-flip`: Flip README examples.
-- `21d-contributing-flip`: Flip CONTRIBUTING.md entry-points section.
-- `21e-rules-and-docs`: Update [`project-layout.mdc`](.cursor/rules/project-layout.mdc) if any wording about terminal-being-default needs to change. Add a `Default mode` note to `.cursor/rules/desktop-mode.mdc`.
+- `20a-cli-default-flip`: Invert `__main__.py` default + add `--terminal` + deprecate `--desktop`.
+- `20b-spec-update`: Update the spec's `BUNDLE` comment + Linux/Windows behavior comment.
+- `20c-readme-flip`: Flip README examples.
+- `20d-contributing-flip`: Flip CONTRIBUTING.md entry-points section.
+- `20e-rules-and-docs`: Update [`project-layout.mdc`](.cursor/rules/project-layout.mdc) if any wording about terminal-being-default needs to change. Add a `Default mode` note to `.cursor/rules/desktop-mode.mdc`.
 
 ---
 
 ## Final - Bug sweeps
 
-**Improvement 22 - Implementation bug sweep**
+**Improvement 21 - Implementation bug sweep**
 
-Re-read every file touched by Improvements 01-21 and look for symptoms that warrant a `# TODO(bug):` marker per [`known-bugs.mdc`](.cursor/rules/known-bugs.mdc). The marker has three required parts: the literal `# TODO(bug):` prefix, a one-line **symptom** description (what the user observes when the bug fires), and a follow-up sentence on the **suspected cause** (which invariant is violated). For any code path that "looks dead or wrong" — never silently delete it; add the marker.
+Re-read every file touched by Improvements 01-20 and look for symptoms that warrant a `# TODO(bug):` marker per [`known-bugs.mdc`](.cursor/rules/known-bugs.mdc). The marker has three required parts: the literal `# TODO(bug):` prefix, a one-line **symptom** description (what the user observes when the bug fires), and a follow-up sentence on the **suspected cause** (which invariant is violated). For any code path that "looks dead or wrong" — never silently delete it; add the marker.
 
-**Improvement 23 - Project-wide bug sweep**
+**Improvement 22 - Project-wide bug sweep**
 
 Independently of the desktop work, sweep the entire repo for hardcoded user-specific values, swallow-and-stub exception handlers, connection leaks, scroll/render races, and other patterns matching the retired examples in [`known-bugs.mdc`](.cursor/rules/known-bugs.mdc). The "documentation drift" between [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)'s reference to `.github/workflows/desktop-build.yml` and the file's actual absence in the tree is itself the canonical example of the kind of issue this sweep should catch (and is closed by Improvement 14).
 
