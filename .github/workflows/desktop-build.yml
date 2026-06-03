@@ -80,7 +80,7 @@ jobs:
 
       # --help only parses args (the desktop launcher imports pywebview
       # lazily), so this catches import-time regressions in either binary
-      # without needing a display server. Once Improvement 20 lands, also
+      # without needing a display server. Once Improvement 19 lands, also
       # run `--terminal --no-browser` here.
       #
       # The output paths are platform-branched to match the spec
