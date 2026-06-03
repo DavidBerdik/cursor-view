@@ -35,63 +35,77 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
-# Two thin EXE entry points share a single Analysis / PYZ / runtime tree.
-# The split exists to fix the "this feels unprofessional" issue on Windows
-# where the console-bearing binary (console=True) pops a console window
-# even when --desktop is passed: the second windowless binary
-# (console=False) is the one Windows users should launch for the desktop
-# UI. exclude_binaries=True on each EXE moves the shared bootloader /
-# Python runtime / `datas` / `binaries` into the single COLLECT() below
-# instead of duplicating them per EXE, keeping dist/ at one runtime tree
-# with two ~MB-scale launchers next to it. On macOS and Linux the
-# `console` setting has no Windows-style "pops a console window" effect,
-# but each platform's bootloader still differs slightly between the two
-# variants -- the split is harmless on those platforms and lets the
-# macOS BUNDLE below wrap the windowless variant verbatim.
-exe_terminal = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='cursor-view',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=True,
-    icon=ICON,
-)
-
-exe_desktop = EXE(
-    pyz,
-    a.scripts,
-    [],
-    exclude_binaries=True,
-    name='cursor-view-desktop',
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    icon=ICON,
-)
-
-coll = COLLECT(
-    exe_terminal,
-    exe_desktop,
-    a.binaries,
-    a.datas,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    name='cursor-view',
-)
+# Two thin entry points share a single Analysis / PYZ. The split exists to
+# fix the "this feels unprofessional" issue on Windows where the
+# console-bearing binary (console=True) pops a console window even when
+# --desktop is passed: the windowless binary (console=False) is the one
+# Windows users should launch for the desktop UI. On macOS and Linux the
+# `console` setting has no Windows-style "pops a console window" effect, but
+# each platform's bootloader still differs slightly between the two variants.
+#
+# Distribution shape is platform-branched (Improvement 17):
+#
+# - Windows / Linux build two *onefile* binaries. Passing `a.binaries` +
+#   `a.datas` positionally into each EXE (instead of exclude_binaries=True
+#   plus a shared COLLECT) folds the bootloader, Python runtime,
+#   frontend/build, and the vendored mermaid.min.js inside the single file,
+#   so the distributable is one self-contained executable per launcher
+#   (`dist/cursor-view[.exe]`, `dist/cursor-view-desktop[.exe]`) with no
+#   sibling runtime tree. The tradeoff is that the runtime is duplicated
+#   across the two files (~2x total size vs a shared COLLECT) and each
+#   launch re-extracts to a temp dir once (a small cold-start hit) -- the
+#   accepted cost of "just download one file" distribution.
+#
+# - macOS keeps the onedir COLLECT() + BUNDLE shape. The .app is already a
+#   self-contained artifact users drag to /Applications, and a onefile
+#   binary inside a .app would re-extract to a temp dir on every launch for
+#   no UX gain. exclude_binaries=True moves the shared runtime into the
+#   single COLLECT() the BUNDLE wraps.
 
 if sys.platform == 'darwin':
+    exe_terminal = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='cursor-view',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=True,
+        icon=ICON,
+    )
+
+    exe_desktop = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True,
+        name='cursor-view-desktop',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,
+        icon=ICON,
+    )
+
+    coll = COLLECT(
+        exe_terminal,
+        exe_desktop,
+        a.binaries,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name='cursor-view',
+    )
+
     # The macOS .app wraps the *windowless* cursor-view-desktop binary
     # (CFBundleExecutable below) so the bundle aligns with the binary that
     # is intended for double-click launches. Until Improvement 20 flips the
@@ -170,4 +184,42 @@ if sys.platform == 'darwin':
                 },
             ],
         },
+    )
+else:
+    # Windows / Linux: two self-contained onefile binaries, no COLLECT.
+    # `a.binaries` + `a.datas` are passed positionally into each EXE (rather
+    # than exclude_binaries=True + COLLECT) so every dependency ships inside
+    # the single output file.
+    exe_terminal = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='cursor-view',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=True,
+        icon=ICON,
+    )
+
+    exe_desktop = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.datas,
+        [],
+        name='cursor-view-desktop',
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,
+        icon=ICON,
     )

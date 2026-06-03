@@ -1,12 +1,15 @@
 # Builds the standalone Cursor View binaries on all three desktop OSes.
 #
-# A single `pyinstaller cursor-view.spec` run produces one COLLECT'd
-# dist/cursor-view/ tree holding BOTH side-by-side launchers from the
-# Improvement 07 spec split:
+# A single `pyinstaller cursor-view.spec` run produces BOTH launchers from
+# the Improvement 07 spec split:
 #   - cursor-view          (console=True, terminal-mode default)
 #   - cursor-view-desktop  (console=False, windowless desktop launcher)
-# so each per-OS artifact uploads the whole tree and the smoke step
-# exercises both launchers. A regression that only breaks the
+# The on-disk shape is platform-branched (Improvement 17): Windows and
+# Linux build self-contained --onefile binaries directly under dist/
+# (dist/cursor-view[.exe], dist/cursor-view-desktop[.exe]), while macOS
+# keeps the onedir COLLECT() tree under dist/cursor-view/ that the .app
+# wraps. Either way the dist/ artifact captures both launchers and the
+# smoke step exercises both: a regression that only breaks the
 # desktop-only import path would slip past a lone `cursor-view --help`,
 # which is why both binaries are probed below.
 name: desktop-build
@@ -79,8 +82,19 @@ jobs:
       # lazily), so this catches import-time regressions in either binary
       # without needing a display server. Once Improvement 20 lands, also
       # run `--terminal --no-browser` here.
-      - name: Smoke-test binaries (Unix)
-        if: runner.os != 'Windows'
+      #
+      # The output paths are platform-branched to match the spec
+      # (Improvement 17): Windows and Linux build self-contained onefile
+      # binaries directly under dist/, while macOS keeps the onedir
+      # COLLECT() tree under dist/cursor-view/ that the .app wraps.
+      - name: Smoke-test binaries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./dist/cursor-view --help
+          ./dist/cursor-view-desktop --help
+
+      - name: Smoke-test binaries (macOS)
+        if: runner.os == 'macOS'
         run: |
           ./dist/cursor-view/cursor-view --help
           ./dist/cursor-view/cursor-view-desktop --help
@@ -89,8 +103,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          .\dist\cursor-view\cursor-view.exe --help
-          .\dist\cursor-view\cursor-view-desktop.exe --help
+          .\dist\cursor-view.exe --help
+          .\dist\cursor-view-desktop.exe --help
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4

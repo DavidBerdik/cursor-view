@@ -9,14 +9,15 @@
 #   assets/linux/install-linux.sh [PATH_TO_cursor-view-desktop]
 #
 # With no argument the script looks for the binary the PyInstaller spec
-# produces at <repo>/dist/cursor-view/cursor-view-desktop. Pass an
-# explicit path if you installed the binary elsewhere.
+# produces. On Linux that is the self-contained --onefile binary at
+# <repo>/dist/cursor-view-desktop. Pass an explicit path if you installed
+# the binary elsewhere.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-BINARY="${1:-$REPO_ROOT/dist/cursor-view/cursor-view-desktop}"
+BINARY="${1:-$REPO_ROOT/dist/cursor-view-desktop}"
 
 if [ ! -x "$BINARY" ]; then
     echo "error: cursor-view-desktop binary not found or not executable:" >&2

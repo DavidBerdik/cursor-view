@@ -724,12 +724,17 @@ raises `ProgrammingError`).
 ## Assets and configuration
 
 - `cursor-view.spec` &mdash; PyInstaller spec that bundles
-  `cursor_view_main.py` and `frontend/build/` into two side-by-side
-  binaries (`cursor-view`, `console=True`; `cursor-view-desktop`,
-  `console=False`) sharing one `Analysis` / `PYZ` / `COLLECT` runtime
-  tree. The split exists so Windows desktop-mode launches do not pop
-  a console window for stdout; on macOS and Linux the `console`
-  setting has no user-visible effect. The macOS `BUNDLE` `info_plist`
+  `cursor_view_main.py` and `frontend/build/` into two binaries
+  (`cursor-view`, `console=True`; `cursor-view-desktop`,
+  `console=False`) that share one `Analysis` / `PYZ`. The split exists
+  so Windows desktop-mode launches do not pop a console window for
+  stdout; on macOS and Linux the `console` setting has no user-visible
+  effect. Distribution shape is platform-branched off `sys.platform`
+  (Improvement 17): Windows and Linux build self-contained `--onefile`
+  binaries directly under `dist/` (each folds `a.binaries` + `a.datas`
+  in, so it carries its own runtime), while macOS keeps the onedir
+  `COLLECT()` + `BUNDLE` so the `.app` stays the self-contained Mac
+  artifact. The macOS `BUNDLE` `info_plist`
   also declares a Cursor-View-owned UTI (`dev.cursor-view.chat-export`,
   `UTExportedTypeDeclarations`) and registers the app as its viewer
   (`CFBundleDocumentTypes`), so double-clicking an exported chat saved
@@ -741,9 +746,9 @@ raises `ProgrammingError`).
   `cursor-view.desktop` launcher template (with an `@EXEC@` placeholder
   for the binary path and `Exec=... --desktop`) and `install-linux.sh`,
   a per-user installer that substitutes the built
-  `dist/cursor-view/cursor-view-desktop` path into the template, copies
-  it plus the icon under `$XDG_DATA_HOME` (default `~/.local/share`),
-  and refreshes the desktop / icon caches.
+  `dist/cursor-view-desktop` path (the Linux `--onefile` binary) into the
+  template, copies it plus the icon under `$XDG_DATA_HOME` (default
+  `~/.local/share`), and refreshes the desktop / icon caches.
 - `.github/workflows/desktop-build.yml` &mdash; CI that builds the
   standalone binary on Windows, macOS, and Linux.
 - `requirements.txt`, `frontend/package.json` &mdash; Python and JS
@@ -764,8 +769,9 @@ Then build with PyInstaller using the included spec:
 pyinstaller cursor-view.spec
 ```
 
-This produces a single `dist/cursor-view/` tree containing two
-side-by-side binaries that share one bundled Python runtime:
+This produces output whose shape depends on the platform (the spec
+branches on `sys.platform`). Both binaries differ only in whether they
+keep a console window:
 
 - `cursor-view` &mdash; original console-bearing binary (`console=True`
   in the spec). On Windows, launching it always shows a console window
@@ -776,19 +782,25 @@ side-by-side binaries that share one bundled Python runtime:
   `console` setting has no user-visible effect, so the two binaries
   are functionally identical there.
 
-The macOS `BUNDLE` block wraps `cursor-view-desktop`
-(`CFBundleExecutable: 'cursor-view-desktop'` in the spec's
-`info_plist`), so the `.app` ships the windowless variant by default.
+On **Windows and Linux** each is built `--onefile`: a single
+self-contained executable directly under `dist/` that carries its own
+copy of the Python runtime, `frontend/build`, and the vendored mermaid
+asset. On **macOS** the spec keeps the onedir `COLLECT()` tree under
+`dist/cursor-view/` plus `dist/Cursor View.app`, which wraps
+`cursor-view-desktop` (`CFBundleExecutable: 'cursor-view-desktop'` in
+the spec's `info_plist`); the `.app` is the self-contained Mac
+distributable and the onefile penalty (re-extracting to a temp dir on
+every launch) is deliberately avoided there.
 
 Per-OS output:
 
-- Windows: `dist/cursor-view/cursor-view.exe`,
-  `dist/cursor-view/cursor-view-desktop.exe`
+- Windows: `dist/cursor-view.exe`, `dist/cursor-view-desktop.exe`
+  (self-contained single files)
+- Linux:   `dist/cursor-view`, `dist/cursor-view-desktop`
+  (self-contained single files)
 - macOS:   `dist/cursor-view/cursor-view`,
   `dist/cursor-view/cursor-view-desktop`,
   plus `dist/Cursor View.app` wrapping `cursor-view-desktop`
-- Linux:   `dist/cursor-view/cursor-view`,
-  `dist/cursor-view/cursor-view-desktop`
 
 On macOS, unsigned local builds may be quarantined by Gatekeeper. To run
 without code signing:

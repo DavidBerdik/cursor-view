@@ -69,8 +69,8 @@ sudo apt install libwebkit2gtk-4.1-0
 
 ### Running the binary
 
-The build ships two executables side-by-side in `dist/cursor-view/` that
-share a single bundled Python runtime:
+The build ships two executables that differ only in whether they keep a
+console window:
 
 - `cursor-view` &mdash; the original console-bearing binary. On Windows,
   launching it always shows a Windows console window for stdout, even
@@ -80,6 +80,13 @@ share a single bundled Python runtime:
   which is the only practical difference; on macOS and Linux the
   `console` setting has no user-visible effect, so the two binaries
   behave identically there.
+
+On **Windows and Linux** these are self-contained single-file binaries
+(`dist/cursor-view[.exe]` and `dist/cursor-view-desktop[.exe]`) &mdash;
+each bundles its own copy of the runtime, so you can copy just the one
+file you want and run it anywhere. On **macOS** the distributable is the
+`Cursor View.app` bundle (plus a `dist/cursor-view/` support tree); see
+the macOS note below.
 
 Both binaries accept the same flags (`__main__.py` still defaults to
 terminal mode for either binary; you opt into the webview UI by passing
@@ -128,8 +135,8 @@ This copies `cursor-view.desktop` into `~/.local/share/applications/`
 in) and the icon into `~/.local/share/icons/hicolor/512x512/apps/`, then
 refreshes the menu and icon caches. No root is required &mdash; it writes
 only under `$XDG_DATA_HOME` (default `~/.local/share`). If your binary
-lives somewhere other than `dist/cursor-view/cursor-view-desktop`, pass
-its path explicitly:
+lives somewhere other than `dist/cursor-view-desktop`, pass its path
+explicitly:
 
 ```
 assets/linux/install-linux.sh /path/to/cursor-view-desktop

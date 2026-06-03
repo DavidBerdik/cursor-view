@@ -169,13 +169,13 @@ todos:
     status: completed
   - id: 17a-onefile-spec
     content: Convert cursor-view.spec to platform-branched onefile EXEs for Windows/Linux (exclude_binaries=False, fold a.binaries + a.datas into each EXE, no COLLECT) while keeping the macOS COLLECT + BUNDLE so the .app stays the self-contained Mac artifact; add a header comment recording the onefile decision and its size/cold-start tradeoffs
-    status: pending
+    status: completed
   - id: 17b-ci-paths
     content: Update .github/workflows/desktop-build.yml smoke-test and artifact paths for the onefile outputs on Windows/Linux (dist/cursor-view, dist/cursor-view-desktop with no cursor-view/ subdir) while leaving the macOS dist/cursor-view/ tree paths intact
-    status: pending
+    status: completed
   - id: 17c-rules-and-docs-pyinstaller
     content: Update README Standalone binary and CONTRIBUTING.md to describe the per-OS distribution shape (single-file self-contained binaries on Windows/Linux; the .app bundle on macOS)
-    status: pending
+    status: completed
   - id: 18a-navigation-guard
     content: Implement cursor_view/desktop/navigation.py installing a before_navigate handler that cancels non-loopback URLs and calls webbrowser.open instead; wire from run_desktop
     status: pending
