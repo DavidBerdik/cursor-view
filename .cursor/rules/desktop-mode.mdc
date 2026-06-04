@@ -309,6 +309,18 @@ authenticates. Exposing the token to the page via `get_token()` is safe
 token's job is to lock out *other* local processes that can read neither
 the bridge nor the in-page value.
 
+The bridge's **own** in-process loopback calls to `/api/*` are subject
+to the same gate as any other client and must attach the
+`X-Cursor-View-Token` header from `self._token` themselves: a bare
+`urllib.request.urlopen` carries no cookie jar and never sees the
+frontend's axios header. The only such caller today is
+[`DesktopApi.save_export`](../../cursor_view/desktop/api.py), whose
+export fetch builds a `urllib.request.Request` and adds the header
+before opening it; omitting it 401s the request and silently breaks the
+desktop "Save as..." flow. Any new bridge method that fetches from
+`/api/*` must do the same. Regression-pinned by
+[`tests/test_desktop_export_auth.py`](../../tests/test_desktop_export_auth.py).
+
 **Terminal mode never calls `install_auth`**, so browser mode is
 unchanged and unauthenticated exactly as before. Regression-pinned by
 [`tests/test_desktop_auth.py`](../../tests/test_desktop_auth.py)

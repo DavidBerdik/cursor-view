@@ -4,19 +4,19 @@ overview: "Port the proven fix from commit 035ab389 onto the current branch: mak
 todos:
   - id: import
     content: Add `from cursor_view.desktop.auth import TOKEN_HEADER` to cursor_view/desktop/api.py imports
-    status: pending
+    status: completed
   - id: fix
     content: Build a urllib.request.Request in save_export and attach the X-Cursor-View-Token header from self._token before urlopen
-    status: pending
+    status: completed
   - id: test
     content: Add tests/test_desktop_export_auth.py (SaveExportAttachesTokenTest) replicating commit 035ab389
-    status: pending
+    status: completed
   - id: rules
     content: Sync desktop-mode.mdc (bridge loopback calls carry the token) and known-bugs.mdc (add retired entry, bump count)
-    status: pending
+    status: completed
   - id: verify
     content: Run the new test plus the full unittest suite to confirm green
-    status: pending
+    status: completed
 isProject: false
 ---
 
