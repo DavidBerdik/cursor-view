@@ -48,24 +48,19 @@ def _lock_path() -> pathlib.Path:
 
 
 def read_lock() -> dict | None:
-    """Return the parsed lockfile contents, or None if missing / malformed."""
+    """Return the parsed lockfile contents, or None if missing / malformed.
+
+    A lockfile that parses as valid JSON but is not an object (a bare
+    scalar / array, from external tampering or a torn write) is treated as
+    malformed and yields None, so callers that guard on `is not None` and
+    then call `.get()` never see a non-dict.
+    """
     path = _lock_path()
-    # TODO(bug): A desktop.lock holding valid-but-non-object JSON (a bare
-    # number / string / array, e.g. from external tampering or a torn write
-    # that happens to land on a scalar) makes the launcher abort with no
-    # window and no native error dialog -- on the windowless Windows binary
-    # the user just sees nothing. Suspected cause: this function is annotated
-    # `-> dict | None` but returns whatever `json.loads` yields, and the
-    # callers (`acquire_lock`, `release_lock`, and `run_desktop`'s
-    # notify-existing branch) call `.get()` on it without an
-    # `isinstance(..., dict)` guard, so a non-dict result raises
-    # `AttributeError`; `acquire_lock` runs *after* `run_desktop`'s startup
-    # try/except, so the error escapes the Improvement-03 error-window
-    # routing entirely. Behavior left unchanged per known-bugs.mdc.
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    return data if isinstance(data, dict) else None
 
 
 def _write_lock(port: int) -> None:

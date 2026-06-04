@@ -61,6 +61,26 @@ class DesktopSingleInstanceTest(unittest.TestCase):
         self.assertTrue(single_instance.acquire_lock(40003))
         self.assertEqual(single_instance.read_lock()["port"], 40003)
 
+    def test_non_object_lockfile_is_treated_as_absent(self) -> None:
+        # A desktop.lock that is valid JSON but NOT an object (a bare
+        # scalar / array from external tampering or a torn write) must not
+        # crash acquire_lock with AttributeError on the `existing.get(...)`
+        # call. read_lock treats it as malformed (None), so acquire_lock
+        # takes the lock over exactly like a missing / stale one.
+        path = self.cache_dir / single_instance.LOCK_FILENAME
+        for payload in ("42", '"a string"', "[1, 2, 3]", "null"):
+            path.write_text(payload, encoding="utf-8")
+            self.assertIsNone(
+                single_instance.read_lock(),
+                f"non-object lockfile {payload!r} must read as None",
+            )
+            self.assertTrue(
+                single_instance.acquire_lock(40050),
+                f"acquire_lock must take over a non-object lockfile {payload!r}",
+            )
+            self.assertEqual(single_instance.read_lock()["pid"], os.getpid())
+            single_instance.release_lock()
+
     def test_stale_lock_is_reclaimed(self) -> None:
         # A PID this large cannot name a live process on any supported
         # platform, so the lock is stale and acquire takes it over.

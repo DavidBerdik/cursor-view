@@ -4,16 +4,16 @@ overview: "Fix the single live documented bug in known-bugs.mdc: the non-object 
 todos:
   - id: fix-read-lock
     content: "Guard read_lock to return None for non-object JSON (isinstance check) and remove the # TODO(bug): marker, documenting intent in the docstring"
-    status: pending
+    status: completed
   - id: add-test
     content: "Add a regression test to tests/test_desktop_single_instance.py: non-object lockfile payloads make read_lock return None and acquire_lock succeed without raising"
-    status: pending
+    status: completed
   - id: retire-rule
     content: "Update known-bugs.mdc: flip to 'No live markers', move read_lock to the retired list, and correct the retired-count header (Nine -> Eleven, fixing the existing drift)"
-    status: pending
+    status: completed
   - id: verify
     content: "Run python -m unittest discover -s tests and confirm green; grep TODO(bug): to confirm no live marker remains"
-    status: pending
+    status: completed
 isProject: false
 ---
 
