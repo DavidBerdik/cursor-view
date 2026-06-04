@@ -31,6 +31,14 @@ def extract_project_from_git_repos(workspace_id, debug=False):
             logger.debug("Workspace DB not found for ID: %s", workspace_id)
         return None
 
+    # Initialize con to None up front so the finally can release it on
+    # every exit -- including an exception raised after connect but before
+    # a manual close. The pre-fix code closed con only on the explicit
+    # return paths and let the broad ``except`` return without closing,
+    # leaking the handle whenever cur.execute / j() raised. Mirrors
+    # workspace_info in inference.py and the try/finally discipline in
+    # sqlite-cursor-db.mdc.
+    con = None
     try:
         # Connect to the workspace DB
         if debug:
@@ -47,7 +55,6 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                     workspace_id,
                     git_data,
                 )
-            con.close()
             return None
 
         # Extract repo paths from the 'all' key
@@ -59,7 +66,6 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                     workspace_id,
                     repos,
                 )
-            con.close()
             return None
 
         if debug:
@@ -90,7 +96,6 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                             project_name,
                             workspace_id,
                         )
-                    con.close()
                     return project_name
             else:
                 if debug:
@@ -98,10 +103,12 @@ def extract_project_from_git_repos(workspace_id, debug=False):
 
         if debug:
             logger.debug("No suitable git repos found in workspace %s", workspace_id)
-        con.close()
     except Exception as e:
         if debug:
             logger.debug("Error extracting git repos from workspace %s: %s", workspace_id, e)
         return None
+    finally:
+        if con is not None:
+            con.close()
 
     return None

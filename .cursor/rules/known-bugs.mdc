@@ -35,12 +35,21 @@ One live `# TODO(bug):` marker is in the tree at present:
   the Improvement 18 implementation bug sweep and left behavior-unchanged
   per this rule rather than fixed in the sweep.
 
-Nine retired examples now live in git history:
+Ten retired examples now live in git history:
 
 - the swallow-and-stub exception handler in
   `cursor_view/chat_format.py::format_chat_for_frontend`,
 - the connection leak in
   `cursor_view/sources/item_table.py::iter_global_legacy_chatdata`,
+- the connection leak in
+  `cursor_view/projects/git.py::extract_project_from_git_repos` (the
+  function closed `con` only on its explicit return paths and let the
+  broad `except Exception` return `None` without closing it, leaking the
+  read-only handle whenever `cur.execute` / `j()` raised against a
+  corrupt or `ItemTable`-less workspace DB; closed by the Improvement 19
+  project-wide bug sweep with the `con = None` + `try/finally` pattern
+  from [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc), regression-pinned
+  by `tests/test_known_bug_fixes.py::ExtractProjectFromGitReposClosesConnectionTest`),
 - the soft-deletion trigger gap in
   `cursor_view/cache/delta/propagation.py::_apply_secondary_pass`
   (a parent in `dirty.modified_cids` whose primary extraction
