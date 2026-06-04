@@ -17,26 +17,26 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-One live `# TODO(bug):` marker is in the tree at present:
+No live `# TODO(bug):` markers are in the tree at present.
+
+Eleven retired examples now live in git history:
 
 - the desktop-export auth-token omission in
   `cursor_view/desktop/api.py::DesktopApi.save_export` (in desktop mode
-  the native "Save as..." dialog completes and the user picks a path,
-  but no file is written and the UI surfaces an HTTP 401 error). The
-  method builds a loopback `GET /api/chat/<id>/export` and reads it with
-  `urllib.request.urlopen`, but that in-process request carries neither
+  the native "Save as..." dialog completed and the user picked a path,
+  but no file was written and the UI surfaced an HTTP 401 error). The
+  method built a loopback `GET /api/chat/<id>/export` and read it with
+  `urllib.request.urlopen`, but that in-process request carried neither
   the `X-Cursor-View-Token` header (the frontend's `useDesktopAuth` sets
   it on axios only, not on Python's `urllib`) nor the `cursor-view-token`
   cookie (no cookie jar on a bare `urlopen`), so the `install_auth`
-  `before_request` gate added in Improvement 10 401s the request and
-  `urlopen` raises into the `except` that returns `{"saved": False,
-  "error": ...}`. `save_export` predates the auth gate and was never
-  updated to attach `self._token` to its own loopback call. Surfaced by
-  the Improvement 18 implementation bug sweep and left behavior-unchanged
-  per this rule rather than fixed in the sweep.
-
-Ten retired examples now live in git history:
-
+  `before_request` gate added in Improvement 10 401'd the request and
+  `urlopen` raised into the `except` that returns `{"saved": False,
+  "error": ...}`. Surfaced by the Improvement 18 implementation bug
+  sweep and left behavior-unchanged then; closed afterward by building a
+  `urllib.request.Request` and attaching the `X-Cursor-View-Token` header
+  from `self._token` before `urlopen`, regression-pinned by
+  `tests/test_desktop_export_auth.py::SaveExportAttachesTokenTest`,
 - the swallow-and-stub exception handler in
   `cursor_view/chat_format.py::format_chat_for_frontend`,
 - the connection leak in

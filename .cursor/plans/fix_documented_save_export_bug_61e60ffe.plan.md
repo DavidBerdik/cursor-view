@@ -4,19 +4,19 @@ overview: "Fix the one open documented bug in known-bugs.mdc: the desktop save_e
 todos:
   - id: fix-save-export
     content: "In cursor_view/desktop/api.py: import TOKEN_HEADER from cursor_view.desktop.auth, replace the tokenless urlopen(url) with a urllib.request.Request that adds the X-Cursor-View-Token header from self._token when present, and remove the # TODO(bug): marker block."
-    status: pending
+    status: completed
   - id: add-regression-test
     content: "Add tests/test_desktop_export_auth.py with a webview-import skip guard: mock webview.active_window + create_file_dialog and capture urllib.request.urlopen's Request to assert save_export attaches the token header and writes the fetched bytes."
-    status: pending
+    status: completed
   - id: sync-known-bugs
     content: "Update .cursor/rules/known-bugs.mdc: flip the live-marker section back to 'No live markers', bump Ten -> Eleven retired examples, and add the save_export fix as a retired example citing the new regression test."
-    status: pending
+    status: completed
   - id: sync-desktop-mode-rule
     content: Update .cursor/rules/desktop-mode.mdc 'Loopback-token auth' section with the invariant that the bridge's own in-process /api/* loopback calls (save_export) must attach the X-Cursor-View-Token header.
-    status: pending
+    status: completed
   - id: verify-tests
     content: Run python -m unittest discover -s tests (and the new test in isolation) to confirm green, then ReadLints on the edited Python files.
-    status: pending
+    status: completed
 isProject: false
 ---
 

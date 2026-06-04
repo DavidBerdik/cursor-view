@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 import webview
 
 from cursor_view import __version__
+from cursor_view.desktop.auth import TOKEN_HEADER
 from cursor_view.desktop.reveal import open_path, reveal_in_file_manager
 from cursor_view.paths import cursor_view_cache_dir, cursor_view_log_dir
 
@@ -339,16 +340,15 @@ class DesktopApi:
         if theme in ("light", "dark"):
             url += f"&theme={theme}"
 
-        # TODO(bug): In desktop mode the Save/Export action fails -- the native
-        # "Save as..." dialog completes and the user picks a path, but no file
-        # is written and the UI reports an error (HTTP 401). Suspected cause:
-        # this in-process loopback GET to /api/chat/<id>/export carries neither
-        # the X-Cursor-View-Token header nor the cursor-view-token cookie, so
-        # the install_auth before_request gate (Improvement 10) 401s it and
-        # urlopen raises into the except below; save_export predates that gate
-        # and was never updated to attach self._token to its own request.
+        # The /api/* loopback endpoints are gated by install_auth in desktop
+        # mode (cursor_view/desktop/auth.py), so this in-process request must
+        # present the same per-launch token the frontend sends -- a bare
+        # urllib call carries no cookie jar, so the header is the only path.
+        request = urllib.request.Request(url)
+        if self._token:
+            request.add_header(TOKEN_HEADER, self._token)
         try:
-            with urllib.request.urlopen(url, timeout=30) as resp:
+            with urllib.request.urlopen(request, timeout=30) as resp:
                 data = resp.read()
             pathlib.Path(path).write_bytes(data)
         except Exception as e:
