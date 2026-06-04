@@ -74,6 +74,11 @@ class DirtySet:
     # dirtiness from link-driven dirtiness; apply behavior is
     # identical for propagated and direct cids.
     subagent_propagated_cids: set[str] = field(default_factory=set)
+    # Source DB paths whose read FAILED this pass (exists-but-unreadable:
+    # a transient lock or corruption), as opposed to genuinely empty. The
+    # deletion pass skips cached rows under these paths so a failed read
+    # never deletes a still-present source's chats.
+    unreadable_db_paths: set[str] = field(default_factory=set)
 
     def has_changes(self) -> bool:
         """True iff the apply step has any work to do."""

@@ -4,10 +4,10 @@ overview: "Fix the three live `# TODO(bug):` markers documented in known-bugs.md
 todos:
   - id: fix-mass-deletion
     content: "Bug 1: add DirtySet.unreadable_db_paths (types.py); record failed reads in global_db.py (_diff_global_db open + _diff_global_cursor_disk_kv/_diff_global_legacy_chatdata scan) and workspace_db.py (_fetch_workspace_item_rows return None on error, _diff_workspace_db records + returns); skip unreadable db_paths in _process_deletions (propagation.py). Remove the engine.py TODO(bug) marker."
-    status: pending
+    status: completed
   - id: test-mass-deletion
     content: "Add a regression test (tests/test_chat_index_incremental.py): build an index with a global chat, refresh again while patching global_db sqlite3.connect to raise DatabaseError for the source path, assert the chat is preserved; confirm legitimate deletion still works."
-    status: pending
+    status: completed
   - id: fix-nondict-composer
     content: "Bug 2: add `if not isinstance(composer_data, dict): continue` to iter_composer_data and iter_composer_data_for_cids (composer_data.py), guard the composer.composerData read in item_table.py if needed, and remove the global_composers.py TODO(bug) marker."
     status: pending

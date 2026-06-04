@@ -1153,6 +1153,95 @@ class IncrementalRefreshTest(unittest.TestCase):
             "Without a headers array, every bubble falls through the legacy path",
         )
 
+    # ---------------------------------------------------------------
+    # Regression: unreadable source DB must not delete its chats
+    # ---------------------------------------------------------------
+    def test_unreadable_source_db_preserves_chats(self) -> None:
+        """A source DB that exists but fails to read must not delete its chats.
+
+        Reproduces the silent cache data-loss bug: an incremental
+        refresh that hits ``sqlite3.DatabaseError`` reading the global
+        ``state.vscdb`` (a transient lock or corruption -- the common
+        "exists-but-unreadable" case, since Cursor is an active writer)
+        used to record no ``source_row_snapshot`` rows for that DB, so
+        ``_process_deletions`` routed every cached cid with no snapshot
+        row into ``deleted_cids`` and ``apply_delta`` deleted them. The
+        failed read now lands the path in
+        ``DirtySet.unreadable_db_paths`` and ``_process_deletions``
+        preserves its cached chats until a later successful read. The
+        companion half of the test drives a genuine removal (source
+        readable, the composer's rows actually gone) to prove the fix
+        does not disable legitimate deletion.
+        """
+        cid = "abcdabcd-0000-0000-0000-000000000001"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("Locked DB"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("hi"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("yo", role_type=2))
+
+        ci = self._build_index()
+        self.assertIsNotNone(self._summary(cid))
+
+        # ``global_db`` does ``import sqlite3``, so patching
+        # ``global_db.sqlite3.connect`` actually swaps the attribute on
+        # the shared sqlite3 module -- which the cache connection in
+        # ``_compute_source_diff`` / ``_apply_delta`` also uses. Scope
+        # the failure to the global state.vscdb path and delegate every
+        # other connect to the real implementation so only the global
+        # DB's read hits the exists-but-unreadable early-return path.
+        real_connect = sqlite3.connect
+        global_uri = f"file:{self.global_db}?mode=ro"
+
+        def _fail_only_global(target, *args, **kwargs):
+            if target == global_uri:
+                raise sqlite3.DatabaseError("database is locked")
+            return real_connect(target, *args, **kwargs)
+
+        with patch(
+            "cursor_view.cache.diff.global_db.sqlite3.connect",
+            side_effect=_fail_only_global,
+        ):
+            dirty = self._refresh(ci)
+
+        self.assertIn(str(self.global_db), dirty.unreadable_db_paths)
+        self.assertNotIn(cid, dirty.deleted_cids)
+        self.assertIsNotNone(
+            self._summary(cid),
+            "An unreadable source DB must not delete its cached chats",
+        )
+
+    def test_genuine_removal_still_deletes(self) -> None:
+        """A readable source missing a composer's rows must still delete it.
+
+        Companion to ``test_unreadable_source_db_preserves_chats``: the
+        unreadable-path guard must not disable legitimate deletion. Here
+        the global ``state.vscdb`` reads successfully on the refresh but
+        no longer contains the composer's rows (the genuine
+        composer-deleted case), so the cid must route into
+        ``deleted_cids`` and disappear from the cache.
+        """
+        cid = "abcdabcd-1111-1111-1111-111111111111"
+        _put_kv(self.global_db, f"composerData:{cid}", _composer("To Delete"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b1", _bubble("hi"))
+        _put_kv(self.global_db, f"bubbleId:{cid}:b2", _bubble("yo", role_type=2))
+
+        ci = self._build_index()
+        self.assertIsNotNone(self._summary(cid))
+
+        con = sqlite3.connect(self.global_db)
+        try:
+            con.execute("DELETE FROM cursorDiskKV WHERE key LIKE ?", (f"%{cid}%",))
+            con.commit()
+        finally:
+            con.close()
+
+        dirty = self._refresh(ci)
+        self.assertNotIn(str(self.global_db), dirty.unreadable_db_paths)
+        self.assertIn(cid, dirty.deleted_cids)
+        self.assertIsNone(
+            self._summary(cid),
+            "A readable source that no longer contains the composer must still delete it",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

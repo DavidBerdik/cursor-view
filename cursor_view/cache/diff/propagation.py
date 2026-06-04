@@ -27,6 +27,11 @@ def _process_deletions(
     }
     cids_missing: set[str] = set()
     for sk, (_hash, composer_id) in cached.items():
+        if sk.db_path in dirty.unreadable_db_paths:
+            # Source unreadable this pass -> we have no snapshot to compare,
+            # so preserve its cached chats rather than treating the empty
+            # snapshot as "everything deleted".
+            continue
         if sk in dirty.source_row_snapshot:
             continue
         if composer_id:

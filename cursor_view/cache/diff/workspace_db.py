@@ -40,8 +40,15 @@ _WS_PROJECT_KEYS = frozenset({
 _WS_COMPMETA_KEY = "composer.composerData"
 
 
-def _fetch_workspace_item_rows(db: pathlib.Path) -> list[tuple[str, Any]]:
-    """Fetch every ``ItemTable`` row the extraction pipeline consumes from one workspace DB."""
+def _fetch_workspace_item_rows(db: pathlib.Path) -> list[tuple[str, Any]] | None:
+    """Fetch every ``ItemTable`` row the extraction pipeline consumes from one workspace DB.
+
+    Returns ``None`` (not ``[]``) when the read FAILS -- the
+    exists-but-unreadable case (transient lock or corruption) -- so the
+    caller can distinguish it from a genuinely empty result and avoid
+    routing this DB's cached chats into deletion. A successful read of a
+    DB with no matching rows still returns ``[]``.
+    """
     con = None
     try:
         try:
@@ -69,7 +76,7 @@ def _fetch_workspace_item_rows(db: pathlib.Path) -> list[tuple[str, Any]]:
             return list(cur.fetchall())
         except sqlite3.DatabaseError as e:
             logger.debug("Error scanning workspace ItemTable %s: %s", db, e)
-            return []
+            return None
     finally:
         if con is not None:
             con.close()
@@ -148,6 +155,12 @@ def _diff_workspace_db(
     db_path_str = str(db)
     ws_promoted = dirty.workspace_comp2ws_dirty.setdefault(workspace_id, set())
     rows = _fetch_workspace_item_rows(db)
+    if rows is None:
+        # Exists-but-unreadable: record so _process_deletions preserves
+        # this DB's cached chats rather than treating the empty snapshot
+        # as "everything deleted".
+        dirty.unreadable_db_paths.add(db_path_str)
+        return
 
     for key, value in rows:
         row_hash = _hash_value(value)

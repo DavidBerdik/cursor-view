@@ -65,6 +65,7 @@ def _diff_global_cursor_disk_kv(
         rows = cur.fetchall()
     except sqlite3.DatabaseError as e:
         logger.debug("Error scanning cursorDiskKV in %s: %s", db_path_str, e)
+        dirty.unreadable_db_paths.add(db_path_str)
         return
 
     for key, value in rows:
@@ -94,6 +95,7 @@ def _diff_global_legacy_chatdata(
         row = cur.fetchone()
     except sqlite3.DatabaseError as e:
         logger.debug("Error reading global legacy chatdata: %s", e)
+        dirty.unreadable_db_paths.add(db_path_str)
         return
     if row is None:
         return
@@ -121,6 +123,7 @@ def _diff_global_db(
             cur = con.cursor()
         except sqlite3.DatabaseError as e:
             logger.debug("Error opening global DB %s: %s", db, e)
+            dirty.unreadable_db_paths.add(db_path_str)
             return
         _diff_global_cursor_disk_kv(cur, db_path_str, cached, dirty)
         _diff_global_legacy_chatdata(cur, db_path_str, cached, dirty)

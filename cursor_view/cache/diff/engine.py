@@ -77,17 +77,10 @@ def compute_source_diff(
             _diff_workspace_db(ws_id, db, cached_rows, known_cids, dirty)
             _diff_workspace_json(db.parent, ws_id, cached_rows, dirty)
 
-    # TODO(bug): A transient/locked/corrupt read of a source state.vscdb during
-    # an incremental refresh silently deletes that DB's chats from the cache --
-    # the user sees them disappear from the UI until a later successful refresh
-    # re-extracts them. Suspected cause: _diff_global_db / _diff_workspace_db
-    # return early on sqlite3.DatabaseError without recording any
-    # source_row_snapshot rows for that DB (the file still passed the db.exists()
-    # check above, so this is the "exists but unreadable" case, common because
-    # Cursor is an active writer), and _process_deletions then cannot tell
-    # "source unreadable this pass" from "composer genuinely deleted" -- it
-    # routes every cached cid with no snapshot row into dirty.deleted_cids, which
-    # apply_delta deletes and commits.
+    # A source DB that exists but fails to read this pass (transient
+    # lock or corruption) is recorded in ``dirty.unreadable_db_paths`` by
+    # the per-source diffs; ``_process_deletions`` skips its cached rows
+    # so a failed read preserves that DB's chats instead of deleting them.
     _process_deletions(cached_rows, dirty)
 
     # Drop tool_call_parent rows whose parent is being deleted. Upserts
