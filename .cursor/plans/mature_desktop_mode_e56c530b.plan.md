@@ -193,7 +193,7 @@ todos:
     status: completed
   - id: 19-impl-bug-sweep
     content: "Re-read every file touched by Improvements 01-18 looking for # TODO(bug): candidates per known-bugs.mdc (three-part marker: prefix, symptom, suspected cause); never silently delete code that looks dead or wrong; update known-bugs.mdc with each new marker citing the file"
-    status: pending
+    status: completed
   - id: 20-project-bug-sweep
     content: "Sweep the entire repo independently of the desktop work for hardcoded user-specific values, swallow-and-stub exception handlers, connection leaks, scroll/render races, and other patterns matching the retired examples in known-bugs.mdc; the .github/workflows/desktop-build.yml documentation drift is the canonical example this sweep should catch (closed by Improvement 14); add # TODO(bug): markers or fix-in-place per the rule"
     status: pending

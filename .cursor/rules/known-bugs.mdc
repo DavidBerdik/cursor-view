@@ -17,7 +17,30 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` markers are in the tree at present.
+One live `# TODO(bug):` marker is in the tree at present:
+
+- the non-object lockfile crash in
+  `cursor_view/desktop/single_instance.py::read_lock` (found by the
+  Improvement 19 implementation bug sweep). A `desktop.lock` whose
+  contents are valid JSON that is **not** an object — a bare number,
+  string, or array, from external tampering or a torn write that
+  coincidentally lands on a scalar — makes the desktop launcher abort
+  with no window and no native error dialog; on the windowless Windows
+  binary the user sees nothing at all. Suspected cause: `read_lock` is
+  annotated `-> dict | None` but returns whatever `json.loads` yields,
+  and its callers (`acquire_lock`, `release_lock`, and `run_desktop`'s
+  notify-existing branch) call `.get()` on the result without an
+  `isinstance(..., dict)` guard, so a non-dict value raises
+  `AttributeError`. Because `acquire_lock` runs *after* `run_desktop`'s
+  startup `try/except`, the error escapes the Improvement-03
+  startup-error-window routing rather than surfacing in a dialog. Left
+  unchanged per this rule (sweep adds the marker; the fix — a single
+  `return data if isinstance(data, dict) else None` in `read_lock`, which
+  closes every call site at once — is deferred until explicitly
+  requested). The marker is unusually reachable for a "torn write" class
+  bug because `acquire_lock` runs on every second launch while a first
+  instance holds the lock, which is the common double-click case
+  single-instance enforcement exists to handle.
 
 Nine retired examples now live in git history:
 
