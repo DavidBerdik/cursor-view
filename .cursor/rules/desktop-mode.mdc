@@ -12,6 +12,32 @@ at a random loopback port. The invariants below are the ones that are
 easy to regress because they straddle the Python launcher, the embedded
 webview, and the React app.
 
+## Default mode
+
+Desktop mode is the **default** CLI mode (Improvement 18). `python3 -m
+cursor_view` (and either PyInstaller binary, launched with no flag) calls
+`run_desktop()`; `--terminal` is the opt-in for the legacy Flask +
+browser flow in `cursor_view/terminal.py::run_server`. The dispatch lives
+in `cursor_view/__main__.py`, where `terminal_mode = args.terminal and
+args.file is None` — a positional file argument always forces the desktop
+single-chat viewer (the `/viewer` route exists only in desktop mode), so
+a file overrides `--terminal` with a lazy `%s` warning. The legacy
+`--desktop` flag is accepted for one release as a **deprecated no-op**
+(it now selects what is already the default) and logs a lazy `%s`
+`logger.info` deprecation notice when passed; it must keep working until
+the next release removes it. Terminal-only flags (`--port`, `--debug`,
+`--no-browser`) are warned-and-ignored in desktop mode, mirroring the
+pre-flip behavior. The two repo-root shims stay mode-locked: `desktop.py`
+always launches desktop mode and `terminal.py` always launches terminal
+mode, neither going through the `__main__.py` argparse dispatch.
+
+When this default is revisited, keep `cursor_view/__main__.py`, the
+`cursor-view.spec` `.app` comment, the README "Setup &amp; Running" /
+"Standalone binary" examples, and the CONTRIBUTING "Entry points" section
+in sync — they all describe the same default and drift between them is
+exactly what [`comments-style.mdc`](comments-style.mdc) "Rule drift"
+guards against.
+
 ## Wait before navigating
 
 `cursor_view/desktop/__init__.py::run_desktop` must **never** point the
@@ -347,9 +373,10 @@ owns the contract:
   being passed, not on a successful parse, so a malformed file still
   lands on `/viewer` where the React viewer shows its empty state.
 - `cursor_view/__main__.py` treats a positional file argument as
-  implying desktop mode (the viewer route exists only there, and the
-  macOS file-type association in `cursor-view.spec` launches via `open`
-  without `--desktop`).
+  forcing desktop mode (the viewer route exists only there) even when
+  `--terminal` is also passed, and the macOS file-type association in
+  `cursor-view.spec` launches via `open` with the file path as the only
+  argument (no mode flag — desktop is the default).
 
 Frontend: [`ChatViewer`](../../frontend/src/components/viewer/ChatViewer.js)
 fetches `/api/viewer/opened` and reuses the chat-detail

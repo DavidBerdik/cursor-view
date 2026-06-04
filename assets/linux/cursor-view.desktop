@@ -6,8 +6,8 @@ GenericName=Cursor Chat Viewer
 Comment=View, search, and export your Cursor AI chat histories
 # @EXEC@ is a placeholder substituted with the absolute path to the
 # built cursor-view-desktop binary by assets/linux/install-linux.sh.
-# --desktop launches the native webview UI rather than the browser flow.
-Exec=@EXEC@ --desktop
+# No flag is needed: the binary defaults to the native webview UI.
+Exec=@EXEC@
 Icon=cursor-view
 Terminal=false
 Categories=Development;Utility;

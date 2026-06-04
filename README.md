@@ -25,38 +25,53 @@ _Contributing to Cursor View? See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTI
    npm install
    npm run build
    ```
-4. Start the server:
+4. Launch the app:
    ```
-   python3 terminal.py
+   python3 -m cursor_view
    ```
-5. Open your browser to http://localhost:5000
+   This opens the native desktop (webview) window. To use the
+   classic Flask server + browser flow instead, pass `--terminal`:
+   ```
+   python3 -m cursor_view --terminal
+   ```
+   then open your browser to http://localhost:5000 (or run
+   `python3 terminal.py`, the terminal-mode shim).
+
+> **Migrating from a previous release?** The default used to be the
+> terminal/browser flow, and the desktop window was opt-in via
+> `--desktop`. That is now inverted: the desktop UI is the default, and
+> `--desktop` is a deprecated no-op kept for one release. Add
+> `--terminal` anywhere you previously relied on the default browser
+> behavior, and drop `--desktop` from launch scripts.
 
 ## Standalone binary
 
 Cursor View can also be packaged as a standalone binary so it can be run
-without a Python toolchain. By default the binary behaves the same way as
-`python3 terminal.py`: it starts a local Flask server and opens the chat UI
-in your default browser. Passing `--desktop` opts into an experimental
-mode where the UI is rendered inside a native OS webview window (WebView2
-on Windows, WKWebView on macOS, WebKitGTK/Qt on Linux) via
-[pywebview](https://pywebview.flowrl.com/).
+without a Python toolchain. By default the binary launches the native OS
+webview window (WebView2 on Windows, WKWebView on macOS, WebKitGTK/Qt on
+Linux) via [pywebview](https://pywebview.flowrl.com/). Passing
+`--terminal` opts into the classic flow instead: it starts a local Flask
+server and opens the chat UI in your default browser.
 
-**Local-process security boundary.** In `--desktop` mode the local API is
-protected by a per-launch secret token: the webview sends it on every
-request, and any other process on your machine that connects to the
-loopback port without it gets a `401`. This narrows the exposure of your
-chat data to the desktop window itself. Terminal/browser mode is
-unchanged &mdash; it serves the API to your browser without this token,
-exactly as before, so treat the terminal-mode server as accessible to any
-local process (the same as any local dev server).
+**Local-process security boundary.** In desktop mode (the default) the
+local API is protected by a per-launch secret token: the webview sends it
+on every request, and any other process on your machine that connects to
+the loopback port without it gets a `401`. This narrows the exposure of
+your chat data to the desktop window itself. Terminal/browser mode
+(`--terminal`) is unchanged &mdash; it serves the API to your browser
+without this token, exactly as before, so treat the terminal-mode server
+as accessible to any local process (the same as any local dev server).
 
 ### Run from source (desktop mode)
 
 ```
 python3 -m pip install -r requirements.txt
 cd frontend && npm install && npm run build && cd ..
-python3 desktop.py
+python3 -m cursor_view
 ```
+
+(`python3 desktop.py` is an equivalent shim that always launches desktop
+mode.)
 
 On Linux you may also need system webview libraries, e.g. on Debian/Ubuntu:
 
@@ -72,14 +87,14 @@ sudo apt install libwebkit2gtk-4.1-0
 The build ships two executables that differ only in whether they keep a
 console window:
 
+- `cursor-view-desktop` &mdash; a windowless variant, and the one most
+  users should launch now that desktop mode is the default. On Windows it
+  never shows the console window; on macOS and Linux the `console` setting
+  has no user-visible effect, so the two binaries behave identically
+  there.
 - `cursor-view` &mdash; the original console-bearing binary. On Windows,
-  launching it always shows a Windows console window for stdout, even
-  with `--desktop`.
-- `cursor-view-desktop` &mdash; a windowless variant intended for
-  desktop-mode launches. On Windows it never shows the console window,
-  which is the only practical difference; on macOS and Linux the
-  `console` setting has no user-visible effect, so the two binaries
-  behave identically there.
+  launching it always shows a Windows console window for stdout, which is
+  handy when you run `--terminal` or want to watch the logs.
 
 On **Windows and Linux** these are self-contained single-file binaries
 (`dist/cursor-view[.exe]` and `dist/cursor-view-desktop[.exe]`) &mdash;
@@ -88,20 +103,24 @@ file you want and run it anywhere. On **macOS** the distributable is the
 `Cursor View.app` bundle (plus a `dist/cursor-view/` support tree); see
 the macOS note below.
 
-Both binaries accept the same flags (`__main__.py` still defaults to
-terminal mode for either binary; you opt into the webview UI by passing
-`--desktop`):
+Both binaries accept the same flags (`__main__.py` defaults to the webview
+UI for either binary; pass `--terminal` for the classic Flask + browser
+flow):
 
 ```
-cursor-view                          # terminal/server mode + auto-open browser
-cursor-view --no-browser             # server only; open the browser yourself
-cursor-view --port 8080              # use a different port
-cursor-view --desktop                # webview UI (Windows: console window shows up)
-cursor-view-desktop --desktop        # webview UI with no Windows console window
+cursor-view-desktop                  # webview UI (no Windows console window)
+cursor-view                          # webview UI (Windows: console window shows up too)
+cursor-view --terminal               # terminal/server mode + auto-open browser
+cursor-view --terminal --no-browser  # server only; open the browser yourself
+cursor-view --terminal --port 8080   # use a different port
 ```
 
-In `--desktop` mode the window carries a native File / Edit / View / Help
-menu bar (Reload, Quit, clipboard edit commands, Toggle Theme, plus
+The legacy `--desktop` flag is still accepted but is now a deprecated
+no-op (it selects what is already the default) and will be removed in a
+future release.
+
+In desktop mode (the default) the window carries a native File / Edit /
+View / Help menu bar (Reload, Quit, clipboard edit commands, Toggle Theme, plus
 Documentation / GitHub links that open in your default browser). On
 backends without native menu support (notably some Linux WebKitGTK
 builds) the menu is omitted and every action remains reachable from the
@@ -109,14 +128,13 @@ in-app UI.
 
 On macOS the `.app` bundle wraps the windowless `cursor-view-desktop`
 binary (the two binaries are functionally identical on macOS), so
-double-clicking `Cursor View.app` in Finder still starts the Flask
-server and opens the browser today. Finder shows it under the
-"Developer Tools" category, and in desktop mode its window chrome
-follows the system light/dark appearance. To launch the experimental
-desktop mode from Finder, pass the flag explicitly:
+double-clicking `Cursor View.app` in Finder launches the desktop window
+directly. Finder shows it under the "Developer Tools" category, and its
+window chrome follows the system light/dark appearance. To launch the
+classic Flask + browser flow from Finder instead, pass `--terminal`:
 
 ```
-open -a "Cursor View" --args --desktop
+open -a "Cursor View" --args --terminal
 ```
 
 ### Linux desktop integration
@@ -142,8 +160,8 @@ explicitly:
 assets/linux/install-linux.sh /path/to/cursor-view-desktop
 ```
 
-The launcher opens the desktop (webview) UI by passing `--desktop`. Log
-out and back in if the entry doesn't appear in your menu immediately.
+The launcher opens the desktop (webview) UI, which is the default mode.
+Log out and back in if the entry doesn't appear in your menu immediately.
 
 ### Opening an exported chat
 
@@ -166,8 +184,8 @@ regardless of extension.)
 
 ### User preferences / webview profile
 
-When using `--desktop`, the app persists UI preferences (theme, export
-warning opt-out) in a per-user webview profile directory:
+In desktop mode (the default), the app persists UI preferences (theme,
+export warning opt-out) in a per-user webview profile directory:
 
 - Windows: `%LOCALAPPDATA%\cursor-view\webview-storage`
 - macOS:   `~/Library/Caches/cursor-view/webview-storage`
@@ -185,7 +203,7 @@ first place to look &mdash; and the file to attach to a bug report
 &mdash; when the desktop app misbehaves, since the windowless Windows
 binary has no console to print to.
 
-Desktop mode is single-instance: launching `--desktop` while it is
+Desktop mode is single-instance: launching it again while it is
 already running focuses the existing window instead of opening a second
 one. It tracks the running instance with a `desktop.lock` file in the
 same cache directory (next to `webview-storage/`); the file is removed

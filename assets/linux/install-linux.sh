@@ -62,7 +62,7 @@ fi
 echo "Installed Cursor View desktop integration:"
 echo "  launcher: $DESKTOP_DEST"
 echo "  icon:     $ICON_DIR/cursor-view.png"
-echo "  exec:     $BINARY --desktop"
+echo "  exec:     $BINARY"
 echo
 echo "Cursor View should now appear in your application menu. If it does"
 echo "not, log out and back in (or restart your desktop shell) to pick up"

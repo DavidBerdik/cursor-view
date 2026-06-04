@@ -4,8 +4,9 @@
 Starts the Flask app on a fixed port (default 5000) and, unless suppressed
 with ``--no-browser``, opens the user's default browser at the chat UI.
 Invoked as ``python3 terminal.py`` via the repo-root shim, or as
-``python3 -m cursor_view`` for the unified dispatcher; the ``--desktop``
-mode lives in :mod:`cursor_view.desktop`.
+``python3 -m cursor_view --terminal`` for the unified dispatcher (which
+now defaults to the desktop mode that lives in
+:mod:`cursor_view.desktop`).
 """
 
 import argparse

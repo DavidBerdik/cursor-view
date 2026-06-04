@@ -6,13 +6,15 @@ root are thin shims; the bulk of the code lives inside the
 
 ## Entry points
 
-- `terminal.py` &mdash; starts the Flask server and opens the chat UI
-  in your browser (the default mode).
-- `desktop.py` &mdash; launches the same Flask server inside a native
-  pywebview window.
 - `cursor_view_main.py` &mdash; unified entry point used by PyInstaller;
-  dispatches to terminal or desktop mode based on `--desktop`.
-  Equivalent to `python3 -m cursor_view`.
+  equivalent to `python3 -m cursor_view`. Defaults to the native
+  pywebview desktop UI; pass `--terminal` for the Flask server + browser
+  flow. The legacy `--desktop` flag is accepted for one release as a
+  deprecated no-op (it selects what is already the default).
+- `desktop.py` &mdash; thin shim that always launches the desktop UI
+  (the same as the unified default).
+- `terminal.py` &mdash; thin shim that always starts the Flask server and
+  opens the chat UI in your browser (equivalent to `--terminal`).
 
 ## Backend (`cursor_view/`)
 
@@ -749,7 +751,8 @@ raises `ProgrammingError`).
   `_generate_icons.py` regeneration script.
 - `assets/linux/` &mdash; Linux app-menu integration: the
   `cursor-view.desktop` launcher template (with an `@EXEC@` placeholder
-  for the binary path and `Exec=... --desktop`) and `install-linux.sh`,
+  for the binary path; no flag needed since desktop mode is the default)
+  and `install-linux.sh`,
   a per-user installer that substitutes the built
   `dist/cursor-view-desktop` path (the Linux `--onefile` binary) into the
   template, copies it plus the icon under `$XDG_DATA_HOME` (default
@@ -780,12 +783,12 @@ keep a console window:
 
 - `cursor-view` &mdash; original console-bearing binary (`console=True`
   in the spec). On Windows, launching it always shows a console window
-  for stdout, even with `--desktop`.
+  for stdout, which is useful for `--terminal` or watching logs.
 - `cursor-view-desktop` &mdash; windowless variant (`console=False`).
-  On Windows this is the binary desktop-mode users should launch
-  because it never pops a console window. On macOS and Linux the
-  `console` setting has no user-visible effect, so the two binaries
-  are functionally identical there.
+  On Windows this is the binary most users should launch now that
+  desktop mode is the default, because it never pops a console window.
+  On macOS and Linux the `console` setting has no user-visible effect,
+  so the two binaries are functionally identical there.
 
 On **Windows and Linux** each is built `--onefile`: a single
 self-contained executable directly under `dist/` that carries its own

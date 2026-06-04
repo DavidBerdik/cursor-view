@@ -37,11 +37,13 @@ pyz = PYZ(a.pure)
 
 # Two thin entry points share a single Analysis / PYZ. The split exists to
 # fix the "this feels unprofessional" issue on Windows where the
-# console-bearing binary (console=True) pops a console window even when
-# --desktop is passed: the windowless binary (console=False) is the one
-# Windows users should launch for the desktop UI. On macOS and Linux the
-# `console` setting has no Windows-style "pops a console window" effect, but
-# each platform's bootloader still differs slightly between the two variants.
+# console-bearing binary (console=True) pops a console window. Since the
+# CLI now defaults to the desktop UI (Improvement 18), the windowless
+# binary (console=False) is the one Windows users should launch by default;
+# the console-bearing binary stays available for `--terminal` and for
+# anyone who wants to see stdout. On macOS and Linux the `console` setting
+# has no Windows-style "pops a console window" effect, but each platform's
+# bootloader still differs slightly between the two variants.
 #
 # Distribution shape is platform-branched (Improvement 17):
 #
@@ -108,15 +110,11 @@ if sys.platform == 'darwin':
 
     # The macOS .app wraps the *windowless* cursor-view-desktop binary
     # (CFBundleExecutable below) so the bundle aligns with the binary that
-    # is intended for double-click launches. Until Improvement 18 flips the
-    # CLI default, cursor_view/__main__.py still defaults to terminal mode
-    # on either binary, so double-clicking the .app today starts the Flask
-    # server and opens the browser, exactly as before. The experimental
-    # webview UI still requires --desktop, e.g.:
-    #     open -a "Cursor View" --args --desktop
-    # After Improvement 18, the same .app will default to the webview UI
-    # without any spec change, because the bundled binary is already the
-    # windowless variant.
+    # is intended for double-click launches. As of Improvement 18,
+    # cursor_view/__main__.py defaults to the webview UI, so double-clicking
+    # the .app launches the desktop window directly with no flag. To run the
+    # legacy Flask + browser flow from Finder instead, pass --terminal:
+    #     open -a "Cursor View" --args --terminal
     app = BUNDLE(
         coll,
         name='Cursor View.app',
@@ -143,11 +141,11 @@ if sys.platform == 'darwin':
             # theme; without this key the surrounding native chrome would
             # stay light even in macOS dark mode.
             'NSRequiresAquaSystemAppearance': False,
-            # Keep LSUIElement False so that --desktop mode (the only case
-            # the .app shows a window) gets a proper Dock entry. In default
-            # terminal mode the .app will briefly show a Dock icon for a
-            # windowless process; flipping this to True would also hide
-            # the desktop window from the Dock, which is worse.
+            # Keep LSUIElement False so that desktop mode (now the default,
+            # and the case the .app shows a window) gets a proper Dock
+            # entry. In --terminal mode the .app will briefly show a Dock
+            # icon for a windowless process; flipping this to True would
+            # also hide the desktop window from the Dock, which is worse.
             'LSUIElement': False,
             'NSHighResolutionCapable': True,
             # File-type association for exported chats (Improvement 16).

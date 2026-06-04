@@ -178,19 +178,19 @@ todos:
     status: completed
   - id: 18a-cli-default-flip
     content: Invert cursor_view/__main__.py default to run_desktop(); add --terminal flag; keep --desktop accepted as a deprecation no-op for one release with a lazy %s info log
-    status: pending
+    status: completed
   - id: 18b-spec-update-flip
     content: Update cursor-view.spec BUNDLE comment + console default + the macOS .app Info.plist comment to reflect the new default
-    status: pending
+    status: completed
   - id: 18c-readme-flip
     content: Flip every README example that assumes terminal-default behavior; add a brief migration note for users coming from previous releases
-    status: pending
+    status: completed
   - id: 18d-contributing-flip
     content: Flip .github/CONTRIBUTING.md Entry points section to describe the new default
-    status: pending
+    status: completed
   - id: 18e-rules-and-docs-flip
     content: Update .cursor/rules/project-layout.mdc if any wording about terminal-being-default needs to change; add a Default mode note to .cursor/rules/desktop-mode.mdc
-    status: pending
+    status: completed
   - id: 19-impl-bug-sweep
     content: "Re-read every file touched by Improvements 01-18 looking for # TODO(bug): candidates per known-bugs.mdc (three-part marker: prefix, symptom, suspected cause); never silently delete code that looks dead or wrong; update known-bugs.mdc with each new marker citing the file"
     status: pending
