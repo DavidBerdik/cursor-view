@@ -40,7 +40,7 @@ _Contributing to Cursor View? See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTI
 > **Migrating from a previous release?** The default used to be the
 > terminal/browser flow, and the desktop window was opt-in via
 > `--desktop`. That is now inverted: the desktop UI is the default, and
-> `--desktop` is a deprecated no-op kept for one release. Add
+> the `--desktop` flag has been removed (passing it is now an error). Add
 > `--terminal` anywhere you previously relied on the default browser
 > behavior, and drop `--desktop` from launch scripts.
 
@@ -115,9 +115,8 @@ cursor-view --terminal --no-browser  # server only; open the browser yourself
 cursor-view --terminal --port 8080   # use a different port
 ```
 
-The legacy `--desktop` flag is still accepted but is now a deprecated
-no-op (it selects what is already the default) and will be removed in a
-future release.
+The legacy `--desktop` flag has been removed now that desktop mode is the
+default; passing it is an error. Drop it from any launch scripts.
 
 In desktop mode (the default) the window carries a native File / Edit /
 View / Help menu bar (Reload, Quit, clipboard edit commands, Toggle Theme, plus

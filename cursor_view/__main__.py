@@ -9,9 +9,6 @@ By default (no flags), the binary launches the desktop UI: it starts the
 Flask server on a random loopback port and renders the chat UI inside a
 native OS webview window. Passing ``--terminal`` opts back into the
 original browser flow (Flask on port 5000 plus the auto-opened browser).
-The legacy ``--desktop`` flag is accepted for one release as a no-op so
-existing launch scripts keep working, but it now selects what is already
-the default.
 """
 
 import argparse
@@ -36,14 +33,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--terminal",
         action="store_true",
         help="Run the Flask server and open the UI in your browser instead of the desktop window.",
-    )
-    parser.add_argument(
-        "--desktop",
-        action="store_true",
-        help=(
-            "Deprecated no-op: the desktop UI is now the default. Accepted "
-            "for one release so existing launch scripts keep working."
-        ),
     )
     parser.add_argument(
         "--port",
@@ -76,13 +65,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
-
-    if args.desktop:
-        logger.info(
-            "%s is now the default and the flag is deprecated; it will be "
-            "removed in a future release.",
-            "--desktop",
-        )
 
     # A positional file argument always implies the desktop single-chat
     # viewer: the viewer route only exists in desktop mode (run_desktop
@@ -117,7 +99,7 @@ def main(argv: list[str] | None = None) -> None:
                 flag_name,
             )
 
-    if args.file is not None and not args.desktop:
+    if args.file is not None:
         logger.info(
             "Opening %s in the desktop viewer (a file argument implies the "
             "desktop viewer).",

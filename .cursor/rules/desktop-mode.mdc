@@ -22,10 +22,9 @@ in `cursor_view/__main__.py`, where `terminal_mode = args.terminal and
 args.file is None` — a positional file argument always forces the desktop
 single-chat viewer (the `/viewer` route exists only in desktop mode), so
 a file overrides `--terminal` with a lazy `%s` warning. The legacy
-`--desktop` flag is accepted for one release as a **deprecated no-op**
-(it now selects what is already the default) and logs a lazy `%s`
-`logger.info` deprecation notice when passed; it must keep working until
-the next release removes it. Terminal-only flags (`--port`, `--debug`,
+`--desktop` flag has been **removed** — it was a no-op once desktop
+became the default, so `_build_parser` no longer defines it and passing
+it is an `argparse` error. Terminal-only flags (`--port`, `--debug`,
 `--no-browser`) are warned-and-ignored in desktop mode, mirroring the
 pre-flip behavior. The two repo-root shims stay mode-locked: `desktop.py`
 always launches desktop mode and `terminal.py` always launches terminal

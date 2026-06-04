@@ -9,8 +9,8 @@ root are thin shims; the bulk of the code lives inside the
 - `cursor_view_main.py` &mdash; unified entry point used by PyInstaller;
   equivalent to `python3 -m cursor_view`. Defaults to the native
   pywebview desktop UI; pass `--terminal` for the Flask server + browser
-  flow. The legacy `--desktop` flag is accepted for one release as a
-  deprecated no-op (it selects what is already the default).
+  flow. The legacy `--desktop` flag has been removed (it was a no-op once
+  desktop became the default), so passing it now errors out.
 - `desktop.py` &mdash; thin shim that always launches the desktop UI
   (the same as the unified default).
 - `terminal.py` &mdash; thin shim that always starts the Flask server and
