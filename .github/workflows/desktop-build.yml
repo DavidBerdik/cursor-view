@@ -80,8 +80,7 @@ jobs:
 
       # --help only parses args (the desktop launcher imports pywebview
       # lazily), so this catches import-time regressions in either binary
-      # without needing a display server. Once Improvement 18 lands, also
-      # run `--terminal --no-browser` here.
+      # without needing a display server.
       #
       # The output paths are platform-branched to match the spec
       # (Improvement 17): Windows and Linux build self-contained onefile

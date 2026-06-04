@@ -144,10 +144,10 @@ todos:
     content: "Author .github/workflows/desktop-build.yml with a 3-OS PyInstaller matrix building per-OS artifacts on push to main and on v* tag pushes; per Improvement 07's spec split, each per-OS upload must include both binaries (cursor-view and cursor-view-desktop) from the single COLLECT'd dist/cursor-view/ tree"
     status: completed
   - id: 14b-smoke-test
-    content: "Add a per-OS smoke step that runs dist/cursor-view/cursor-view --help AND dist/cursor-view/cursor-view-desktop --help (the two-EXE split from Improvement 07; once Improvement 18 lands also run --terminal --no-browser) to catch import-time regressions in either binary"
+    content: "Add a per-OS smoke step that runs dist/cursor-view/cursor-view --help AND dist/cursor-view/cursor-view-desktop --help (the two-EXE split from Improvement 07) to catch import-time regressions in either binary"
     status: completed
   - id: 14c-rules-and-docs-ci
-    content: "Re-read project-layout.mdc Files with no caller clause; if Improvement 20's bug-sweep added a temporary # TODO(bug): marker for the missing workflow, retire it here per known-bugs.mdc and cite the closure in the rule"
+    content: "Re-read project-layout.mdc Files with no caller clause; if Improvement 19's bug-sweep added a temporary # TODO(bug): marker for the missing workflow, retire it here per known-bugs.mdc and cite the closure in the rule"
     status: completed
   - id: 15a-desktop-template
     content: Add assets/linux/cursor-view.desktop template + assets/linux/install-linux.sh helper that copies the file/icon and runs update-desktop-database
@@ -176,25 +176,10 @@ todos:
   - id: 17c-rules-and-docs-pyinstaller
     content: Update README Standalone binary and CONTRIBUTING.md to describe the per-OS distribution shape (single-file self-contained binaries on Windows/Linux; the .app bundle on macOS)
     status: completed
-  - id: 18a-cli-default-flip
-    content: Invert cursor_view/__main__.py default to run_desktop(); add --terminal flag; keep --desktop accepted as a deprecation no-op for one release with a lazy %s info log
+  - id: 18-impl-bug-sweep
+    content: "Re-read every file touched by Improvements 01-17 looking for # TODO(bug): candidates per known-bugs.mdc (three-part marker: prefix, symptom, suspected cause); never silently delete code that looks dead or wrong; update known-bugs.mdc with each new marker citing the file"
     status: pending
-  - id: 18b-spec-update-flip
-    content: Update cursor-view.spec BUNDLE comment + console default + the macOS .app Info.plist comment to reflect the new default
-    status: pending
-  - id: 18c-readme-flip
-    content: Flip every README example that assumes terminal-default behavior; add a brief migration note for users coming from previous releases
-    status: pending
-  - id: 18d-contributing-flip
-    content: Flip .github/CONTRIBUTING.md Entry points section to describe the new default
-    status: pending
-  - id: 18e-rules-and-docs-flip
-    content: Update .cursor/rules/project-layout.mdc if any wording about terminal-being-default needs to change; add a Default mode note to .cursor/rules/desktop-mode.mdc
-    status: pending
-  - id: 19-impl-bug-sweep
-    content: "Re-read every file touched by Improvements 01-18 looking for # TODO(bug): candidates per known-bugs.mdc (three-part marker: prefix, symptom, suspected cause); never silently delete code that looks dead or wrong; update known-bugs.mdc with each new marker citing the file"
-    status: pending
-  - id: 20-project-bug-sweep
+  - id: 19-project-bug-sweep
     content: "Sweep the entire repo independently of the desktop work for hardcoded user-specific values, swallow-and-stub exception handlers, connection leaks, scroll/render races, and other patterns matching the retired examples in known-bugs.mdc; the .github/workflows/desktop-build.yml documentation drift is the canonical example this sweep should catch (closed by Improvement 14); add # TODO(bug): markers or fix-in-place per the rule"
     status: pending
 isProject: false
@@ -202,7 +187,7 @@ isProject: false
 
 # Maturing the experimental desktop mode
 
-This plan organizes the work into **18 self-contained improvements** plus **2 final bug-sweep todos**. Each improvement carries its own rule-review and doc-sync subtasks per [`comments-style.mdc`](.cursor/rules/comments-style.mdc) "Rule drift" and [`project-layout.mdc`](.cursor/rules/project-layout.mdc) "Documentation sync", so any subset can be implemented independently.
+This plan organizes the work into **17 self-contained improvements** plus **2 final bug-sweep todos**. Each improvement carries its own rule-review and doc-sync subtasks per [`comments-style.mdc`](.cursor/rules/comments-style.mdc) "Rule drift" and [`project-layout.mdc`](.cursor/rules/project-layout.mdc) "Documentation sync", so any subset can be implemented independently.
 
 ## Current architecture (baseline)
 
@@ -348,7 +333,7 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 **What it is.** [`cursor-view.spec`](cursor-view.spec) builds with `console=True`, so on Windows the `cursor-view.exe` always pops a console window even when `--desktop` is passed. This is the single biggest "this feels unprofessional" issue for Windows users.
 
-**What it does.** Splits the spec into two binaries: the existing console-bearing `cursor-view.exe` (terminal mode default) and a new windowless `cursor-view-desktop.exe` (or after Improvement 18's flip, the other way around). On macOS and Linux the `console` setting has no effect, so the .app bundle and Linux binary are unchanged.
+**What it does.** Splits the spec into two binaries: the existing console-bearing `cursor-view.exe` (terminal mode default) and a new windowless `cursor-view-desktop.exe`. On macOS and Linux the `console` setting has no effect, so the .app bundle and Linux binary are unchanged.
 
 **How it will be implemented.**
 - Refactor [`cursor-view.spec`](cursor-view.spec) into a multi-binary spec: two `EXE(...)` blocks sharing the same `Analysis(a)` and `PYZ(pyz)`, differing only in `name` and `console`. The macOS `BUNDLE` wraps the windowless binary. Reference: PyInstaller multi-target spec docs.
@@ -487,7 +472,7 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 **How it will be implemented.**
 - New [`.github/workflows/desktop-build.yml`](.github/workflows/desktop-build.yml) using a 3-OS `matrix.os: [ubuntu-latest, windows-latest, macos-latest]`.
-- Per-OS steps: checkout, setup Python 3.11, setup Node 20, `pip install -r requirements.txt`, `npm ci && npm run build` in `frontend/`, `pyinstaller cursor-view.spec`, smoke-test BOTH `dist/cursor-view/cursor-view --help` AND `dist/cursor-view/cursor-view-desktop --help` (the two-EXE split landed in Improvement 07 — a single `cursor-view --help` would not catch an import-time regression in the desktop-only path; once Improvement 18 lands also run `--terminal --no-browser`), `actions/upload-artifact@v4` for the per-OS dist folder (which contains both binaries from a single `COLLECT()`).
+- Per-OS steps: checkout, setup Python 3.11, setup Node 20, `pip install -r requirements.txt`, `npm ci && npm run build` in `frontend/`, `pyinstaller cursor-view.spec`, smoke-test BOTH `dist/cursor-view/cursor-view --help` AND `dist/cursor-view/cursor-view-desktop --help` (the two-EXE split landed in Improvement 07 — a single `cursor-view --help` would not catch an import-time regression in the desktop-only path), `actions/upload-artifact@v4` for the per-OS dist folder (which contains both binaries from a single `COLLECT()`).
 - Trigger on `push` to `main` AND on `push` of tags matching `v*`. Tag pushes additionally upload to a draft release via `softprops/action-gh-release`.
 - Decide if Linux build also produces an AppImage now or later (defer to follow-up).
 
@@ -556,34 +541,13 @@ The bridge today exposes only `save_export` and `open_url_in_browser`; everythin
 
 ---
 
-## Improvement 18 - GATED: Default-mode flip
-
-**What it is.** Once Improvements 01-17 (or a chosen subset) have landed, `cursor_view/__main__.py` should default to `--desktop` and require `--terminal` to opt back into the Flask + browser flow. This is the last functional change before the bug sweeps.
-
-**What it does.** Inverts the default in `__main__.py`, renames the existing `--desktop` flag to a no-op alias (kept for one release), introduces `--terminal`, updates the `.app` Info.plist comment, updates the spec console=False default (couples with Improvement 07), and updates README + CONTRIBUTING + project-layout.mdc to reflect the new default.
-
-**How it will be implemented.**
-- [`cursor_view/__main__.py`](cursor_view/__main__.py): default branch becomes `run_desktop()`; `--terminal` flag added with the existing `--port`/`--debug`/`--no-browser` as terminal-only sub-flags. Keep `--desktop` accepted (for one release) as a no-op with a `logger.info("--desktop is now the default; flag is deprecated and will be removed.")`.
-- README "Setup & Running" + "Standalone binary" + "Running the binary" sections all flip their examples.
-- `.github/CONTRIBUTING.md` "Entry points" section updated.
-- macOS `.app` Info.plist comment in [`cursor-view.spec`](cursor-view.spec) flipped.
-
-**Todos**
-- `18a-cli-default-flip`: Invert `__main__.py` default + add `--terminal` + deprecate `--desktop`.
-- `18b-spec-update`: Update the spec's `BUNDLE` comment + Linux/Windows behavior comment.
-- `18c-readme-flip`: Flip README examples.
-- `18d-contributing-flip`: Flip CONTRIBUTING.md entry-points section.
-- `18e-rules-and-docs`: Update [`project-layout.mdc`](.cursor/rules/project-layout.mdc) if any wording about terminal-being-default needs to change. Add a `Default mode` note to `.cursor/rules/desktop-mode.mdc`.
-
----
-
 ## Final - Bug sweeps
 
-**Improvement 19 - Implementation bug sweep**
+**Improvement 18 - Implementation bug sweep**
 
-Re-read every file touched by Improvements 01-18 and look for symptoms that warrant a `# TODO(bug):` marker per [`known-bugs.mdc`](.cursor/rules/known-bugs.mdc). The marker has three required parts: the literal `# TODO(bug):` prefix, a one-line **symptom** description (what the user observes when the bug fires), and a follow-up sentence on the **suspected cause** (which invariant is violated). For any code path that "looks dead or wrong" — never silently delete it; add the marker.
+Re-read every file touched by Improvements 01-17 and look for symptoms that warrant a `# TODO(bug):` marker per [`known-bugs.mdc`](.cursor/rules/known-bugs.mdc). The marker has three required parts: the literal `# TODO(bug):` prefix, a one-line **symptom** description (what the user observes when the bug fires), and a follow-up sentence on the **suspected cause** (which invariant is violated). For any code path that "looks dead or wrong" — never silently delete it; add the marker.
 
-**Improvement 20 - Project-wide bug sweep**
+**Improvement 19 - Project-wide bug sweep**
 
 Independently of the desktop work, sweep the entire repo for hardcoded user-specific values, swallow-and-stub exception handlers, connection leaks, scroll/render races, and other patterns matching the retired examples in [`known-bugs.mdc`](.cursor/rules/known-bugs.mdc). The "documentation drift" between [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)'s reference to `.github/workflows/desktop-build.yml` and the file's actual absence in the tree is itself the canonical example of the kind of issue this sweep should catch (and is closed by Improvement 14).
 
