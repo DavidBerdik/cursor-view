@@ -1,6 +1,6 @@
-"""Regression coverage for the three known-bug fixes.
+"""Regression coverage for the retired known-bug fixes.
 
-The bugs the fix-pass retired (and the contracts these tests pin):
+The bugs the original fix-pass retired (and the contracts these tests pin):
 
 - ``cursor_view/chat_format.py::format_chat_for_frontend`` no longer
   swallows formatting exceptions and returns a stub with a fresh
@@ -28,6 +28,13 @@ calls inside ``run_server`` -- is verifiable by reading the module.
 Skipping a dedicated test for that one is consistent with how
 ``cursor_view/desktop/__init__.py`` tests the same pattern (it
 doesn't).
+
+A fourth test, ``ExtractProjectFromGitReposClosesConnectionTest``, was
+added by the Improvement 20 project-wide bug sweep for a sibling
+connection leak in ``cursor_view/projects/git.py`` (same shape as the
+``iter_global_legacy_chatdata`` leak: connect inside ``try``, broad
+``except`` returning without ``close()``), fixed in place with the
+``con = None`` + ``finally`` cleanup pattern.
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ from unittest.mock import patch
 
 import cursor_view.chat_index.rows as rows_module
 from cursor_view.chat_format import format_chat_for_frontend as _real_format
+from cursor_view.projects.git import extract_project_from_git_repos
 from cursor_view.sources.item_table import iter_global_legacy_chatdata
 
 from tests._image_test_helpers import (
@@ -227,6 +235,71 @@ class IterGlobalLegacyChatdataClosesConnectionTest(unittest.TestCase):
         self.assertEqual(
             len(captured), 1,
             "iter_global_legacy_chatdata should open exactly one connection",
+        )
+        with self.assertRaises(sqlite3.ProgrammingError):
+            captured[0].execute("SELECT 1")
+
+
+class ExtractProjectFromGitReposClosesConnectionTest(unittest.TestCase):
+    """``extract_project_from_git_repos`` must release the SQLite connection on the error path.
+
+    Found by the Improvement 20 project-wide bug sweep. Pre-fix,
+    ``con = sqlite3.connect(...)`` was opened inside the ``try`` and the
+    broad ``except Exception`` returned ``None`` without closing it, so any
+    failure after open leaked the read-only handle -- the same shape as the
+    retired ``iter_global_legacy_chatdata`` leak. This test drives the error
+    path by pointing the function at a workspace DB that has the file shape
+    but no ``ItemTable``, so ``j()``'s ``SELECT value FROM ItemTable`` raises
+    ``sqlite3.OperationalError`` (a ``DatabaseError`` subclass) inside the
+    ``try``; the captured connection must be closed by the time the function
+    returns ``None``. Post-fix the connection is initialized to ``None`` and
+    closed in a ``finally`` (the ``projects/inference.py`` cleanup pattern).
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.mkdtemp(prefix="cursor-view-gitrepos-")
+        self._base = pathlib.Path(self._tmp)
+        self.workspace_id = "ws-conn-leak-test"
+        ws_dir = self._base / "User" / "workspaceStorage" / self.workspace_id
+        ws_dir.mkdir(parents=True)
+        db_path = ws_dir / "state.vscdb"
+        con = sqlite3.connect(db_path)
+        try:
+            con.execute("CREATE TABLE someothertable (key TEXT, value TEXT)")
+            con.commit()
+        finally:
+            con.close()
+        # The function is lru_cached; clear so a prior run's result for this
+        # workspace id cannot short-circuit the connect-and-fail path.
+        extract_project_from_git_repos.cache_clear()
+
+    def tearDown(self) -> None:
+        import shutil
+
+        extract_project_from_git_repos.cache_clear()
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_connection_closed_on_missing_itemtable(self) -> None:
+        captured: list[sqlite3.Connection] = []
+
+        real_connect = sqlite3.connect
+
+        def tracking_connect(*args, **kwargs):
+            con = real_connect(*args, **kwargs)
+            captured.append(con)
+            return con
+
+        with patch(
+            "cursor_view.projects.git.cursor_root", return_value=self._base
+        ), patch(
+            "cursor_view.projects.git.sqlite3.connect", side_effect=tracking_connect
+        ):
+            result = extract_project_from_git_repos(self.workspace_id)
+
+        self.assertIsNone(result)
+        self.assertEqual(
+            len(captured), 1,
+            "extract_project_from_git_repos should open exactly one connection",
         )
         with self.assertRaises(sqlite3.ProgrammingError):
             captured[0].execute("SELECT 1")

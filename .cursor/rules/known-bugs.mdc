@@ -48,6 +48,22 @@ Nine retired examples now live in git history:
   `cursor_view/chat_format.py::format_chat_for_frontend`,
 - the connection leak in
   `cursor_view/sources/item_table.py::iter_global_legacy_chatdata`,
+- the connection leak in
+  `cursor_view/projects/git.py::extract_project_from_git_repos`
+  (found and fixed by the Improvement 20 project-wide bug sweep, the
+  same shape as the `iter_global_legacy_chatdata` leak above: the
+  read-only `con` was opened inside the `try` and the broad
+  `except Exception` returned `None` without closing it, so any failure
+  after open -- e.g. `j()` issuing `SELECT value FROM ItemTable` against
+  a workspace DB that lacks the table and raising
+  `sqlite3.OperationalError` -- leaked the handle; the function is
+  `lru_cache(maxsize=512)`d, so a failing-but-cached workspace id would
+  not re-leak, but distinct failing ids accumulate handles. Closed by
+  the `con = None` + `finally: con.close()` cleanup pattern from
+  [`sqlite-cursor-db.mdc`](sqlite-cursor-db.mdc) "Connection cleanup",
+  matching `projects/inference.py`, and regression-pinned by
+  `tests/test_known_bug_fixes.py::ExtractProjectFromGitReposClosesConnectionTest`
+  via the same connection-capture technique the `item_table` test uses),
 - the soft-deletion trigger gap in
   `cursor_view/cache/delta/propagation.py::_apply_secondary_pass`
   (a parent in `dirty.modified_cids` whose primary extraction

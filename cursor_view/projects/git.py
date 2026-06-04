@@ -31,6 +31,13 @@ def extract_project_from_git_repos(workspace_id, debug=False):
             logger.debug("Workspace DB not found for ID: %s", workspace_id)
         return None
 
+    # Initialize con up front and close it in finally so an error after a
+    # successful connect (a cursor/query failure routed through the broad
+    # except below) cannot leak the read-only handle. This is the
+    # connection-cleanup pattern from sqlite-cursor-db.mdc, matching
+    # projects/inference.py; the previous form opened con inside the try
+    # and the broad except returned None without closing it.
+    con = None
     try:
         # Connect to the workspace DB
         if debug:
@@ -47,7 +54,6 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                     workspace_id,
                     git_data,
                 )
-            con.close()
             return None
 
         # Extract repo paths from the 'all' key
@@ -59,7 +65,6 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                     workspace_id,
                     repos,
                 )
-            con.close()
             return None
 
         if debug:
@@ -90,7 +95,6 @@ def extract_project_from_git_repos(workspace_id, debug=False):
                             project_name,
                             workspace_id,
                         )
-                    con.close()
                     return project_name
             else:
                 if debug:
@@ -98,10 +102,12 @@ def extract_project_from_git_repos(workspace_id, debug=False):
 
         if debug:
             logger.debug("No suitable git repos found in workspace %s", workspace_id)
-        con.close()
     except Exception as e:
         if debug:
             logger.debug("Error extracting git repos from workspace %s: %s", workspace_id, e)
         return None
+    finally:
+        if con is not None:
+            con.close()
 
     return None
