@@ -117,6 +117,14 @@ def workspace_info(db: pathlib.Path):
         comp_meta = {}
         cd = j(cur, "ItemTable", "composer.composerData") or {}
         for c in cd.get("allComposers", []):
+            # TODO(bug): A workspace whose composer.composerData allComposers
+            # holds an entry that is not a dict, or a dict missing composerId,
+            # aborts this workspace's metadata read with TypeError/KeyError (the
+            # surrounding except only catches sqlite3.DatabaseError), so that
+            # workspace's chats drop out of the run. Suspected cause:
+            # c["composerId"] uses subscript access while the sibling fields use
+            # c.get(...) and cursor_view/sources/item_table.py reads the same
+            # field defensively as comp.get("composerId", "unknown").
             comp_meta[c["composerId"]] = {
                 "title": c.get("name", "(untitled)"),
                 "createdAt": c.get("createdAt"),

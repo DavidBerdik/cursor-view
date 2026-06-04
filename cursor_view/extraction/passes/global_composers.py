@@ -70,6 +70,15 @@ def _collect_global_composers(
             if isinstance(pcid, str) and pcid and pcid != cid:
                 subagent_parent[cid] = pcid
 
+        # TODO(bug): A global composerData:* row whose JSON parses to a non-dict
+        # (a list/number/etc. -- the same malformed shape the bubble path guards
+        # against, see tests/test_chat_index_images_regressions.py::
+        # test_non_dict_bubble_json_is_skipped) aborts the whole extraction /
+        # refresh with AttributeError on the data.get(...) calls below. Suspected
+        # cause: this code assumes data is a dict, while the subagentInfo and
+        # workspaceIdentifier reads in this same function gate on
+        # isinstance(data, dict) -- and iter_composer_data yields any json.loads
+        # result without the dict gate its sibling build_bubble_order_map applies.
         created_at = data.get("createdAt")
         last_updated = data.get("lastUpdatedAt")
         if last_updated is None:

@@ -17,7 +17,43 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` markers are in the tree at present.
+Three live `# TODO(bug):` markers are in the tree at present (added by a
+project-wide bug-scan; behavior left unchanged per this rule):
+
+- the source-read-failure mass-deletion in
+  `cursor_view/cache/diff/engine.py::compute_source_diff` (at the
+  `_process_deletions` call). A transient/locked/corrupt read of a source
+  `state.vscdb` during an incremental refresh deletes that DB's chats from
+  the cache -- the user sees them vanish from the UI until a later
+  successful refresh re-extracts them. Suspected cause: `_diff_global_db` /
+  `_diff_workspace_db` return early on `sqlite3.DatabaseError` without
+  recording any `source_row_snapshot` rows for that DB (the file still
+  passed `db.exists()`, the "exists but unreadable" case that is common
+  because Cursor is an active writer), so `_process_deletions` cannot
+  distinguish "source unreadable this pass" from "composer genuinely
+  deleted" and routes every cached cid with no snapshot row into
+  `deleted_cids`, which `apply_delta` commits.
+- the non-dict `composerData` crash in
+  `cursor_view/extraction/passes/global_composers.py::_collect_global_composers`
+  (at the `data.get("createdAt")` line). A global `composerData:*` row whose
+  JSON parses to a non-dict aborts the whole extraction/refresh with
+  `AttributeError`. Suspected cause: the `data.get(...)` calls assume a dict
+  while the `subagentInfo` / `workspaceIdentifier` reads in the same
+  function gate on `isinstance(data, dict)`, and `iter_composer_data`
+  (`cursor_view/sources/composer_data.py`) yields any `json.loads` result
+  without the dict gate its sibling `build_bubble_order_map` applies -- the
+  bubble path already guards this shape
+  (`tests/test_chat_index_images_regressions.py::test_non_dict_bubble_json_is_skipped`).
+- the unguarded `composerId` read in
+  `cursor_view/projects/inference.py::workspace_info` (the
+  `comp_meta[c["composerId"]]` line). A workspace whose
+  `composer.composerData` `allComposers` holds a non-dict entry, or a dict
+  missing `composerId`, aborts that workspace's metadata read with
+  `TypeError` / `KeyError` (the surrounding `except` only catches
+  `sqlite3.DatabaseError`), dropping that workspace's chats from the run.
+  Suspected cause: subscript access on `c` while the sibling fields use
+  `c.get(...)` and `cursor_view/sources/item_table.py` reads the same field
+  as `comp.get("composerId", "unknown")`.
 
 Eleven retired examples now live in git history:
 
