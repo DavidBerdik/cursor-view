@@ -117,6 +117,15 @@ def workspace_info(db: pathlib.Path):
         comp_meta = {}
         cd = j(cur, "ItemTable", "composer.composerData") or {}
         for c in cd.get("allComposers", []):
+            # TODO(bug): One malformed allComposers entry aborts workspace_info
+            # for the whole workspace, so extraction Pass 1 surfaces none of
+            # that workspace's chat titles/metadata (the exception escapes the
+            # function rather than returning). Suspected cause: c["composerId"]
+            # subscripts (and assumes c is a dict) without a guard, but the
+            # only except in this function is sqlite3.DatabaseError -- so a
+            # KeyError/TypeError from a partial or non-dict entry bypasses the
+            # graceful "(unknown)" fallback every other read here degrades to
+            # via .get().
             comp_meta[c["composerId"]] = {
                 "title": c.get("name", "(untitled)"),
                 "createdAt": c.get("createdAt"),

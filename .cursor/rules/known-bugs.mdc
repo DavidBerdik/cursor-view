@@ -17,7 +17,40 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` markers are in the tree at present.
+Three live `# TODO(bug):` markers are in the tree at present:
+
+- the single-instance lock write-failure in
+  `cursor_view/desktop/single_instance.py::acquire_lock` (a second desktop
+  launch spawns its own window + server on a new port instead of focusing
+  the running instance, defeating single-instance enforcement). Cause:
+  `_write_lock` swallows `OSError` (read-only cache dir, full disk,
+  permissions) and returns without raising, yet `acquire_lock`
+  unconditionally returns `True`, so `run_desktop` believes it holds a lock
+  that was never written -- and every later launch reads no lockfile and
+  likewise becomes a "first" instance.
+- the transient source-DB read failure misclassified as deletions in
+  `cursor_view/cache/diff/workspace_db.py::_fetch_workspace_item_rows` and
+  `cursor_view/cache/diff/global_db.py::_diff_global_db` (a momentary
+  failure reading a workspace `state.vscdb` or the global `cursorDiskKV` --
+  "database is locked" while Cursor writes, or an I/O error -- makes every
+  cached chat for that DB disappear from the index until a later refresh
+  rebuilds it). Cause: both sites return an empty/partial result on
+  `sqlite3.DatabaseError` while the DB file still exists (the diff only
+  scans DBs that pass `db.exists()`), recording no rows in
+  `dirty.source_row_snapshot`, so
+  `cursor_view/cache/diff/propagation.py::_process_deletions` treats all of
+  that DB's cached `source_row` keys as vanished and folds their composers
+  into `deleted_cids` -- conflating "couldn't read" with "rows gone".
+- the malformed-`allComposers` crash in
+  `cursor_view/projects/inference.py::workspace_info` (one corrupt or
+  partial `composer.composerData` entry aborts the whole `workspace_info`
+  call, so extraction Pass 1 surfaces none of that workspace's chat
+  titles/metadata). Cause: the `allComposers` loop subscripts
+  `c["composerId"]` (and assumes `c` is a dict) without a guard, but the
+  only `except` in the function is `sqlite3.DatabaseError`, so a
+  `KeyError`/`TypeError` from a partial or non-dict entry bypasses the
+  graceful `(unknown)` fallback every other read in the function degrades
+  to via `.get()`.
 
 Twelve retired examples now live in git history:
 

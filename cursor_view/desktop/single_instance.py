@@ -152,6 +152,14 @@ def acquire_lock(port: int) -> bool:
             existing.get("port"),
         )
         return False
+    # TODO(bug): A second desktop launch can spawn its own window + server on
+    # a new port instead of focusing the first instance, defeating
+    # single-instance enforcement. Suspected cause: _write_lock swallows
+    # OSError (read-only cache dir, full disk, permissions) and returns
+    # without raising, but acquire_lock unconditionally returns True
+    # afterward -- so run_desktop believes it holds a lock that was never
+    # written, and every later launch reads no lockfile and likewise becomes
+    # a "first" instance.
     _write_lock(port)
     return True
 

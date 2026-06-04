@@ -68,6 +68,16 @@ def _fetch_workspace_item_rows(db: pathlib.Path) -> list[tuple[str, Any]]:
             )
             return list(cur.fetchall())
         except sqlite3.DatabaseError as e:
+            # TODO(bug): A transient read failure on a workspace state.vscdb
+            # ("database is locked" while Cursor writes, or a momentary I/O
+            # error) makes every cached chat for that workspace disappear from
+            # the index until a later refresh rebuilds it. Suspected cause:
+            # returning [] records no rows in dirty.source_row_snapshot while
+            # the DB file still exists, so _process_deletions
+            # (cursor_view/cache/diff/propagation.py) sees all of this DB's
+            # cached source_row keys as vanished and folds their composers
+            # into deleted_cids -- conflating "couldn't read" with "rows gone".
+            # Same shape lives in global_db.py::_diff_global_db.
             logger.debug("Error scanning workspace ItemTable %s: %s", db, e)
             return []
     finally:

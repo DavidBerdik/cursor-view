@@ -120,6 +120,16 @@ def _diff_global_db(
             con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
             cur = con.cursor()
         except sqlite3.DatabaseError as e:
+            # TODO(bug): A transient failure opening the global cursorDiskKV
+            # DB (lock contention while Cursor writes, or a momentary I/O
+            # error) makes every cached global chat vanish from the index
+            # until a later refresh rebuilds it. Suspected cause: returning
+            # without recording any rows in dirty.source_row_snapshot while
+            # the DB file still exists leads _process_deletions
+            # (cursor_view/cache/diff/propagation.py) to classify all of this
+            # DB's cached composers into deleted_cids -- "couldn't read"
+            # treated as "rows gone". Same shape lives in
+            # workspace_db.py::_fetch_workspace_item_rows.
             logger.debug("Error opening global DB %s: %s", db, e)
             return
         _diff_global_cursor_disk_kv(cur, db_path_str, cached, dirty)
