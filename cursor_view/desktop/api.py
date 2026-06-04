@@ -339,6 +339,14 @@ class DesktopApi:
         if theme in ("light", "dark"):
             url += f"&theme={theme}"
 
+        # TODO(bug): In desktop mode the Save/Export action fails -- the native
+        # "Save as..." dialog completes and the user picks a path, but no file
+        # is written and the UI reports an error (HTTP 401). Suspected cause:
+        # this in-process loopback GET to /api/chat/<id>/export carries neither
+        # the X-Cursor-View-Token header nor the cursor-view-token cookie, so
+        # the install_auth before_request gate (Improvement 10) 401s it and
+        # urlopen raises into the except below; save_export predates that gate
+        # and was never updated to attach self._token to its own request.
         try:
             with urllib.request.urlopen(url, timeout=30) as resp:
                 data = resp.read()

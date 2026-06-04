@@ -17,7 +17,23 @@ observes when the bug fires), and a follow-up sentence on the
 A future contributor must be able to grep `TODO(bug):` and triage
 each hit without rereading the surrounding logic.
 
-No live `# TODO(bug):` markers are in the tree at present.
+One live `# TODO(bug):` marker is in the tree at present:
+
+- the desktop-export auth-token omission in
+  `cursor_view/desktop/api.py::DesktopApi.save_export` (in desktop mode
+  the native "Save as..." dialog completes and the user picks a path,
+  but no file is written and the UI surfaces an HTTP 401 error). The
+  method builds a loopback `GET /api/chat/<id>/export` and reads it with
+  `urllib.request.urlopen`, but that in-process request carries neither
+  the `X-Cursor-View-Token` header (the frontend's `useDesktopAuth` sets
+  it on axios only, not on Python's `urllib`) nor the `cursor-view-token`
+  cookie (no cookie jar on a bare `urlopen`), so the `install_auth`
+  `before_request` gate added in Improvement 10 401s the request and
+  `urlopen` raises into the `except` that returns `{"saved": False,
+  "error": ...}`. `save_export` predates the auth gate and was never
+  updated to attach `self._token` to its own loopback call. Surfaced by
+  the Improvement 18 implementation bug sweep and left behavior-unchanged
+  per this rule rather than fixed in the sweep.
 
 Nine retired examples now live in git history:
 
